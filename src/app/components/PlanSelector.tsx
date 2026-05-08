@@ -27,7 +27,48 @@ const PLAN_COLORS: Record<string, string> = {
   profesional: 'from-purple-500 to-pink-500',
   restaurante: 'from-orange-500 to-red-500',
   enterprise: 'from-yellow-500 to-amber-500'
-};
+}
+
+// Planes de respaldo si el API no responde
+const PLANES_FALLBACK: Plan[] = [
+  {
+    id: 'basico',
+    codigo: 'basico',
+    nombre: 'Básico',
+    precio_mensual: 49,
+    descripcion: 'Ideal para pequeños negocios',
+    caracteristicas: ['POS + Inventario', 'Hasta 2 usuarios', '1 bodega', 'Soporte básico'],
+    color: ''
+  },
+  {
+    id: 'profesional',
+    codigo: 'profesional',
+    nombre: 'Profesional',
+    precio_mensual: 129,
+    descripcion: 'Para negocios en crecimiento',
+    caracteristicas: ['Todos los módulos', 'Hasta 10 usuarios', 'Bodegas ilimitadas', 'Soporte prioritario'],
+    popular: true,
+    color: ''
+  },
+  {
+    id: 'restaurante',
+    codigo: 'restaurante',
+    nombre: 'Restaurante',
+    precio_mensual: 99,
+    descripcion: 'Especializado en gastronomía',
+    caracteristicas: ['POS + Mesas + Cocina', 'KDS integrado', 'Facturación SRI', 'Hasta 5 usuarios'],
+    color: ''
+  },
+  {
+    id: 'enterprise',
+    codigo: 'enterprise',
+    nombre: 'Enterprise',
+    precio_mensual: 299,
+    descripcion: 'Sin límites, máximo rendimiento',
+    caracteristicas: ['Todo ilimitado', 'Multiempresa', 'API personalizada', 'Soporte 24/7'],
+    color: ''
+  }
+];
 
 interface PlanSelectorProps {
   selectedPlan: string;
@@ -60,11 +101,14 @@ export function PlanSelector({ selectedPlan, onSelectPlan }: PlanSelectorProps) 
 
       if (response.ok) {
         const data = await response.json();
-        setPlanes(data.planes || []);
+        const planesBackend = data.planes || [];
+        setPlanes(planesBackend.length > 0 ? planesBackend : PLANES_FALLBACK);
+      } else {
+        setPlanes(PLANES_FALLBACK);
       }
     } catch (error) {
-      console.error('Error cargando planes:', error);
-      // Mantener planes vacíos si falla
+      console.error('Error cargando planes, usando fallback:', error);
+      setPlanes(PLANES_FALLBACK);
     } finally {
       setLoading(false);
     }
