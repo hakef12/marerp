@@ -30,7 +30,8 @@ export type Modulo =
   | 'proyectos'
   | 'configuracion'
   | 'usuarios'
-  | 'suscripcion';
+  | 'suscripcion'
+  | 'admin_panel';
 
 /** Descripción visual de cada rol */
 export const ROLES_INFO: Record<string, { label: string; descripcion: string; color: string; badge: string }> = {
@@ -60,7 +61,7 @@ export const MODULOS_POR_ROL: Record<string, Modulo[]> = {
   super_admin: [
     'dashboard','pos','mesas','caja','inventario','cocina','ingenieria_menu',
     'facturacion','facturacion_config','contabilidad','rrhh','bi',
-    'auditoria','proyectos','configuracion','usuarios','suscripcion',
+    'auditoria','proyectos','configuracion','usuarios','suscripcion','admin_panel',
   ],
   cajero:     ['dashboard','pos','mesas','caja','cocina','facturacion'],
   bodeguero:  ['dashboard','inventario'],

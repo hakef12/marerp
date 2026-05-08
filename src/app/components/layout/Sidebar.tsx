@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, Package, Calculator, Users, ChefHat,
   Shield, BarChart3, Settings, LogOut, UserCog,
   FolderKanban, TrendingUp, FileText, Bell, X, CheckCheck,
-  Utensils, Wallet, CreditCard,
+  Utensils, Wallet, CreditCard, Crown,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { DiagnosticoPanel } from '../DiagnosticoPanel';
@@ -137,6 +137,7 @@ export default function Sidebar() {
     ['usuarios',         '/usuarios',                UserCog,         'Usuarios',              true],
     ['configuracion',    '/configuracion',           Settings,        'Configuración',         true],
     ['suscripcion',      '/suscripcion',             CreditCard,      'Suscripción',           true],
+    ['admin_panel',      '/admin',                   Crown,           'Super Admin',           true],
   ];
 
   const modulos = NAV_ITEMS.filter(([modulo, , , , activoEnPlan]) =>
