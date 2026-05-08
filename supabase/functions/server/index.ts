@@ -493,6 +493,99 @@ app.get("/server/empresa/plan-limites", authMiddleware, async (c) => {
   }
 });
 
+// =====================================================
+// RUTAS: SUPER ADMIN — Gestión global de empresas
+// =====================================================
+
+// Listar todas las empresas (excluye la empresa Sistema MAR)
+app.get("/server/admin/empresas", authMiddleware, superAdminMiddleware, async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { data: empresas, error } = await supabase
+      .from('empresas')
+      .select('*, usuarios(count)')
+      .neq('ruc_nit', '0000000000001')
+      .order('fecha_registro', { ascending: false });
+
+    if (error) throw error;
+    return c.json({ empresas: empresas || [] });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// Estadísticas globales del sistema
+app.get("/server/admin/estadisticas", authMiddleware, superAdminMiddleware, async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { data: empresas } = await supabase
+      .from('empresas')
+      .select('estado, plan_tipo')
+      .neq('ruc_nit', '0000000000001');
+
+    const { data: usuarios } = await supabase
+      .from('usuarios')
+      .select('id')
+      .neq('rol', 'super_admin');
+
+    const total = empresas?.length || 0;
+    const activas = empresas?.filter((e: any) => e.estado === 'activo').length || 0;
+    const suspendidas = empresas?.filter((e: any) => e.estado === 'suspendido').length || 0;
+
+    const porPlan: Record<string, number> = {};
+    empresas?.forEach((e: any) => {
+      porPlan[e.plan_tipo] = (porPlan[e.plan_tipo] || 0) + 1;
+    });
+
+    return c.json({
+      total_empresas: total,
+      empresas_activas: activas,
+      empresas_suspendidas: suspendidas,
+      total_usuarios: usuarios?.length || 0,
+      por_plan: porPlan
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// Actualizar empresa: estado, plan, fecha_expiracion
+app.put("/server/admin/empresas/:id", authMiddleware, superAdminMiddleware, async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const empresaId = c.req.param('id');
+    const body = await c.req.json();
+    const { estado, plan_tipo, fecha_expiracion, modulos_activos } = body;
+
+    const updates: Record<string, any> = {};
+    if (estado) updates.estado = estado;
+    if (plan_tipo) {
+      updates.plan_tipo = plan_tipo;
+      // Actualizar módulos según el plan
+      const modulosPorPlan: Record<string, any> = {
+        basico:       { pos: true,  inventario: true,  contabilidad: false, rrhh: false, cocina: false, auditoria: false, bi: false },
+        profesional:  { pos: true,  inventario: true,  contabilidad: true,  rrhh: true,  cocina: true,  auditoria: true,  bi: true  },
+        restaurante:  { pos: true,  inventario: true,  contabilidad: false, rrhh: false, cocina: true,  auditoria: false, bi: false },
+        enterprise:   { pos: true,  inventario: true,  contabilidad: true,  rrhh: true,  cocina: true,  auditoria: true,  bi: true  },
+      };
+      updates.modulos_activos = modulos_activos || modulosPorPlan[plan_tipo] || modulosPorPlan.enterprise;
+    }
+    if (fecha_expiracion) updates.fecha_expiracion = fecha_expiracion;
+
+    const { data, error } = await supabase
+      .from('empresas')
+      .update(updates)
+      .eq('id', empresaId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return c.json({ message: 'Empresa actualizada', empresa: data });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 // Facturación: configuración
 app.get("/server/facturacion/configuracion", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
