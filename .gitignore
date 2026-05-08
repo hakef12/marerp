@@ -1,0 +1,61 @@
+# Dependencias
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+dist-ssr/
+*.local
+
+# Variables de entorno — NUNCA subir al repositorio
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Archivos temporales
+*.tmp
+*.temp
+~$*
+
+# Claude
+.claude/
+
+# Archivos innecesarios
+*.zip
+marerp/
+guidelines/
+ARCHIVOS_SOLUCION_AUDITORIA.md
+COMO_ARREGLAR_AUDITORIA.txt
+COMO_RESOLVER_ERROR_403.txt
+CUAL_SCRIPT_EJECUTAR.md
+CHECKLIST_DESPLIEGUE.md
+FACTURACION_ELECTRONICA_SRI.md
+SETUP_COMPLETO.sql
+importar-productos.js
+deploy.sh
+deploy.bat
+lista*
+~$*

@@ -1,0 +1,59 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║           🚀 EMPIEZA AQUÍ - Solución de Auditoría               ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+
+TIENES UN ERROR EN EL MÓDULO DE AUDITORÍA
+
+Posibles errores:
+  • "column modulo does not exist"
+  • "column u.role does not exist"
+  • "column created_at does not exist"
+
+
+═══════════════════════════════════════════════════════════════════
+
+✅ SOLUCIÓN RÁPIDA SEGÚN TU ERROR:
+
+
+ERROR: "column created_at does not exist"
+──────────────────────────────────────────────────────────────────
+Tu tabla está MUY vacía. Ejecuta:
+
+   📄 FIX_COMPLETO_TABLA_VACIA.sql
+
+
+ERROR: "column modulo does not exist" o "u.role does not exist"
+──────────────────────────────────────────────────────────────────
+Tu tabla existe pero le faltan columnas. Ejecuta:
+
+   📄 FIX_AUDITORIA_INCREMENTAL.sql
+
+
+¿NO ESTÁS SEGURO?
+──────────────────────────────────────────────────────────────────
+Ejecuta primero el diagnóstico:
+
+   📄 DIAGNOSTICO.sql
+   
+Te dirá exactamente qué hacer.
+
+
+═══════════════════════════════════════════════════════════════════
+
+🎯 CÓMO EJECUTAR CUALQUIER SCRIPT:
+
+1️⃣  Abre Supabase Dashboard
+    https://app.supabase.com → Tu proyecto → SQL Editor
+
+2️⃣  Copia el script
+    Abre el archivo recomendado arriba
+    Copia TODO el contenido
+
+3️⃣  Ejecuta
+    Pégalo en SQL Editor → Clic en "Run"
+
+4️⃣  Recarga tu app
+    ✅ ¡Listo!

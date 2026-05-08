@@ -1,0 +1,132 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║  🚀 SOLUCIÓN AL ERROR DE AUDITORÍA - M.A.R ERP                  ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+
+❌ ERROR QUE TIENES:
+   "column modulo does not exist"
+   "column u.role does not exist"
+
+
+✅ SOLUCIÓN RÁPIDA (2 MINUTOS):
+
+
+PASO 1: Abre Supabase
+──────────────────────────────────────────────────────────────────
+   → Ve a: https://app.supabase.com
+   → Selecciona tu proyecto
+   → Clic en "SQL Editor"
+
+
+PASO 2: Ejecuta el Script
+──────────────────────────────────────────────────────────────────
+   → Abre el archivo: FIX_AUDITORIA_INCREMENTAL.sql
+   → Copia TODO el contenido
+   → Pégalo en el SQL Editor
+   → Clic en "Run" (o presiona Ctrl+Enter)
+
+
+PASO 3: Verifica
+──────────────────────────────────────────────────────────────────
+   → Deberías ver un mensaje de éxito
+   → Recarga tu aplicación M.A.R
+   → ✅ ¡El módulo de auditoría ahora funciona!
+
+
+══════════════════════════════════════════════════════════════════
+
+
+📁 ARCHIVOS DISPONIBLES:
+
+   🟢 FIX_AUDITORIA_INCREMENTAL.sql
+      → MÁS SEGURO (NO borra datos)
+      → Agrega columnas faltantes
+      → RECOMENDADO para tu caso
+
+   🔍 DIAGNOSTICO.sql
+      → Muestra qué columnas faltan
+      → NO modifica nada
+      → Ejecuta esto si quieres ver el problema
+
+   🔴 EJECUTAR_AHORA.sql
+      → Recrear tabla desde cero
+      → BORRA datos existentes
+      → Solo si todo lo demás falla
+
+
+══════════════════════════════════════════════════════════════════
+
+
+📖 DOCUMENTACIÓN:
+
+   📘 EJECUTAR_ESTO.md
+      → Instrucciones visuales paso a paso
+      → EMPIEZA AQUÍ si quieres más detalles
+
+   ⚡ SOLUCION_RAPIDA.md
+      → Todas las opciones de solución
+      → Preguntas frecuentes
+
+   📋 INDICE.md
+      → Lista completa de archivos
+      → Flujos recomendados
+
+
+══════════════════════════════════════════════════════════════════
+
+
+🎯 ¿QUÉ HACE EL SCRIPT?
+
+   ✅ Agrega columnas faltantes (modulo, resultado, etc.)
+   ✅ Corrige políticas RLS (rol en vez de role)
+   ✅ Crea índices para mejor rendimiento
+   ✅ Preserva todos tus datos existentes
+   ✅ 100% SEGURO - NO elimina nada
+
+
+══════════════════════════════════════════════════════════════════
+
+
+💡 TIPS:
+
+   • Puedes ejecutar FIX_AUDITORIA_INCREMENTAL.sql varias veces
+     (es seguro, usa "IF NOT EXISTS")
+
+   • Si tienes dudas, ejecuta primero DIAGNOSTICO.sql
+
+   • Después de ejecutar, recarga tu aplicación para ver los cambios
+
+
+══════════════════════════════════════════════════════════════════
+
+
+🆘 ¿NECESITAS AYUDA?
+
+   1. Ejecuta DIAGNOSTICO.sql
+   2. Toma captura del resultado
+   3. Lee SOLUCION_RAPIDA.md
+   4. Si persiste, contacta soporte con el error completo
+
+
+══════════════════════════════════════════════════════════════════
+
+
+✨ DESPUÉS DE EJECUTAR:
+
+   Tu sistema M.A.R tendrá:
+   
+   ✓ Módulo de auditoría completamente funcional
+   ✓ Registro de todas las acciones del sistema
+   ✓ Seguridad multi-tenant (aislamiento por empresa)
+   ✓ Políticas RLS correctamente configuradas
+   ✓ Rendimiento optimizado con índices
+
+
+══════════════════════════════════════════════════════════════════
+
+¡LISTO! Ahora ejecuta FIX_AUDITORIA_INCREMENTAL.sql y disfruta
+del sistema de auditoría completo de M.A.R ERP 🚀
+
+══════════════════════════════════════════════════════════════════

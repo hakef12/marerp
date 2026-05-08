@@ -1,0 +1,509 @@
+import { Hono } from "npm:hono";
+import { logger } from "npm:hono/logger";
+import { createClient } from "npm:@supabase/supabase-js";
+import * as kv from "./kv_store.tsx";
+import { PLANES, tieneAccesoModulo, validarLimite, obtenerPlan, listarPlanes } from "./planes.tsx";
+import { setupPOSRoutes } from "./pos-routes.tsx";
+import { setupInventarioRoutes } from "./inventario-routes.tsx";
+import { setupCocinaRoutes } from "./cocina-routes.tsx";
+import { setupDashboardRoutes } from "./dashboard-routes.tsx";
+import { setupBIRoutes } from "./bi-routes.tsx";
+import { setupRRHHRoutes } from "./rrhh-routes.tsx";
+import { setupIngenieriaMenuRoutes } from "./ingenieria-menu-routes.tsx";
+import { setupUsuariosRoutes } from "./usuarios-routes.tsx";
+import { handleGetConfiguracionFacturacion, handleSaveConfiguracionFacturacion, handleGenerarFactura, handleGetFacturas, handleAutorizarFactura, handleReintentarAutorizacion, handleEnviarEmailFactura, handleReenviarEmailFactura, handleUploadCertificado, handleGetCertificadoInfo, handleTestSRI } from "./facturacion-routes.tsx";
+import { setupAuditoriaRoutes } from "./auditoria-routes.tsx";
+import { setupContabilidadRoutes } from "./contabilidad-routes.tsx";
+import { setupMesasRoutes } from "./mesas-routes.tsx";
+import { setupCajaRoutes } from "./caja-routes.tsx";
+import { registrarAuditoria } from "./audit-helper.tsx";
+import { inicializarDatosDemo, cargarDatosDemo, limpiarTodosLosDatos, obtenerProductos, obtenerCategorias, obtenerVentas, obtenerComandas, guardarVenta, guardarComanda, actualizarComanda, guardarProducto, obtenerBodegas } from "./kv-helpers.tsx";
+
+const app = new Hono();
+
+// Supabase clients
+const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+
+// Enable logger
+app.use('*', logger(console.log));
+
+// =====================================================
+// MIDDLEWARE: Autenticación y Multi-Tenancy
+// =====================================================
+
+interface AuthContext {
+  userId: string;
+  empresaId: string;
+  userRole: string;
+  user: any;
+}
+
+async function authMiddleware(c: any, next: any) {
+  const authHeader = c.req.header('Authorization');
+  const userToken = c.req.header('X-User-Token');
+  
+  if (!userToken) {
+    return c.json({ error: 'Token de usuario requerido en header X-User-Token' }, 401);
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(userToken);
+    
+    if (error || !user) {
+      return c.json({ error: 'Token de usuario inválido o expirado' }, 401);
+    }
+
+    const { data: userData, error: userError } = await supabase
+      .from('usuarios')
+      .select('*, empresas(*)')
+      .eq('auth_user_id', user.id)
+      .single();
+
+    if (userError || !userData) {
+      return c.json({ error: 'Usuario no encontrado en el sistema' }, 404);
+    }
+
+    if (userData.empresas?.estado !== 'activo') {
+      return c.json({ error: 'Empresa suspendida o inactiva. Contacte al administrador.' }, 403);
+    }
+
+    // Guardar contexto de autenticación
+    c.set('auth', {
+      userId: userData.id,
+      empresaId: userData.empresa_id,
+      userRole: userData.rol,
+      user: userData
+    } as AuthContext);
+
+    await next();
+  } catch (error) {
+    console.error('Error en autenticación:', error);
+    return c.json({ error: 'Error de autenticación' }, 500);
+  }
+}
+
+// Middleware para super admin
+async function superAdminMiddleware(c: any, next: any) {
+  const auth: AuthContext = c.get('auth');
+  if (auth.userRole !== 'super_admin') {
+    return c.json({ error: 'Acceso denegado. Se requiere rol de Super Admin.' }, 403);
+  }
+  await next();
+}
+
+// registrarAuditoria importado desde ./audit-helper.tsx
+
+// =====================================================
+// RUTAS: AUTENTICACIÓN
+// =====================================================
+
+app.get("/server/health", (c) => {
+  return c.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.get("/server/debug/test", (c) => {
+  return c.json({ 
+    status: "🟢 Servidor funcionando correctamente",
+    timestamp: new Date().toISOString(),
+    env: {
+      hasSupabaseUrl: !!Deno.env.get('SUPABASE_URL'),
+      hasServiceKey: !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
+      hasAnonKey: !!Deno.env.get('SUPABASE_ANON_KEY')
+    }
+  });
+});
+
+app.post("/server/auth/signup", async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const body = await c.req.json();
+    const { 
+      empresa_nombre, empresa_ruc, empresa_email,
+      usuario_nombre, usuario_email, usuario_password,
+      plan_tipo = 'basico' 
+    } = body;
+
+    if (!empresa_nombre || !empresa_ruc || !usuario_nombre || !usuario_email || !usuario_password) {
+      return c.json({ error: 'Faltan campos requeridos' }, 400);
+    }
+
+    const { data: plan } = await supabase
+      .from('planes')
+      .select('id, modulos_incluidos')
+      .eq('codigo', plan_tipo)
+      .eq('activo', true)
+      .single();
+
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: usuario_email,
+      password: usuario_password,
+      email_confirm: true,
+      user_metadata: { nombre: usuario_nombre }
+    });
+
+    if (authError) return c.json({ error: 'Error al crear usuario en Auth: ' + authError.message }, 400);
+
+    const { data: empresa, error: empresaError } = await supabase
+      .from('empresas')
+      .insert({
+        nombre: empresa_nombre,
+        ruc_nit: empresa_ruc,
+        razon_social: empresa_nombre,
+        email: empresa_email,
+        plan_id: plan?.id,
+        plan_tipo,
+        estado: 'activo',
+        fecha_expiracion: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        modulos_activos: plan?.modulos_incluidos || { pos: true, inventario: true, contabilidad: true, rrhh: true, cocina: true, auditoria: true, bi: true }
+      })
+      .select()
+      .single();
+
+    if (empresaError) {
+      await supabase.auth.admin.deleteUser(authData.user.id);
+      return c.json({ error: 'Error al crear empresa: ' + empresaError.message }, 400);
+    }
+
+    const { data: usuario, error: usuarioError } = await supabase
+      .from('usuarios')
+      .insert({
+        empresa_id: empresa.id,
+        auth_user_id: authData.user.id,
+        nombre_completo: usuario_nombre,
+        email: usuario_email,
+        rol: 'admin',
+        activo: true
+      })
+      .select()
+      .single();
+
+    if (usuarioError) return c.json({ error: 'Error al crear usuario en DB: ' + usuarioError.message }, 400);
+
+    await supabase.from('bodegas').insert({
+      empresa_id: empresa.id,
+      codigo: 'PRINCIPAL',
+      nombre: 'Bodega Principal',
+      tipo: 'principal',
+      activa: true
+    });
+
+    return c.json({ message: 'Empresa y usuario creados exitosamente', empresa, usuario }, 201);
+  } catch (error: any) {
+    return c.json({ error: 'Error interno: ' + error.message }, 500);
+  }
+});
+
+app.post("/server/auth/login", async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  try {
+    const { email, password } = await c.req.json();
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (error) return c.json({ error: 'Credenciales inválidas' }, 401);
+
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const { data: usuario } = await supabaseAdmin
+      .from('usuarios')
+      .select('*, empresas(*)')
+      .eq('auth_user_id', data.user.id)
+      .single();
+
+    if (!usuario) return c.json({ error: 'Usuario no encontrado' }, 404);
+
+    await supabaseAdmin.from('usuarios').update({ ultima_sesion: new Date().toISOString() }).eq('id', usuario.id);
+
+    // Registrar login en auditoría
+    await registrarAuditoria(
+      usuario.empresa_id, usuario.id, 'login', 'sistema', 'usuarios',
+      usuario.id, null, { email: usuario.email },
+      c.req.header('x-forwarded-for') || null
+    );
+
+    return c.json({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      user: {
+        id: usuario.id,
+        nombre: usuario.nombre_completo,
+        email: usuario.email,
+        rol: usuario.rol,
+        empresa: {
+          ...usuario.empresas,
+          plan: usuario.empresas?.plan_tipo || usuario.empresas?.plan || 'basico'
+        }
+      }
+    });
+  } catch (error) {
+    return c.json({ error: 'Error en login' }, 500);
+  }
+});
+
+// =====================================================
+// RUTAS: PUNTO DE VENTA (POS)
+// (productos manejados por setupPOSRoutes usando KV Store)
+// =====================================================
+
+app.post("/server/pos/ventas", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    const body = await c.req.json();
+    const numero_ticket = `T${Date.now()}`;
+    const venta = await guardarVenta(auth.empresaId, {
+      ...body,
+      numero_ticket,
+      fecha: new Date().toISOString(),
+      usuario_id: auth.userId,
+      estado: 'completada'
+    });
+    return c.json({ message: 'Venta creada exitosamente', venta }, 201);
+  } catch (error: any) {
+    return c.json({ error: 'Error al crear venta', details: error.message }, 500);
+  }
+});
+
+// =====================================================
+// OTROS MÓDULOS Y CONFIGURACIONES
+// =====================================================
+
+setupPOSRoutes(app, authMiddleware);
+setupInventarioRoutes(app, authMiddleware);
+setupCocinaRoutes(app, authMiddleware);
+setupDashboardRoutes(app, authMiddleware);
+setupBIRoutes(app, authMiddleware);
+setupRRHHRoutes(app, authMiddleware);
+setupIngenieriaMenuRoutes(app, authMiddleware);
+setupUsuariosRoutes(app, authMiddleware);
+setupAuditoriaRoutes(app, authMiddleware);
+setupContabilidadRoutes(app, authMiddleware);
+setupMesasRoutes(app, authMiddleware);
+setupCajaRoutes(app, authMiddleware);
+
+// Rutas de compatibilidad para evitar 404
+app.get("/server/dashboard/kpis", authMiddleware, (c) => c.json({ kpis: [] }));
+app.get("/server/centros-costos", authMiddleware, (c) => c.json({ centros_costos: [] }));
+app.get("/server/compras", authMiddleware, (c) => c.json({ compras: [] }));
+app.post("/server/categorias/inicializar", authMiddleware, (c) => c.json({ success: true }));
+
+// Inventario: vista de stock (productos con sus datos de inventario)
+app.get("/server/inventario", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    const productos = await obtenerProductos(auth.empresaId);
+    const bodegas = await obtenerBodegas(auth.empresaId);
+    const bodegaPrincipal = bodegas.find((b: any) => b.tipo === 'principal') || bodegas[0] || { nombre: 'Bodega Principal' };
+
+    const inventario = productos.map((p: any) => {
+      const stock = p.stock_actual ?? p.stock ?? 0;
+      const costo = p.precio_compra || p.precio || 0;
+      return {
+        ...p,
+        stock_actual: stock,
+        stock_minimo: p.stock_minimo ?? 0,
+        stock_maximo: p.stock_maximo ?? 0,
+        costo_promedio: costo,
+        // Estructura que espera el frontend
+        productos: { nombre: p.nombre, codigo: p.codigo || '' },
+        bodegas: { nombre: bodegaPrincipal.nombre || 'Bodega Principal' },
+      };
+    });
+    return c.json({ inventario });
+  } catch (error: any) {
+    return c.json({ error: 'Error al obtener inventario', details: error.message }, 500);
+  }
+});
+
+// Estado del sistema para ConfiguracionSistema
+app.get("/server/datos/estado", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    const productos = await obtenerProductos(auth.empresaId);
+    const categorias = await obtenerCategorias(auth.empresaId);
+    const ventas = await obtenerVentas(auth.empresaId);
+    const comandas = await obtenerComandas(auth.empresaId);
+    const comandasActivas = comandas.filter((c: any) => c.estado !== 'entregada' && c.estado !== 'cancelada');
+    return c.json({
+      tiene_datos: productos.length > 0,
+      estadisticas: {
+        productos: productos.length,
+        categorias: categorias.length,
+        ventas: ventas.length,
+        comandas: comandasActivas.length,
+      },
+      empresa_id: auth.empresaId
+    });
+  } catch (error: any) {
+    return c.json({ error: 'Error al obtener estado', details: error.message }, 500);
+  }
+});
+
+// Límites del plan de la empresa
+app.get("/server/empresa/plan-limites", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const planTipo = auth.user?.empresas?.plan_tipo || 'enterprise';
+    const planNombres: Record<string, string> = { basico: 'Básico', profesional: 'Profesional', enterprise: 'Enterprise' };
+    const maxUsuarios = planTipo === 'basico' ? 3 : planTipo === 'profesional' ? 10 : 999;
+    const maxBodegas = planTipo === 'basico' ? 2 : planTipo === 'profesional' ? 5 : 999;
+
+    // Contar usuarios actuales de la empresa
+    const { data: usuariosData } = await supabase
+      .from('usuarios')
+      .select('id', { count: 'exact' })
+      .eq('empresa_id', auth.empresaId);
+    const usuariosActuales = usuariosData?.length || 0;
+
+    // Contar bodegas actuales
+    const bodegas = await obtenerBodegas(auth.empresaId);
+    const bodegasActuales = bodegas.length;
+
+    return c.json({
+      plan: {
+        nombre: planNombres[planTipo] || 'Enterprise',
+        tipo: planTipo,
+        max_usuarios: maxUsuarios,
+        max_bodegas: maxBodegas,
+      },
+      uso_actual: {
+        usuarios: usuariosActuales,
+        bodegas: bodegasActuales,
+      },
+      limites_alcanzados: {
+        usuarios: usuariosActuales >= maxUsuarios,
+        bodegas: bodegasActuales >= maxBodegas,
+      },
+      modulos: auth.user?.empresas?.modulos_activos || { pos: true, inventario: true, contabilidad: true, rrhh: true, cocina: true, auditoria: true, bi: true }
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// Facturación: configuración
+app.get("/server/facturacion/configuracion", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleGetConfiguracionFacturacion(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+app.post("/server/facturacion/configuracion", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleSaveConfiguracionFacturacion(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+app.get("/server/facturacion/facturas", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleGetFacturas(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ facturas: [], error: error.message });
+  }
+});
+app.post("/server/facturacion/generar", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleGenerarFactura(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+app.post("/server/facturacion/facturas/:id/autorizar", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleAutorizarFactura(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+app.post("/server/facturacion/facturas/:id/reenviar-email", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleReenviarEmailFactura(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+// Flat routes used by ConsultaFacturas.tsx
+app.post("/server/facturacion/reintentar", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleReintentarAutorizacion(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+app.post("/server/facturacion/reenviar-email", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleReenviarEmailFactura(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+// SRI connectivity diagnostic (GET — returns full test report)
+app.get("/server/facturacion/test-sri", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleTestSRI(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+// Certificate management
+app.post("/server/facturacion/certificado", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleUploadCertificado(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+app.get("/server/facturacion/certificado/info", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleGetCertificadoInfo(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.get("/server/inventario/lotes", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data } = await supabase.from('inventario_lotes').select('*').eq('empresa_id', auth.empresaId);
+  return c.json({ lotes: data || [] });
+});
+
+// =====================================================
+// INICIAR SERVIDOR (CORS NATIVO)
+// =====================================================
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-user-token, accept',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+};
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  try {
+    const res = await app.fetch(req);
+    const newHeaders = new Headers(res.headers);
+    Object.entries(corsHeaders).forEach(([k, v]) => newHeaders.set(k, v));
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: newHeaders });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e.message }), { 
+      status: 500, 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    });
+  }
+});
