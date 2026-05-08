@@ -282,6 +282,38 @@ app.post("/server/auth/create-super-admin", async (c) => {
       return c.json({ error: 'Ya existe un Super Administrador en el sistema' }, 409);
     }
 
+    // Obtener o crear la empresa "Sistema MAR" para el super admin
+    let sistemaEmpresaId: string;
+    const { data: empresaSistema } = await supabase
+      .from('empresas')
+      .select('id')
+      .eq('ruc_nit', '0000000000001')
+      .maybeSingle();
+
+    if (empresaSistema) {
+      sistemaEmpresaId = empresaSistema.id;
+    } else {
+      const { data: nuevaEmpresa, error: empresaError } = await supabase
+        .from('empresas')
+        .insert({
+          nombre: 'Sistema MAR',
+          ruc_nit: '0000000000001',
+          razon_social: 'Sistema MAR - Super Admin',
+          email: email,
+          plan_tipo: 'enterprise',
+          estado: 'activo',
+          fecha_expiracion: new Date(Date.now() + 99 * 365 * 24 * 60 * 60 * 1000).toISOString(),
+          modulos_activos: { pos: true, inventario: true, contabilidad: true, rrhh: true, cocina: true, auditoria: true, bi: true }
+        })
+        .select('id')
+        .single();
+
+      if (empresaError || !nuevaEmpresa) {
+        return c.json({ error: 'Error al crear empresa del sistema: ' + (empresaError?.message || 'desconocido') }, 400);
+      }
+      sistemaEmpresaId = nuevaEmpresa.id;
+    }
+
     // Crear usuario en Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
@@ -294,7 +326,7 @@ app.post("/server/auth/create-super-admin", async (c) => {
       return c.json({ error: 'Error al crear usuario: ' + authError.message }, 400);
     }
 
-    // Crear registro en tabla usuarios (sin empresa_id)
+    // Crear registro en tabla usuarios con la empresa sistema
     const { data: usuario, error: usuarioError } = await supabase
       .from('usuarios')
       .insert({
@@ -303,7 +335,7 @@ app.post("/server/auth/create-super-admin", async (c) => {
         email,
         rol: 'super_admin',
         activo: true,
-        empresa_id: null
+        empresa_id: sistemaEmpresaId
       })
       .select()
       .single();
