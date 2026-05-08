@@ -67,14 +67,15 @@ async function authMiddleware(c: any, next: any) {
       return c.json({ error: 'Usuario no encontrado en el sistema' }, 404);
     }
 
-    if (userData.empresas?.estado !== 'activo') {
+    // Super admin no tiene empresa asignada — permitir siempre
+    if (userData.rol !== 'super_admin' && userData.empresas?.estado !== 'activo') {
       return c.json({ error: 'Empresa suspendida o inactiva. Contacte al administrador.' }, 403);
     }
 
     // Guardar contexto de autenticación
     c.set('auth', {
       userId: userData.id,
-      empresaId: userData.empresa_id,
+      empresaId: userData.empresa_id || 'super_admin',
       userRole: userData.rol,
       user: userData
     } as AuthContext);
@@ -214,14 +215,21 @@ app.post("/server/auth/login", async (c) => {
 
     if (!usuario) return c.json({ error: 'Usuario no encontrado' }, 404);
 
+    // Super admin no tiene empresa — permitir igual
+    if (usuario.rol !== 'super_admin' && usuario.empresas?.estado !== 'activo') {
+      return c.json({ error: 'Empresa suspendida o inactiva. Contacte al administrador.' }, 403);
+    }
+
     await supabaseAdmin.from('usuarios').update({ ultima_sesion: new Date().toISOString() }).eq('id', usuario.id);
 
-    // Registrar login en auditoría
-    await registrarAuditoria(
-      usuario.empresa_id, usuario.id, 'login', 'sistema', 'usuarios',
-      usuario.id, null, { email: usuario.email },
-      c.req.header('x-forwarded-for') || null
-    );
+    // Registrar login en auditoría (solo si tiene empresa)
+    if (usuario.empresa_id) {
+      await registrarAuditoria(
+        usuario.empresa_id, usuario.id, 'login', 'sistema', 'usuarios',
+        usuario.id, null, { email: usuario.email },
+        c.req.header('x-forwarded-for') || null
+      );
+    }
 
     return c.json({
       access_token: data.session.access_token,
@@ -231,14 +239,84 @@ app.post("/server/auth/login", async (c) => {
         nombre: usuario.nombre_completo,
         email: usuario.email,
         rol: usuario.rol,
-        empresa: {
+        empresa: usuario.empresas ? {
           ...usuario.empresas,
           plan: usuario.empresas?.plan_tipo || usuario.empresas?.plan || 'basico'
+        } : {
+          id: null,
+          nombre: 'Sistema MAR',
+          plan: 'enterprise',
+          plan_tipo: 'enterprise',
+          estado: 'activo',
+          modulos_activos: { pos: true, inventario: true, contabilidad: true, rrhh: true, cocina: true, auditoria: true, bi: true }
         }
       }
     });
   } catch (error) {
     return c.json({ error: 'Error en login' }, 500);
+  }
+});
+
+// Crear Super Admin (solo si no existe ninguno)
+app.post("/server/auth/create-super-admin", async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { nombre, email, password } = await c.req.json();
+
+    if (!nombre || !email || !password) {
+      return c.json({ error: 'Nombre, email y contraseña son requeridos' }, 400);
+    }
+    if (password.length < 6) {
+      return c.json({ error: 'La contraseña debe tener al menos 6 caracteres' }, 400);
+    }
+
+    // Verificar si ya existe un super admin
+    const { data: existente } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('rol', 'super_admin')
+      .limit(1)
+      .maybeSingle();
+
+    if (existente) {
+      return c.json({ error: 'Ya existe un Super Administrador en el sistema' }, 409);
+    }
+
+    // Crear usuario en Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { nombre, rol: 'super_admin' }
+    });
+
+    if (authError) {
+      return c.json({ error: 'Error al crear usuario: ' + authError.message }, 400);
+    }
+
+    // Crear registro en tabla usuarios (sin empresa_id)
+    const { data: usuario, error: usuarioError } = await supabase
+      .from('usuarios')
+      .insert({
+        auth_user_id: authData.user.id,
+        nombre_completo: nombre,
+        email,
+        rol: 'super_admin',
+        activo: true,
+        empresa_id: null
+      })
+      .select()
+      .single();
+
+    if (usuarioError) {
+      // Limpiar usuario de auth si falla la BD
+      await supabase.auth.admin.deleteUser(authData.user.id);
+      return c.json({ error: 'Error al guardar usuario: ' + usuarioError.message }, 400);
+    }
+
+    return c.json({ message: 'Super Admin creado exitosamente', usuario }, 201);
+  } catch (error: any) {
+    return c.json({ error: 'Error interno: ' + error.message }, 500);
   }
 });
 
