@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -9,11 +9,31 @@ import { toast } from 'sonner';
 export function CreateSuperAdmin() {
   const [isLoading, setIsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [superAdminExists, setSuperAdminExists] = useState<boolean | null>(null);
   const [formData, setFormData] = useState({
     nombre: '',
     email: '',
     password: ''
   });
+
+  useEffect(() => {
+    const checkSuperAdmin = async () => {
+      try {
+        const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+        const res = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/auth/super-admin-exists`,
+          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setSuperAdminExists(data.exists);
+        }
+      } catch {
+        setSuperAdminExists(false);
+      }
+    };
+    checkSuperAdmin();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +74,9 @@ export function CreateSuperAdmin() {
       setIsLoading(false);
     }
   };
+
+  // No mostrar nada si ya existe un super admin o mientras se verifica
+  if (superAdminExists === null || superAdminExists === true) return null;
 
   return (
     <>

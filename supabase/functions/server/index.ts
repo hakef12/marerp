@@ -257,6 +257,22 @@ app.post("/server/auth/login", async (c) => {
   }
 });
 
+// Verificar si ya existe un super admin
+app.get("/server/auth/super-admin-exists", async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { data } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('rol', 'super_admin')
+      .limit(1)
+      .maybeSingle();
+    return c.json({ exists: !!data });
+  } catch {
+    return c.json({ exists: false });
+  }
+});
+
 // Crear Super Admin (solo si no existe ninguno)
 app.post("/server/auth/create-super-admin", async (c) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
