@@ -6,7 +6,7 @@ import {
   FolderKanban, TrendingUp, FileText, Bell, X, CheckCheck,
   Utensils, Wallet, CreditCard, Crown, Warehouse,
 } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { DiagnosticoPanel } from '../DiagnosticoPanel';
 import { MARLogo } from '../MARLogo';
 import { tieneAcceso, labelRol, badgeRol, type Modulo } from '../../utils/permisos';
@@ -45,9 +45,11 @@ export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLButtonElement>(null);
 
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
 
   // Poll real notifications every 30 seconds
   useEffect(() => {
@@ -77,12 +79,13 @@ export default function Sidebar() {
     return () => clearInterval(interval);
   }, []);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside (works with fixed positioning)
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowNotifs(false);
-      }
+      const target = e.target as Node;
+      const inBell = bellRef.current?.contains(target);
+      const inDropdown = dropdownRef.current?.contains(target);
+      if (!inBell && !inDropdown) setShowNotifs(false);
     }
     if (showNotifs) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -154,9 +157,16 @@ export default function Sidebar() {
             <p className="text-[#00E5FF] text-xs font-medium">{user?.empresa?.plan?.toUpperCase() ?? ''}</p>
           </div>
           {/* Notification Bell */}
-          <div className="relative flex-shrink-0" ref={dropdownRef}>
+          <div className="relative flex-shrink-0">
             <button
-              onClick={() => setShowNotifs(v => !v)}
+              ref={bellRef}
+              onClick={() => {
+                if (!showNotifs && bellRef.current) {
+                  const r = bellRef.current.getBoundingClientRect();
+                  setDropdownPos({ top: r.bottom + 8, left: r.left });
+                }
+                setShowNotifs(v => !v);
+              }}
               className="relative p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-all duration-200"
               title="Notificaciones"
             >
@@ -169,7 +179,11 @@ export default function Sidebar() {
             </button>
 
             {showNotifs && (
-              <div className="absolute left-0 top-full mt-2 w-80 bg-[#0A1A2F] border border-[#00E5FF]/20 rounded-xl shadow-2xl shadow-black/60 z-50 overflow-hidden">
+              <div
+                ref={dropdownRef}
+                style={{ top: dropdownPos.top, left: dropdownPos.left }}
+                className="fixed w-80 bg-[#0A1A2F] border border-[#00E5FF]/20 rounded-xl shadow-2xl shadow-black/60 z-[9999] overflow-hidden"
+              >
                 <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
                   <span className="text-white text-sm font-semibold flex items-center gap-2">
                     <Bell className="w-4 h-4 text-[#00E5FF]" />
