@@ -4,12 +4,13 @@ import {
   LayoutDashboard, ShoppingCart, Package, Calculator, Users, ChefHat,
   Shield, BarChart3, Settings, LogOut, UserCog,
   FolderKanban, TrendingUp, FileText, Bell, X, CheckCheck,
-  Utensils, Wallet, CreditCard, Crown,
+  Utensils, Wallet, CreditCard, Crown, Warehouse,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { DiagnosticoPanel } from '../DiagnosticoPanel';
 import { MARLogo } from '../MARLogo';
 import { tieneAcceso, labelRol, badgeRol, type Modulo } from '../../utils/permisos';
+import { BodegaSelector } from '../BodegaSelector';
 
 interface Notif {
   id: string;
@@ -138,6 +139,7 @@ export default function Sidebar() {
     ['configuracion',    '/configuracion',           Settings,        'Configuración',         true],
     ['suscripcion',      '/suscripcion',             CreditCard,      'Suscripción',           true],
     ['admin_panel',      '/admin',                   Crown,           'Super Admin',           true],
+    ['produccion',       '/produccion',              Warehouse,       'Producción',            true],
   ];
 
   const modulos = NAV_ITEMS.filter(([modulo, , , , activoEnPlan]) =>
@@ -242,6 +244,13 @@ export default function Sidebar() {
         </div>
         <p className="text-gray-400 text-sm truncate">{user?.empresa.nombre}</p>
       </div>
+
+      {/* Bodega Selector */}
+      {['admin','gerente','super_admin','bodeguero'].includes(rol) && (
+        <div className="border-b border-white/5">
+          <BodegaSelector />
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">

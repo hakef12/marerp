@@ -2,6 +2,7 @@ import { RouterProvider } from 'react-router';
 import { router } from './routes';
 import { Toaster } from './components/ui/sonner';
 import { AuthProvider } from './context/AuthContext';
+import { BodegaProvider } from './context/BodegaContext';
 import { useEffect } from 'react';
 
 export default function App() {
@@ -19,8 +20,10 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <RouterProvider router={router} />
-      <Toaster position="top-right" richColors />
+      <BodegaProvider>
+        <RouterProvider router={router} />
+        <Toaster position="top-right" richColors />
+      </BodegaProvider>
     </AuthProvider>
   );
 }

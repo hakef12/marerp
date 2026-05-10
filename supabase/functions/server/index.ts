@@ -16,6 +16,8 @@ import { setupAuditoriaRoutes } from "./auditoria-routes.tsx";
 import { setupContabilidadRoutes } from "./contabilidad-routes.tsx";
 import { setupMesasRoutes } from "./mesas-routes.tsx";
 import { setupCajaRoutes } from "./caja-routes.tsx";
+import { setupProduccionRoutes } from "./produccion-routes.tsx";
+import { setupTransferenciasRoutes } from "./transferencias-routes.tsx";
 import { registrarAuditoria } from "./audit-helper.tsx";
 import { inicializarDatosDemo, cargarDatosDemo, limpiarTodosLosDatos, obtenerProductos, obtenerCategorias, obtenerVentas, obtenerComandas, guardarVenta, guardarComanda, actualizarComanda, guardarProducto, obtenerBodegas } from "./kv-helpers.tsx";
 
@@ -407,6 +409,8 @@ setupAuditoriaRoutes(app, authMiddleware);
 setupContabilidadRoutes(app, authMiddleware);
 setupMesasRoutes(app, authMiddleware);
 setupCajaRoutes(app, authMiddleware);
+setupProduccionRoutes(app, authMiddleware);
+setupTransferenciasRoutes(app, authMiddleware);
 
 // Rutas de compatibilidad para evitar 404
 app.get("/server/dashboard/kpis", authMiddleware, (c) => c.json({ kpis: [] }));
@@ -560,6 +564,41 @@ app.get("/server/admin/estadisticas", authMiddleware, superAdminMiddleware, asyn
       total_usuarios: usuarios?.length || 0,
       por_plan: porPlan
     });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// Consolidado: resumen por empresa con bodegas (super_admin)
+app.get("/server/admin/consolidado", authMiddleware, superAdminMiddleware, async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { data: empresas } = await supabase
+      .from('empresas')
+      .select('id, nombre, plan_tipo, estado')
+      .neq('ruc_nit', '0000000000001')
+      .order('nombre');
+
+    const consolidado = await Promise.all(
+      (empresas || []).map(async (emp: any) => {
+        const bodegas = await obtenerBodegas(emp.id);
+        return {
+          empresa_id: emp.id,
+          empresa_nombre: emp.nombre,
+          plan: emp.plan_tipo,
+          estado: emp.estado,
+          bodegas: bodegas.map((b: any) => ({
+            id: b.id,
+            nombre: b.nombre,
+            tipo: b.tipo,
+            activa: b.activa,
+          })),
+          total_bodegas: bodegas.length,
+        };
+      })
+    );
+
+    return c.json({ data: consolidado });
   } catch (error: any) {
     return c.json({ error: error.message }, 500);
   }

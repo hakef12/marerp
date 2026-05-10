@@ -31,7 +31,9 @@ export type Modulo =
   | 'configuracion'
   | 'usuarios'
   | 'suscripcion'
-  | 'admin_panel';
+  | 'admin_panel'
+  | 'produccion'
+  | 'transferencias';
 
 /** Descripción visual de cada rol */
 export const ROLES_INFO: Record<string, { label: string; descripcion: string; color: string; badge: string }> = {
@@ -52,19 +54,22 @@ export const MODULOS_POR_ROL: Record<string, Modulo[]> = {
     'dashboard','pos','mesas','caja','inventario','cocina','ingenieria_menu',
     'facturacion','facturacion_config','contabilidad','rrhh','bi',
     'auditoria','proyectos','configuracion','usuarios','suscripcion',
+    'produccion','transferencias',
   ],
   admin: [
     'dashboard','pos','mesas','caja','inventario','cocina','ingenieria_menu',
     'facturacion','facturacion_config','contabilidad','rrhh','bi',
     'auditoria','proyectos','configuracion','usuarios','suscripcion',
+    'produccion','transferencias',
   ],
   super_admin: [
     'dashboard','pos','mesas','caja','inventario','cocina','ingenieria_menu',
     'facturacion','facturacion_config','contabilidad','rrhh','bi',
     'auditoria','proyectos','configuracion','usuarios','suscripcion','admin_panel',
+    'produccion','transferencias',
   ],
   cajero:     ['dashboard','pos','mesas','caja','cocina','facturacion'],
-  bodeguero:  ['dashboard','inventario'],
+  bodeguero:  ['dashboard','inventario','produccion','transferencias'],
   contador:   ['dashboard','facturacion','facturacion_config','contabilidad','bi'],
   cocinero:   ['dashboard','cocina'],
   rrhh:       ['dashboard','rrhh'],

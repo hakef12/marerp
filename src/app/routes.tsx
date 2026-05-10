@@ -18,6 +18,7 @@ import ConfiguracionFacturacion from "./pages/ConfiguracionFacturacion";
 import ConsultaFacturas from "./pages/ConsultaFacturas";
 import ConfiguracionSistema from "./pages/ConfiguracionSistema";
 import Suscripcion from "./pages/Suscripcion";
+import Produccion from "./pages/Produccion";
 import NotFound from "./pages/NotFound";
 import AppLayout from "./components/AppLayout";
 import KDSScreen from "./pages/KDSScreen";
@@ -51,6 +52,7 @@ export const router = createBrowserRouter([
       { path: "facturacion/consulta", Component: ConsultaFacturas },
       { path: "configuracion", Component: ConfiguracionSistema },
       { path: "suscripcion", Component: Suscripcion },
+      { path: "produccion", Component: Produccion },
       { path: "*", Component: NotFound },
     ],
   },
