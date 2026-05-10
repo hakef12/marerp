@@ -30,9 +30,18 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
     try {
       const productosReales = await obtenerProductos(auth.empresaId);
       const categoriasData = await obtenerCategorias(auth.empresaId);
-      const categoriasMap = new Map(categoriasData.map((cat: any) => [cat.id, cat]));
+      // Indexar categorías tanto por id como por nombre (el modal usa el nombre como id)
+      const categoriasMap = new Map([
+        ...categoriasData.map((cat: any) => [cat.id, cat]),
+        ...categoriasData.map((cat: any) => [cat.nombre, cat]),
+      ]);
       const productosConCategorias = productosReales
-        .map((p: any) => ({ ...p, categorias: p.categoria_id ? categoriasMap.get(p.categoria_id) : null }))
+        .map((p: any) => ({
+          ...p,
+          categorias: p.categoria_id
+            ? (categoriasMap.get(p.categoria_id) || { nombre: p.categoria_id })
+            : null
+        }))
         .sort((a: any, b: any) => (a.nombre || '').localeCompare(b.nombre || ''));
       return c.json({ productos: productosConCategorias });
     } catch (error: any) {
