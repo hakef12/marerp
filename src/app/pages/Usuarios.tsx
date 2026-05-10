@@ -492,35 +492,43 @@ export default function Usuarios() {
                 )}
 
                 {/* Sucursal asignada (solo para roles de ubicación fija) */}
-                {['cajero', 'bodeguero', 'cocinero'].includes(formData.rol) && bodegas.length > 0 && (
+                {['cajero', 'bodeguero', 'cocinero'].includes(formData.rol) && (
                   <div>
                     <Label className="text-gray-300 mb-1.5 block">Sucursal asignada</Label>
-                    <Select
-                      value={formData.bodega_id || '__none__'}
-                      onValueChange={v => {
-                        if (v === '__none__') {
-                          setFormData(f => ({ ...f, bodega_id: '', bodega_nombre: '' }));
-                        } else {
-                          const b = bodegas.find(b => b.id === v);
-                          setFormData(f => ({ ...f, bodega_id: v, bodega_nombre: b?.nombre || '' }));
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
-                        <SelectValue placeholder="Sin asignar (acceso a todas)" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
-                        <SelectItem value="__none__" className="text-gray-400">Sin asignar (acceso a todas)</SelectItem>
-                        {bodegas.map(b => (
-                          <SelectItem key={b.id} value={b.id} className="text-white">
-                            {b.nombre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-gray-600 mt-1">
-                      Si asignas una sucursal, el usuario solo podrá ver y operar en esa ubicación.
-                    </p>
+                    {bodegas.length === 0 ? (
+                      <p className="text-xs text-yellow-500/80 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
+                        No hay sucursales/bodegas configuradas aún. Créalas primero en el módulo de Inventario.
+                      </p>
+                    ) : (
+                      <>
+                        <Select
+                          value={formData.bodega_id || '__none__'}
+                          onValueChange={v => {
+                            if (v === '__none__') {
+                              setFormData(f => ({ ...f, bodega_id: '', bodega_nombre: '' }));
+                            } else {
+                              const b = bodegas.find(b => b.id === v);
+                              setFormData(f => ({ ...f, bodega_id: v, bodega_nombre: b?.nombre || '' }));
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+                            <SelectValue placeholder="Sin asignar (acceso a todas)" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                            <SelectItem value="__none__" className="text-gray-400">Sin asignar (acceso a todas)</SelectItem>
+                            {bodegas.map(b => (
+                              <SelectItem key={b.id} value={b.id} className="text-white">
+                                {b.nombre}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Si asignas una sucursal, el usuario solo podrá ver y operar en esa ubicación.
+                        </p>
+                      </>
+                    )}
                   </div>
                 )}
 
