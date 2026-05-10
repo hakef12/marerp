@@ -11,6 +11,8 @@ import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { ExportButtons } from '../components/ExportButtons';
+import { exportToExcel, exportToPDF } from '../utils/exportUtils';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -249,11 +251,51 @@ export default function Mesas() {
           <h1 className="text-3xl font-bold text-white mb-1">Plano de Mesas</h1>
           <p className="text-gray-400 text-sm">Vista en tiempo real · se actualiza cada 30 s</p>
         </div>
-        <button onClick={fetchMesas} disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-[#00E5FF]/20 text-gray-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-40">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#00E5FF]' : ''}`} />
-          <span className="text-sm">Actualizar</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportButtons
+            variant="compact"
+            onExportExcel={() => exportToExcel(
+              mesas.map(m => ({
+                'Mesa': m.nombre || `Mesa ${m.numero}`,
+                'Número': m.numero,
+                'Zona': m.zona,
+                'Capacidad': m.capacidad,
+                'Estado': ESTADO_CONFIG[m.estado].label,
+                'Mesero': m.mesero_nombre || '-',
+                'Personas': m.personas || 0,
+                'Consumo ($)': m.consumo_acumulado.toFixed(2),
+                'Hora ocupación': m.hora_ocupacion ? new Date(m.hora_ocupacion).toLocaleTimeString() : '-',
+              })),
+              'Mesas',
+              'Mesas'
+            )}
+            onExportPDF={() => exportToPDF(
+              mesas.map(m => ({
+                mesa: m.nombre || `Mesa ${m.numero}`,
+                zona: m.zona,
+                capacidad: m.capacidad,
+                estado: ESTADO_CONFIG[m.estado].label,
+                mesero: m.mesero_nombre || '-',
+                consumo: `$${m.consumo_acumulado.toFixed(2)}`,
+              })),
+              [
+                { header: 'Mesa', key: 'mesa' },
+                { header: 'Zona', key: 'zona' },
+                { header: 'Capacidad', key: 'capacidad' },
+                { header: 'Estado', key: 'estado' },
+                { header: 'Mesero', key: 'mesero' },
+                { header: 'Consumo', key: 'consumo' },
+              ],
+              'Plano de Mesas',
+              'Mesas'
+            )}
+          />
+          <button onClick={fetchMesas} disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-[#00E5FF]/20 text-gray-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-40">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#00E5FF]' : ''}`} />
+            <span className="text-sm">Actualizar</span>
+          </button>
+        </div>
       </div>
 
       {/* ── KPIs ───────────────────────────────────────────── */}

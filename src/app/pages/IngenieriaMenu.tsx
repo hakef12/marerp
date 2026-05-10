@@ -20,6 +20,8 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { ExportButtons } from '../components/ExportButtons';
+import { exportToExcel, exportToPDF } from '../utils/exportUtils';
 
 interface PlatoMatriz {
   plato_id: string;
@@ -162,7 +164,45 @@ export default function IngenieriaMenu() {
             Análisis estratégico de rentabilidad y popularidad (Matriz Boston)
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          <ExportButtons
+            variant="compact"
+            onExportExcel={() => exportToExcel(
+              matriz.map(p => ({
+                'Plato': p.nombre,
+                'Categoría': p.categoria,
+                'Precio': p.precio,
+                'Costo': p.costo_unitario,
+                'Margen %': p.porcentaje_margen,
+                'Vendidos': p.cantidad_vendida,
+                'Ingresos': p.ingresos_totales,
+                'Clasificación': p.categoria_boston,
+                'Recomendación': p.recomendacion,
+              })),
+              'IngenieriaMenu',
+              'Matriz Boston'
+            )}
+            onExportPDF={() => exportToPDF(
+              matriz.map(p => ({
+                plato: p.nombre,
+                categoria: p.categoria,
+                precio: `$${p.precio}`,
+                margen: `${p.porcentaje_margen}%`,
+                vendidos: p.cantidad_vendida,
+                clasificacion: p.categoria_boston,
+              })),
+              [
+                { header: 'Plato', key: 'plato' },
+                { header: 'Categoría', key: 'categoria' },
+                { header: 'Precio', key: 'precio' },
+                { header: 'Margen', key: 'margen' },
+                { header: 'Vendidos', key: 'vendidos' },
+                { header: 'Clasificación', key: 'clasificacion' },
+              ],
+              'Ingeniería de Menú',
+              'IngenieriaMenu'
+            )}
+          />
           <select
             value={periodoAnterior}
             onChange={(e) => setPeriodoAnterior(Number(e.target.value))}

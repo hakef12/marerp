@@ -12,6 +12,8 @@ import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 import { ROLES_INFO, MODULOS_POR_ROL, ROLES_ADMIN, labelRol, badgeRol } from '../utils/permisos';
+import { ExportButtons } from '../components/ExportButtons';
+import { exportToExcel, exportToPDF } from '../utils/exportUtils';
 
 interface Usuario {
   id: string;
@@ -198,13 +200,49 @@ export default function Usuarios() {
             Cuenta gerente: <span className="text-white font-medium">{user?.email}</span>
           </p>
         </div>
-        {esAdmin && (
-          <Button onClick={abrirCrear}
-            className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90 shadow-lg shadow-[#00E5FF]/20">
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo Usuario
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <ExportButtons
+            variant="compact"
+            onExportExcel={() => exportToExcel(
+              usuarios.map(u => ({
+                'Nombre': u.nombre_completo,
+                'Email': u.email,
+                'Rol': labelRol(u.rol),
+                'Puesto': u.puesto || '-',
+                'Estado': u.activo ? 'Activo' : 'Inactivo',
+                'Último acceso': u.ultimo_acceso ? new Date(u.ultimo_acceso).toLocaleString() : '-',
+                'Creado': new Date(u.created_at).toLocaleDateString(),
+              })),
+              'Usuarios',
+              'Usuarios'
+            )}
+            onExportPDF={() => exportToPDF(
+              usuarios.map(u => ({
+                nombre: u.nombre_completo,
+                email: u.email,
+                rol: labelRol(u.rol),
+                estado: u.activo ? 'Activo' : 'Inactivo',
+                puesto: u.puesto || '-',
+              })),
+              [
+                { header: 'Nombre', key: 'nombre' },
+                { header: 'Email', key: 'email' },
+                { header: 'Rol', key: 'rol' },
+                { header: 'Estado', key: 'estado' },
+                { header: 'Puesto', key: 'puesto' },
+              ],
+              'Gestión de Usuarios',
+              'Usuarios'
+            )}
+          />
+          {esAdmin && (
+            <Button onClick={abrirCrear}
+              className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90 shadow-lg shadow-[#00E5FF]/20">
+              <Plus className="w-4 h-4 mr-2" />
+              Nuevo Usuario
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* ── Indicador de plan ────────────────────────────────── */}
