@@ -25,6 +25,21 @@ export function setupStockBodegaRoutes(app: any, authMiddleware: any) {
     }
   });
 
+  // ─── GET /server/stock/bodega/:bodegaId/producto/:productoNombre ──────────
+  // Returns { stock: number } for a specific bodega + product
+  app.get("/server/stock/bodega/:bodegaId/producto/:productoNombre", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const bodegaId = c.req.param('bodegaId');
+      const productoNombre = decodeURIComponent(c.req.param('productoNombre'));
+      const stockMap = await getStockBodega(auth.empresaId, bodegaId);
+      const stock = stockMap[productoNombre] || 0;
+      return c.json({ stock });
+    } catch (error: any) {
+      return c.json({ error: 'Error al obtener stock', details: error.message }, 500);
+    }
+  });
+
   // ─── GET /server/stock/consolidado ────────────────────────────────────────
   // Returns all bodegas with their stock: [{ bodega_id, bodega_nombre, productos: [{nombre, cantidad}] }]
   app.get("/server/stock/consolidado", authMiddleware, async (c: any) => {

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useBodega } from '../context/BodegaContext';
+import { ExportButtons } from '../components/ExportButtons';
+import { exportToPDF, exportToExcel, exportMultipleSheetsToExcel } from '../utils/exportUtils';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -126,7 +128,7 @@ function EstadoBadge({ estado, map, labelMap }: { estado: string; map: Record<st
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Produccion() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { bodegas } = useBodega();
 
   const [ordenes, setOrdenes] = useState<OrdenProduccion[]>([]);
@@ -174,6 +176,7 @@ export default function Produccion() {
   });
 
   const [submitting, setSubmitting] = useState(false);
+  const [stockDisponible, setStockDisponible] = useState<number | null>(null);
 
   // ─── Fetch helpers ──────────────────────────────────────────────────────────
 
@@ -270,6 +273,31 @@ export default function Produccion() {
   };
 
   useEffect(() => { loadAll(); }, []);
+
+  // ─── Role-based permissions ─────────────────────────────────────────────────
+  const puedeAprobar = ['admin', 'gerente', 'super_admin'].includes(user?.rol ?? '');
+
+  // ─── Fetch stock disponible when transfer form changes ──────────────────────
+  useEffect(() => {
+    if (!transferForm.bodega_origen_id || !transferForm.producto_nombre) {
+      setStockDisponible(null);
+      return;
+    }
+    const fetchStock = async () => {
+      try {
+        const [headers, base] = await Promise.all([getHeaders(), getBaseUrl()]);
+        const res = await fetch(`${base}/stock/bodega/${transferForm.bodega_origen_id}`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          const item = (data.data || []).find((p: any) => p.producto_nombre === transferForm.producto_nombre);
+          setStockDisponible(item?.cantidad ?? 0);
+        }
+      } catch {
+        setStockDisponible(null);
+      }
+    };
+    fetchStock();
+  }, [transferForm.bodega_origen_id, transferForm.producto_nombre]);
 
   // ─── Orden actions ──────────────────────────────────────────────────────────
 
@@ -374,6 +402,10 @@ export default function Produccion() {
     }
     if (transferForm.bodega_origen_id === transferForm.bodega_destino_id) {
       toast.error('La bodega origen y destino deben ser diferentes');
+      return;
+    }
+    if (stockDisponible === 0) {
+      toast.error('No hay stock disponible en la bodega origen para este producto');
       return;
     }
     setSubmitting(true);
@@ -483,16 +515,52 @@ export default function Produccion() {
           </h1>
           <p className="text-gray-400 text-sm mt-1">Gestión de planta de producción y transferencias entre bodegas</p>
         </div>
-        <Button
-          onClick={loadAll}
-          variant="outline"
-          size="sm"
-          className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10 gap-2"
-          disabled={loading}
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <ExportButtons
+            onExportPDF={() => {
+              exportToPDF(
+                ordenes.map(o => ({
+                  numero_orden: o.numero_orden,
+                  bodega_origen_nombre: o.bodega_origen_nombre,
+                  bodega_destino_nombre: o.bodega_destino_nombre,
+                  producto_nombre: o.producto_nombre,
+                  cantidad: o.cantidad,
+                  estado: o.estado,
+                  fecha_creacion: new Date(o.fecha_creacion).toLocaleDateString(),
+                })),
+                [
+                  { header: 'Número', key: 'numero_orden' },
+                  { header: 'Origen', key: 'bodega_origen_nombre' },
+                  { header: 'Destino', key: 'bodega_destino_nombre' },
+                  { header: 'Producto', key: 'producto_nombre' },
+                  { header: 'Cantidad', key: 'cantidad' },
+                  { header: 'Estado', key: 'estado' },
+                  { header: 'Fecha', key: 'fecha_creacion' },
+                ],
+                'Órdenes de Producción',
+                'produccion_ordenes',
+              );
+            }}
+            onExportExcel={() => {
+              exportMultipleSheetsToExcel([
+                { name: 'Órdenes', data: ordenes.map(o => ({ 'Número': o.numero_orden, 'Origen': o.bodega_origen_nombre, 'Destino': o.bodega_destino_nombre, 'Producto': o.producto_nombre, 'Cantidad': o.cantidad, 'Estado': o.estado })) },
+                { name: 'Transferencias', data: transferencias.map(t => ({ 'Número': t.numero_transferencia, 'Origen': t.bodega_origen_nombre, 'Destino': t.bodega_destino_nombre, 'Producto': t.producto_nombre, 'Cantidad': t.cantidad, 'Estado': t.estado })) },
+                { name: 'Lotes', data: lotes.map(l => ({ 'Lote': l.numero_lote, 'Producto': l.producto_nombre, 'Planificado': l.cantidad_planificada, 'Real': l.cantidad_real, 'Merma': l.merma, '% Merma': l.merma_porcentaje })) },
+                { name: 'Mermas', data: mermas.map(m => ({ 'Producto': m.producto_nombre, 'Perdida': m.cantidad_perdida, 'Motivo': m.motivo, 'Tipo': m.tipo, 'Bodega': m.bodega_nombre, 'Fecha': new Date(m.fecha).toLocaleDateString() })) },
+              ], 'produccion_reporte');
+            }}
+          />
+          <Button
+            onClick={loadAll}
+            variant="outline"
+            size="sm"
+            className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10 gap-2"
+            disabled={loading}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Actualizar
+          </Button>
+        </div>
       </div>
 
       {/* Stock por Bodega (collapsible) */}
@@ -681,6 +749,17 @@ export default function Produccion() {
               </Button>
             </CardHeader>
             <CardContent>
+              <div className="bg-[#1e64a7]/10 border border-[#1e64a7]/30 rounded-lg p-3 mb-4 text-xs text-gray-400">
+                <strong className="text-[#00E5FF]">Flujo de solicitudes:</strong> Cualquier bodega crea una solicitud (Pendiente) →{' '}
+                Administrador aprueba (Aprobada) → Se completa y el stock se transfiere automáticamente (Completada)
+              </div>
+              {!puedeAprobar && (
+                <div className="mb-3">
+                  <span className="inline-block px-2 py-1 rounded-md text-xs bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                    Solo administradores pueden aprobar transferencias
+                  </span>
+                </div>
+              )}
               {transferencias.length === 0 ? (
                 <div className="text-center py-12 text-gray-500">
                   <ArrowLeftRight className="w-12 h-12 mx-auto mb-3 opacity-30" />
@@ -717,7 +796,7 @@ export default function Produccion() {
                           <TableCell className="text-gray-400 text-xs">{formatFecha(t.fecha_creacion)}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
-                              {t.estado === 'pendiente' && (
+                              {t.estado === 'pendiente' && puedeAprobar && (
                                 <button
                                   onClick={() => accionTransferencia(t.id, 'aprobar')}
                                   title="Aprobar"
@@ -726,7 +805,7 @@ export default function Produccion() {
                                   <CheckCircle2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
-                              {t.estado === 'aprobada' && (
+                              {t.estado === 'aprobada' && puedeAprobar && (
                                 <button
                                   onClick={() => accionTransferencia(t.id, 'completar')}
                                   title="Completar"
@@ -1124,6 +1203,11 @@ export default function Produccion() {
                   ))}
                 </SelectContent>
               </Select>
+              {stockDisponible !== null && (
+                <p className={`text-xs mt-1 ${stockDisponible === 0 ? 'text-red-400' : 'text-green-400'}`}>
+                  Stock disponible en bodega origen: <strong>{stockDisponible}</strong>
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-gray-300 text-sm">Cantidad *</Label>

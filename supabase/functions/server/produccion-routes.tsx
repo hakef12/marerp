@@ -116,12 +116,9 @@ export function setupProduccionRoutes(app: any, authMiddleware: any) {
 
       // Actualizar stock en bodega destino (stock_bodegas KV)
       await ajustarStockBodega(auth.empresaId, orden.bodega_destino_id, orden.producto_nombre, cantidad_real);
-      // Sincronizar stock_actual del producto real en el inventario
+      // Add the actually produced quantity to real inventory
       await sincronizarStockProductoReal(auth.empresaId, orden.producto_nombre, cantidad_real);
-      // Si hay merma, descontar también del inventario real
-      if (merma_cantidad > 0) {
-        await sincronizarStockProductoReal(auth.empresaId, orden.producto_nombre, -merma_cantidad);
-      }
+      // merma is recorded for tracking but NOT deducted again (already accounted for in cantidad_real)
 
       // If merma > 0, create merma record
       let mermaRecord = null;

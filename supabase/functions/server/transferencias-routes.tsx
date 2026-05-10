@@ -1,5 +1,5 @@
 import * as kv from "./kv_store.tsx";
-import { transferirStockBodega, sincronizarStockProductoReal } from "./kv-helpers.tsx";
+import { transferirStockBodega, sincronizarStockProductoReal, getStockBodega } from "./kv-helpers.tsx";
 
 export function setupTransferenciasRoutes(app: any, authMiddleware: any) {
 
@@ -31,6 +31,15 @@ export function setupTransferenciasRoutes(app: any, authMiddleware: any) {
         return c.json({ error: 'Faltan campos requeridos' }, 400);
       }
 
+      // Check available stock in origin warehouse before creating transfer
+      const stockOrigen = await getStockBodega(auth.empresaId, bodega_origen_id);
+      const stockDisponible = stockOrigen[producto_nombre] || 0;
+      if (stockDisponible < Number(cantidad)) {
+        return c.json({
+          error: `Stock insuficiente en bodega origen. Disponible: ${stockDisponible} — solicitado: ${cantidad}`
+        }, 400);
+      }
+
       const transferencia = {
         id: crypto.randomUUID(),
         numero_transferencia: `TR-${Date.now()}`,
@@ -45,6 +54,7 @@ export function setupTransferenciasRoutes(app: any, authMiddleware: any) {
         estado: 'pendiente',
         solicitado_por: auth.user?.nombre_completo || '',
         fecha_creacion: new Date().toISOString(),
+        stock_disponible_origen: stockDisponible,
       };
 
       const key = `transferencias_${auth.empresaId}`;
