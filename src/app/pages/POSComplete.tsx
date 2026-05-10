@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useBodega } from '../context/BodegaContext';
 import { useSearchParams, useNavigate } from 'react-router';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -134,6 +135,7 @@ function imprimirComanda(comanda: {
 
 export default function POS() {
   const { token } = useAuth();
+  const { bodegaActiva } = useBodega();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -409,6 +411,7 @@ export default function POS() {
         tipo_servicio: tipoServicio,
         estado: 'completada',
         notas,
+        bodega_id: bodegaActiva?.id,
       };
 
       // ── 1. Guardar venta en POS ────────────────────────────────
@@ -450,6 +453,7 @@ export default function POS() {
               descripcion: descCaja,
               metodo_pago: metodoPago,
               referencia: numero_orden,
+              bodega_id: bodegaActiva?.id,
             }),
           }
         );

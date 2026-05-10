@@ -15,6 +15,7 @@ import {
   ShoppingCart, Wallet, Receipt, BarChart3, Utensils,
 } from 'lucide-react';
 import { ROLES_ADMIN } from '../utils/permisos';
+import { useBodega } from '../context/BodegaContext';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ const BASE = `https://${projectId}.supabase.co/functions/v1/server/caja`;
 
 export default function Caja() {
   const { token, user } = useAuth();
+  const { bodegaActiva } = useBodega();
   const navigate = useNavigate();
   const esAdmin = ROLES_ADMIN.includes(user?.rol ?? '');
 
@@ -88,30 +90,33 @@ export default function Caja() {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch(`${BASE}/estado`, { headers: apiH(token) });
+      const params = bodegaActiva ? `?bodega_id=${bodegaActiva.id}` : '';
+      const res = await fetch(`${BASE}/estado${params}`, { headers: apiH(token) });
       const data = await res.json();
       setSesion(data.sesion);
     } catch { /* silencioso */ }
     finally { setLoading(false); }
-  }, [token]);
+  }, [token, bodegaActiva]);
 
   const fetchHistorial = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${BASE}/historial`, { headers: apiH(token) });
+      const params = bodegaActiva ? `?bodega_id=${bodegaActiva.id}` : '';
+      const res = await fetch(`${BASE}/historial${params}`, { headers: apiH(token) });
       const data = await res.json();
       setHistorial(data.historial || []);
     } catch { /* */ }
-  }, [token]);
+  }, [token, bodegaActiva]);
 
   const fetchArqueo = useCallback(async () => {
     if (!token || !sesion) return;
     try {
-      const res = await fetch(`${BASE}/arqueo`, { headers: apiH(token) });
+      const params = bodegaActiva ? `?bodega_id=${bodegaActiva.id}` : '';
+      const res = await fetch(`${BASE}/arqueo${params}`, { headers: apiH(token) });
       const data = await res.json();
       setArqueo(data);
     } catch { /* */ }
-  }, [token, sesion]);
+  }, [token, sesion, bodegaActiva]);
 
   // Carga inicial
   useEffect(() => { fetchEstado(); }, [fetchEstado]);
@@ -131,7 +136,12 @@ export default function Caja() {
 
   const handleAbrirCaja = async () => {
     try {
-      await post(`${BASE}/apertura`, { monto_apertura: Number(fMontoApertura) || 0, observaciones: fObsApertura });
+      await post(`${BASE}/apertura`, {
+        monto_apertura: Number(fMontoApertura) || 0,
+        observaciones: fObsApertura,
+        bodega_id: bodegaActiva?.id,
+        bodega_nombre: bodegaActiva?.nombre,
+      });
       toast.success('Caja abierta exitosamente');
       setModalApertura(false);
       setFMontoApertura('0'); setFObsApertura('');
@@ -143,7 +153,11 @@ export default function Caja() {
     const monto = parseFloat(fMontoDeclarado);
     if (isNaN(monto)) return toast.error('Ingresa el monto declarado');
     try {
-      const data = await post(`${BASE}/cierre`, { monto_declarado: monto, observaciones: fObsCierre });
+      const data = await post(`${BASE}/cierre`, {
+        monto_declarado: monto,
+        observaciones: fObsCierre,
+        bodega_id: bodegaActiva?.id,
+      });
       const r = data.resumen;
       toast.success(
         `Caja cerrada. Ventas: $${fmt(r.total_ventas)} | Diferencia: $${fmt(r.diferencia)}`,
@@ -160,7 +174,12 @@ export default function Caja() {
     if (isNaN(monto) || monto <= 0) return toast.error('El monto debe ser mayor a 0');
     if (!fDescMov.trim()) return toast.error('Ingresa una descripción');
     try {
-      await post(`${BASE}/movimiento`, { tipo: fTipoMov, monto, descripcion: fDescMov });
+      await post(`${BASE}/movimiento`, {
+        tipo: fTipoMov,
+        monto,
+        descripcion: fDescMov,
+        bodega_id: bodegaActiva?.id,
+      });
       toast.success('Movimiento registrado');
       setModalMovimiento(false);
       setFMontoMov(''); setFDescMov('');
@@ -264,6 +283,9 @@ export default function Caja() {
               <span className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
               <span className="text-green-400 font-bold text-sm">CAJA ABIERTA</span>
             </div>
+            {bodegaActiva && (
+              <span className="text-gray-400 text-sm">Sucursal: <span className="text-yellow-400 font-medium">{bodegaActiva.nombre}</span></span>
+            )}
             <span className="text-gray-400 text-sm">Cajero: <span className="text-white font-medium">{sesion.cajero_nombre}</span></span>
             <span className="text-gray-400 text-sm">Apertura: <span className="text-white font-medium">{new Date(sesion.fecha_apertura).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}</span></span>
             <span className="ml-auto text-[#00E5FF] font-bold text-xl">${fmt(sesion.monto_real ?? 0)}</span>
@@ -502,7 +524,10 @@ export default function Caja() {
                 <h2 className="text-white text-xl font-bold">Apertura de Caja</h2>
                 <button onClick={() => setModalApertura(false)} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400"><X className="w-5 h-5" /></button>
               </div>
-              <p className="text-gray-400 text-sm">Ingresa el monto inicial disponible en la caja</p>
+              <p className="text-gray-400 text-sm">
+                Ingresa el monto inicial disponible en la caja
+                {bodegaActiva && <span className="text-yellow-400"> · {bodegaActiva.nombre}</span>}
+              </p>
               <div>
                 <Label className="text-gray-300 mb-1.5 block">Monto de apertura ($)</Label>
                 <Input type="number" min="0" step="0.01" value={fMontoApertura} onChange={e => setFMontoApertura(e.target.value)} className="bg-white/5 border-[#00E5FF]/20 text-white text-xl h-12" />

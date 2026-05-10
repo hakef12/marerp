@@ -6,6 +6,8 @@ interface User {
   nombre: string;
   email: string;
   rol: string;
+  bodega_id?: string | null;
+  bodega_nombre?: string | null;
   empresa: {
     id: string;
     nombre: string;

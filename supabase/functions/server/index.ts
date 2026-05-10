@@ -20,7 +20,7 @@ import { setupProduccionRoutes } from "./produccion-routes.tsx";
 import { setupTransferenciasRoutes } from "./transferencias-routes.tsx";
 import { setupStockBodegaRoutes } from "./stock-bodega-routes.tsx";
 import { registrarAuditoria } from "./audit-helper.tsx";
-import { inicializarDatosDemo, cargarDatosDemo, limpiarTodosLosDatos, obtenerProductos, obtenerCategorias, obtenerVentas, obtenerComandas, guardarVenta, guardarComanda, actualizarComanda, guardarProducto, obtenerBodegas } from "./kv-helpers.tsx";
+import { inicializarDatosDemo, cargarDatosDemo, limpiarTodosLosDatos, obtenerProductos, obtenerCategorias, obtenerVentas, obtenerComandas, guardarVenta, guardarComanda, actualizarComanda, guardarProducto, obtenerBodegas, obtenerRecetas, ajustarStockBodega } from "./kv-helpers.tsx";
 
 const app = new Hono();
 
@@ -234,6 +234,17 @@ app.post("/server/auth/login", async (c) => {
       );
     }
 
+    // Obtener bodega asignada al usuario (KV)
+    let bodegaId: string | null = null;
+    let bodegaNombre: string | null = null;
+    if (usuario.empresa_id) {
+      try {
+        const bodegasMap: Record<string, any> = (await kv.get(`empresa_${usuario.empresa_id}_usuarios_bodegas`)) || {};
+        const bi = bodegasMap[usuario.id];
+        if (bi) { bodegaId = bi.bodega_id; bodegaNombre = bi.bodega_nombre; }
+      } catch { /* ignora */ }
+    }
+
     return c.json({
       access_token: data.session.access_token,
       refresh_token: data.session.refresh_token,
@@ -242,6 +253,8 @@ app.post("/server/auth/login", async (c) => {
         nombre: usuario.nombre_completo,
         email: usuario.email,
         rol: usuario.rol,
+        bodega_id: bodegaId,
+        bodega_nombre: bodegaNombre,
         empresa: usuario.empresas ? {
           ...usuario.empresas,
           plan: usuario.empresas?.plan_tipo || usuario.empresas?.plan || 'basico'
@@ -388,6 +401,44 @@ app.post("/server/pos/ventas", authMiddleware, async (c) => {
       usuario_id: auth.userId,
       estado: 'completada'
     });
+
+    // ── Descontar ingredientes de recetas por bodega ──────────
+    const bodegaId: string = body.bodega_id || '';
+    const items: any[] = body.items || [];
+    if (bodegaId && items.length > 0) {
+      try {
+        const [recetas, productos] = await Promise.all([
+          obtenerRecetas(auth.empresaId),
+          obtenerProductos(auth.empresaId),
+        ]);
+        for (const item of items) {
+          const nombreProducto = (item.nombre || '').toLowerCase().trim();
+          const receta = recetas.find((r: any) =>
+            (r.nombre || '').toLowerCase().trim() === nombreProducto
+          );
+          if (receta && (receta.porciones || 0) > 0) {
+            const factor = (item.cantidad || 1) / receta.porciones;
+            const ingredientes = receta.ingredientes || receta.receta_ingredientes || [];
+            for (const ing of ingredientes) {
+              let nombreIng: string = ing.nombre_producto || '';
+              if (!nombreIng) {
+                const pid = String(ing.insumo_id || ing.producto_id || '');
+                const prod = productos.find((p: any) => String(p.id) === pid);
+                if (prod) nombreIng = prod.nombre;
+              }
+              if (nombreIng) {
+                const delta = -((ing.cantidad || 0) * factor);
+                await ajustarStockBodega(auth.empresaId, bodegaId, nombreIng, delta);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('⚠ Error al descontar ingredientes por venta:', e);
+        // No fallar la venta si el descuento de ingredientes falla
+      }
+    }
+
     return c.json({ message: 'Venta creada exitosamente', venta }, 201);
   } catch (error: any) {
     return c.json({ error: 'Error al crear venta', details: error.message }, 500);

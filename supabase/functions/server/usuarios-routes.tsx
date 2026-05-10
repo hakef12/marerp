@@ -9,9 +9,28 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2.39.7';
+import * as kv from './kv_store.tsx';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+
+// ── KV: bodega asignada por usuario ──────────────────────────────────────────
+const usuariosBodegasKey = (empresaId: string) =>
+  `empresa_${empresaId}_usuarios_bodegas`;
+
+async function getUsuariosBodegas(empresaId: string): Promise<Record<string, any>> {
+  return (await kv.get(usuariosBodegasKey(empresaId))) || {};
+}
+
+async function setUsuarioBodega(
+  empresaId: string,
+  userId: string,
+  info: { bodega_id: string; bodega_nombre: string } | null
+) {
+  const map = await getUsuariosBodegas(empresaId);
+  if (info) { map[userId] = info; } else { delete map[userId]; }
+  await kv.set(usuariosBodegasKey(empresaId), map);
+}
 
 // ── Roles válidos y sus módulos ───────────────────────────────
 const MODULOS_POR_ROL: Record<string, string[]> = {
@@ -37,18 +56,20 @@ function limiteUsuariosPlan(planTipo: string): number {
 }
 
 /** Normaliza un usuario de DB → respuesta API (mapea cargo→puesto, ultima_sesion→ultimo_acceso) */
-function normalizeUsuario(u: any): any {
+function normalizeUsuario(u: any, bodegaInfo?: any): any {
   return {
     id:              u.id,
     nombre_completo: u.nombre_completo,
     email:           u.email,
     rol:             u.rol ?? 'cajero',
-    puesto:          u.cargo ?? null,       // cargo en DB, puesto en API
+    puesto:          u.cargo ?? null,
     activo:          u.activo,
     created_at:      u.created_at,
-    ultimo_acceso:   u.ultima_sesion ?? null, // ultima_sesion en DB, ultimo_acceso en API
+    ultimo_acceso:   u.ultima_sesion ?? null,
     auth_user_id:    u.auth_user_id,
     modulos_acceso:  MODULOS_POR_ROL[u.rol] ?? [],
+    bodega_id:       bodegaInfo?.bodega_id ?? null,
+    bodega_nombre:   bodegaInfo?.bodega_nombre ?? null,
   };
 }
 
@@ -68,7 +89,8 @@ export function setupUsuariosRoutes(app: any, authMiddleware: any) {
 
       if (error) throw error;
 
-      return c.json({ usuarios: (usuarios || []).map(normalizeUsuario) });
+      const bodegasMap = await getUsuariosBodegas(auth.empresaId);
+      return c.json({ usuarios: (usuarios || []).map(u => normalizeUsuario(u, bodegasMap[u.id])) });
     } catch (err: any) {
       console.error('❌ [GET /usuarios]', err.message);
       return c.json({ error: 'Error al obtener usuarios', detalle: err.message }, 500);
@@ -87,7 +109,7 @@ export function setupUsuariosRoutes(app: any, authMiddleware: any) {
 
     try {
       const body = await c.req.json();
-      const { nombre_completo, email, password, rol = 'cajero', puesto = '' } = body;
+      const { nombre_completo, email, password, rol = 'cajero', puesto = '', bodega_id, bodega_nombre } = body;
 
       // Validar campos obligatorios
       if (!nombre_completo?.trim() || !email?.trim() || !password?.trim()) {
@@ -167,11 +189,20 @@ export function setupUsuariosRoutes(app: any, authMiddleware: any) {
         return c.json({ error: `Error al guardar usuario: ${insertErr.message}` }, 500);
       }
 
+      // Guardar bodega asignada si viene en el body
+      if (bodega_id) {
+        await setUsuarioBodega(auth.empresaId, nuevoUsuario.id, {
+          bodega_id,
+          bodega_nombre: bodega_nombre || bodega_id,
+        });
+      }
+
       console.log('✅ Usuario creado:', nuevoUsuario.id, nuevoUsuario.email, nuevoUsuario.rol);
+      const bodegaInfo = bodega_id ? { bodega_id, bodega_nombre: bodega_nombre || '' } : undefined;
       return c.json({
         success: true,
         mensaje: 'Usuario creado exitosamente',
-        usuario: normalizeUsuario(nuevoUsuario),
+        usuario: normalizeUsuario(nuevoUsuario, bodegaInfo),
       }, 201);
 
     } catch (err: any) {
@@ -192,7 +223,7 @@ export function setupUsuariosRoutes(app: any, authMiddleware: any) {
 
     try {
       const body = await c.req.json();
-      const { nombre_completo, rol, puesto } = body;
+      const { nombre_completo, rol, puesto, bodega_id, bodega_nombre } = body;
 
       // Verificar que el usuario pertenezca a esta empresa
       const { data: actual, error: getErr } = await supabase
@@ -239,10 +270,20 @@ export function setupUsuariosRoutes(app: any, authMiddleware: any) {
 
       if (updErr) throw updErr;
 
+      // Actualizar bodega asignada si viene en el body
+      if (bodega_id !== undefined) {
+        await setUsuarioBodega(
+          auth.empresaId,
+          usuarioId,
+          bodega_id ? { bodega_id, bodega_nombre: bodega_nombre || '' } : null
+        );
+      }
+
+      const bodegasMap = await getUsuariosBodegas(auth.empresaId);
       return c.json({
         success: true,
         mensaje: 'Usuario actualizado exitosamente',
-        usuario: normalizeUsuario(actualizado),
+        usuario: normalizeUsuario(actualizado, bodegasMap[usuarioId]),
       });
     } catch (err: any) {
       console.error('❌ [PUT /usuarios/:id]', err.message);

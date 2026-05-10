@@ -4,11 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { 
-  ChefHat, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
+import {
+  ChefHat,
+  Clock,
+  CheckCircle,
+  XCircle,
   AlertCircle,
   TrendingUp,
   BookOpen,
@@ -25,18 +25,18 @@ import {
   Timer,
   Bell,
   Flame,
-  Users
+  Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import RecetaModal from '../components/cocina/RecetaModal';
 import ProducirModal from '../components/cocina/ProducirModal';
 import CocinaKDS from './CocinaKDS';
-import { 
-  exportRecetasToPDF, 
+import {
+  exportRecetasToPDF,
   exportRecetasToExcel,
   exportOrdenesProduccionToPDF,
   exportOrdenesProduccionToExcel,
-  exportReporteKDSToPDF
+  exportReporteKDSToPDF,
 } from '../utils/exportUtils';
 
 export default function Cocina() {
@@ -54,6 +54,7 @@ export default function Cocina() {
   const [showProducirModal, setShowProducirModal] = useState(false);
   const [selectedReceta, setSelectedReceta] = useState<any | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [expandedOrders, setExpandedOrders] = useState<Set<any>>(new Set());
 
   // ⏱️ Actualizar tiempo actual cada segundo para cronómetros
   useEffect(() => {
@@ -581,8 +582,19 @@ export default function Cocina() {
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10" onClick={() => exportOrdenesProduccionToPDF(productionOrders)}>
+              <Button variant="outline" size="sm" className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10" onClick={() => {
+                if (productionOrders.length === 0) return toast.error('No hay órdenes para exportar');
+                exportOrdenesProduccionToPDF(productionOrders);
+                toast.success('Órdenes exportadas a PDF');
+              }}>
                 <FileDown className="w-4 h-4 mr-2" /> Exportar PDF
+              </Button>
+              <Button variant="outline" size="sm" className="border-green-500/30 text-green-400 hover:bg-green-500/10" onClick={() => {
+                if (productionOrders.length === 0) return toast.error('No hay órdenes para exportar');
+                exportOrdenesProduccionToExcel(productionOrders);
+                toast.success('Órdenes exportadas a Excel');
+              }}>
+                <FileSpreadsheet className="w-4 h-4 mr-2" /> Exportar Excel
               </Button>
             </div>
             <Button onClick={() => { setSelectedReceta(null); setShowProducirModal(true); }} className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
@@ -591,44 +603,110 @@ export default function Cocina() {
           </div>
 
           <div className="grid grid-cols-1 gap-4">
-            {productionOrders.map((order, idx) => (
-              <Card key={order.id || idx} className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 border-[#00E5FF]/20">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-xl font-bold text-white">
-                          {order.receta?.nombre || order.recetas?.nombre || recipes.find(r => r.id === order.receta_id)?.nombre || 'Receta N/A'}
-                        </h3>
-                        <Badge className={`${order.estado === 'planificada' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : order.estado === 'en_proceso' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : order.estado === 'completada' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`} variant="outline">
-                          {order.estado === 'planificada' ? 'Planificado' : order.estado === 'en_proceso' ? 'En Progreso' : order.estado === 'completada' ? 'Completado' : 'Cancelado'}
-                        </Badge>
-                        <span className="text-sm text-gray-400">{order.numero_orden}</span>
+            {productionOrders.map((order, idx) => {
+              const receta = order.receta || order.recetas || recipes.find((r: any) => r.id === order.receta_id) || null;
+              const recetaNombre = receta?.nombre || 'Receta N/A';
+              const ingredientes = receta ? (receta.ingredientes || receta.receta_ingredientes || []) : [];
+              const porciones = receta?.porciones || 1;
+              const factor = (order.cantidad_porciones || 1) / porciones;
+              const [expanded, setExpanded] = [expandedOrders.has(order.id || idx), () => setExpandedOrders(prev => {
+                const next = new Set(prev);
+                if (next.has(order.id || idx)) next.delete(order.id || idx); else next.add(order.id || idx);
+                return next;
+              })];
+
+              return (
+                <Card key={order.id || idx} className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 border-[#00E5FF]/20">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-xl font-bold text-white">{recetaNombre}</h3>
+                          <Badge className={`${order.estado === 'planificada' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : order.estado === 'en_proceso' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : order.estado === 'completada' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`} variant="outline">
+                            {order.estado === 'planificada' ? 'Planificado' : order.estado === 'en_proceso' ? 'En Progreso' : order.estado === 'completada' ? 'Completado' : 'Cancelado'}
+                          </Badge>
+                          <span className="text-sm text-gray-400">{order.numero_orden}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4 mt-4">
+                          <div>
+                            <p className="text-xs text-gray-400 font-bold uppercase">Porciones</p>
+                            <p className="text-lg font-black text-white">{order.cantidad_porciones}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 font-bold uppercase">Fecha</p>
+                            <p className="text-lg font-black text-white">{new Date(order.fecha_programada).toLocaleDateString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 font-bold uppercase">Responsable</p>
+                            <p className="text-sm text-gray-300">{order.usuarios?.nombre_completo || 'N/A'}</p>
+                          </div>
+                        </div>
+
+                        {/* Ingredient toggle */}
+                        <button
+                          onClick={setExpanded}
+                          className="mt-4 flex items-center gap-2 text-xs text-[#7B61FF] hover:text-[#9B81FF] transition-colors"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                          {expanded ? 'Ocultar ingredientes' : `Ver ingredientes (${ingredientes.length})`}
+                        </button>
+
+                        {/* Expanded ingredients */}
+                        {expanded && (
+                          <div className="mt-3 bg-[#0A1A2F]/60 rounded-xl border border-[#7B61FF]/20 overflow-hidden">
+                            {ingredientes.length === 0 ? (
+                              <p className="text-gray-500 text-sm p-4">Esta receta no tiene ingredientes registrados.</p>
+                            ) : (
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="bg-[#7B61FF]/20 text-[#7B61FF] text-xs uppercase tracking-wider">
+                                    <th className="text-left px-4 py-2">Ingrediente</th>
+                                    <th className="text-right px-4 py-2">Base ({porciones} uds.)</th>
+                                    <th className="text-right px-4 py-2 text-white font-bold">Para {order.cantidad_porciones} uds.</th>
+                                    <th className="text-left px-3 py-2">Unidad</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {ingredientes.map((ing: any, i: number) => {
+                                    const idBuscado = String(ing.insumo_id || ing.producto_id || ing.insumo?.id || ing.productos?.id);
+                                    const prodCatalogo = inventoryProducts.find((p: any) => String(p.id) === idBuscado);
+                                    const nombre = ing.insumo?.nombre || ing.productos?.nombre || ing.nombre_producto || prodCatalogo?.nombre || 'Ingrediente';
+                                    const cantBase = Number(ing.cantidad) || 0;
+                                    const cantEscalada = (cantBase * factor).toFixed(2);
+                                    return (
+                                      <tr key={i} className={`border-t border-white/5 ${i % 2 === 0 ? '' : 'bg-white/5'}`}>
+                                        <td className="px-4 py-2 text-white font-medium">{nombre}</td>
+                                        <td className="px-4 py-2 text-gray-400 text-right font-mono">{cantBase}</td>
+                                        <td className="px-4 py-2 text-[#00E5FF] text-right font-mono font-bold">{cantEscalada}</td>
+                                        <td className="px-3 py-2 text-gray-400">{ing.unidad_medida || '-'}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div className="grid grid-cols-3 gap-4 mt-4">
-                        <div>
-                          <p className="text-xs text-gray-400 font-bold uppercase">Porciones</p>
-                          <p className="text-lg font-black text-white">{order.cantidad_porciones}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-400 font-bold uppercase">Fecha</p>
-                          <p className="text-lg font-black text-white">{new Date(order.fecha_programada).toLocaleDateString()}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-400 font-bold uppercase">Responsable</p>
-                          <p className="text-sm text-gray-300">{order.usuarios?.nombre_completo || 'N/A'}</p>
-                        </div>
+                      <div className="flex flex-col gap-2 ml-6">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10"
+                          onClick={() => exportOrdenesProduccionToPDF([order])}
+                          title="Descargar PDF de esta orden"
+                        >
+                          <FileDown className="w-4 h-4" />
+                        </Button>
+                        {order.estado === 'planificada' && <Button className="bg-gradient-to-r from-orange-600 to-orange-500" onClick={() => cambiarEstadoOrden(order.id, 'en_proceso')}><Play className="w-4 h-4 mr-1" /> Iniciar</Button>}
+                        {order.estado === 'en_proceso' && <Button className="bg-gradient-to-r from-green-600 to-green-500" onClick={() => cambiarEstadoOrden(order.id, 'completada')}><CheckCheck className="w-4 h-4 mr-1" /> Completar</Button>}
+                        {order.estado !== 'completada' && order.estado !== 'cancelada' && <Button variant="outline" className="border-red-500/30 text-red-400 hover:bg-red-500/10" onClick={() => cambiarEstadoOrden(order.id, 'cancelada')}><XCircle className="w-4 h-4 mr-1" /> Cancelar</Button>}
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2 ml-6">
-                      {order.estado === 'planificada' && <Button className="bg-gradient-to-r from-orange-600 to-orange-500" onClick={() => cambiarEstadoOrden(order.id, 'en_proceso')}><Play className="w-4 h-4 mr-1" /> Iniciar</Button>}
-                      {order.estado === 'en_proceso' && <Button className="bg-gradient-to-r from-green-600 to-green-500" onClick={() => cambiarEstadoOrden(order.id, 'completada')}><CheckCheck className="w-4 h-4 mr-1" /> Completar</Button>}
-                      {order.estado !== 'completada' && order.estado !== 'cancelada' && <Button variant="outline" className="border-red-500/30 text-red-400 hover:bg-red-500/10" onClick={() => cambiarEstadoOrden(order.id, 'cancelada')}><XCircle className="w-4 h-4 mr-1" /> Cancelar</Button>}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </div>
       )}

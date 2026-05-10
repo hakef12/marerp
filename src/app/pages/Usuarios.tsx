@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Plus, Edit2, PowerOff, Power, Shield, ShoppingCart, Package,
   ChefHat, Calculator, Users, BarChart3, FileText, Settings,
-  Mail, Briefcase, UserCog, Search, X, Eye, EyeOff, RefreshCw,
+  Mail, Briefcase, UserCog, Search, X, Eye, EyeOff, RefreshCw, Warehouse,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -14,6 +14,8 @@ import { api } from '../utils/api';
 import { ROLES_INFO, MODULOS_POR_ROL, ROLES_ADMIN, labelRol, badgeRol } from '../utils/permisos';
 import { ExportButtons } from '../components/ExportButtons';
 import { exportToExcel, exportToPDF } from '../utils/exportUtils';
+import { useBodega } from '../context/BodegaContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 interface Usuario {
   id: string;
@@ -25,6 +27,8 @@ interface Usuario {
   ultimo_acceso?: string;
   created_at: string;
   modulos_acceso: string[];
+  bodega_id?: string | null;
+  bodega_nombre?: string | null;
 }
 
 // ── Icono por módulo ────────────────────────────────────────────
@@ -67,6 +71,7 @@ const ROLES_ASIGNABLES = ['cajero', 'bodeguero', 'contador', 'cocinero', 'rrhh',
 
 export default function Usuarios() {
   const { user, token } = useAuth();
+  const { bodegas } = useBodega();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -82,6 +87,8 @@ export default function Usuarios() {
     password: '',
     rol: 'cajero',
     puesto: '',
+    bodega_id: '',
+    bodega_nombre: '',
   });
 
   const esAdmin = ROLES_ADMIN.includes(user?.rol ?? '');
@@ -114,14 +121,14 @@ export default function Usuarios() {
       return;
     }
     setEditingUser(null);
-    setFormData({ nombre_completo: '', email: '', password: '', rol: 'cajero', puesto: '' });
+    setFormData({ nombre_completo: '', email: '', password: '', rol: 'cajero', puesto: '', bodega_id: '', bodega_nombre: '' });
     setShowPassword(false);
     setShowModal(true);
   };
 
   const abrirEditar = (u: Usuario) => {
     setEditingUser(u);
-    setFormData({ nombre_completo: u.nombre_completo, email: u.email, password: '', rol: u.rol, puesto: u.puesto || '' });
+    setFormData({ nombre_completo: u.nombre_completo, email: u.email, password: '', rol: u.rol, puesto: u.puesto || '', bodega_id: u.bodega_id || '', bodega_nombre: u.bodega_nombre || '' });
     setShowPassword(false);
     setShowModal(true);
   };
@@ -135,10 +142,16 @@ export default function Usuarios() {
           nombre_completo: formData.nombre_completo,
           rol: formData.rol,
           puesto: formData.puesto,
+          bodega_id: formData.bodega_id || null,
+          bodega_nombre: formData.bodega_nombre || null,
         }, token);
         toast.success('Usuario actualizado');
       } else {
-        await api.post('/usuarios', formData, token);
+        await api.post('/usuarios', {
+          ...formData,
+          bodega_id: formData.bodega_id || null,
+          bodega_nombre: formData.bodega_nombre || null,
+        }, token);
         toast.success('Usuario creado exitosamente');
       }
       setShowModal(false);
@@ -478,6 +491,39 @@ export default function Usuarios() {
                   </div>
                 )}
 
+                {/* Sucursal asignada (solo para roles de ubicación fija) */}
+                {['cajero', 'bodeguero', 'cocinero'].includes(formData.rol) && bodegas.length > 0 && (
+                  <div>
+                    <Label className="text-gray-300 mb-1.5 block">Sucursal asignada</Label>
+                    <Select
+                      value={formData.bodega_id || '__none__'}
+                      onValueChange={v => {
+                        if (v === '__none__') {
+                          setFormData(f => ({ ...f, bodega_id: '', bodega_nombre: '' }));
+                        } else {
+                          const b = bodegas.find(b => b.id === v);
+                          setFormData(f => ({ ...f, bodega_id: v, bodega_nombre: b?.nombre || '' }));
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+                        <SelectValue placeholder="Sin asignar (acceso a todas)" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                        <SelectItem value="__none__" className="text-gray-400">Sin asignar (acceso a todas)</SelectItem>
+                        {bodegas.map(b => (
+                          <SelectItem key={b.id} value={b.id} className="text-white">
+                            {b.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Si asignas una sucursal, el usuario solo podrá ver y operar en esa ubicación.
+                    </p>
+                  </div>
+                )}
+
                 {/* Botones */}
                 <div className="flex gap-3 pt-2">
                   <Button type="button" variant="outline" onClick={() => setShowModal(false)}
@@ -558,6 +604,14 @@ function UsuarioCard({
           <Mail className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="truncate">{usuario.email}</span>
         </div>
+
+        {/* Sucursal asignada */}
+        {usuario.bodega_nombre && (
+          <div className="flex items-center gap-2 text-xs text-yellow-400/80">
+            <Warehouse className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="truncate">{usuario.bodega_nombre}</span>
+          </div>
+        )}
 
         {/* Rol + estado */}
         <div className="flex items-center gap-2 flex-wrap">

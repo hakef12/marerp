@@ -17,7 +17,10 @@ import { toast } from 'sonner';
 import {
   Factory, ArrowLeftRight, Layers, Plus, Play, CheckCircle2,
   XCircle, RefreshCw, Warehouse, AlertTriangle, ChevronDown, ChevronUp,
+  Eye, FileDown, BookOpen,
 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -178,6 +181,10 @@ export default function Produccion() {
   const [submitting, setSubmitting] = useState(false);
   const [stockDisponible, setStockDisponible] = useState<number | null>(null);
 
+  // ─── Recetas (for ingredient detail) ───────────────────────────────────────
+  const [recetas, setRecetas] = useState<any[]>([]);
+  const [ordenDetalle, setOrdenDetalle] = useState<OrdenProduccion | null>(null);
+
   // ─── Fetch helpers ──────────────────────────────────────────────────────────
 
   const getHeaders = async () => {
@@ -266,10 +273,114 @@ export default function Produccion() {
     }
   };
 
+  const fetchRecetas = async () => {
+    try {
+      const [headers, base] = await Promise.all([getHeaders(), getBaseUrl()]);
+      const res = await fetch(`${base}/cocina/recetas`, { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      setRecetas(data.recetas || []);
+    } catch (err: any) {
+      console.error('Error fetching recetas:', err);
+    }
+  };
+
   const loadAll = async () => {
     setLoading(true);
-    await Promise.all([fetchOrdenes(), fetchTransferencias(), fetchLotes(), fetchMermas(), fetchStockConsolidado(), fetchProductos()]);
+    await Promise.all([fetchOrdenes(), fetchTransferencias(), fetchLotes(), fetchMermas(), fetchStockConsolidado(), fetchProductos(), fetchRecetas()]);
     setLoading(false);
+  };
+
+  // ─── Find recipe matching product name ────────────────────────────────────
+  const getRecetaParaProducto = (productoNombre: string) => {
+    if (!productoNombre) return null;
+    const nombre = productoNombre.toLowerCase().trim();
+    return recetas.find((r: any) =>
+      (r.nombre || '').toLowerCase().trim() === nombre ||
+      (r.nombre || '').toLowerCase().includes(nombre) ||
+      nombre.includes((r.nombre || '').toLowerCase().trim())
+    ) || null;
+  };
+
+  // ─── Export single order PDF with ingredients ────────────────────────────
+  const exportOrdenPDF = (orden: OrdenProduccion) => {
+    const receta = getRecetaParaProducto(orden.producto_nombre);
+    const doc = new jsPDF();
+
+    // Header
+    doc.setFillColor(30, 100, 167);
+    doc.rect(0, 0, 210, 42, 'F');
+    doc.setFontSize(18);
+    doc.setTextColor(255, 255, 255);
+    doc.text('ORDEN DE PRODUCCIÓN', 14, 18);
+    doc.setFontSize(11);
+    doc.text(orden.numero_orden, 14, 28);
+    doc.setFontSize(9);
+    doc.text(`Generado: ${new Date().toLocaleString()}`, 14, 36);
+
+    let y = 52;
+
+    // Order info table
+    autoTable(doc, {
+      startY: y,
+      head: [['Campo', 'Valor']],
+      body: [
+        ['Producto', orden.producto_nombre],
+        ['Cantidad planificada', String(orden.cantidad)],
+        ['Bodega Origen', orden.bodega_origen_nombre],
+        ['Bodega Destino', orden.bodega_destino_nombre],
+        ['Estado', ORDEN_ESTADO_LABEL[orden.estado] ?? orden.estado],
+        ['Fecha creación', formatFecha(orden.fecha_creacion)],
+        ['Fecha esperada', formatFecha(orden.fecha_esperada)],
+        ...(orden.notas ? [['Notas', orden.notas]] : []),
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [30, 100, 167], fontSize: 10 },
+      styles: { fontSize: 9 },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55 } },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 10;
+
+    // Ingredients section
+    if (receta) {
+      const ingredientes = receta.ingredientes || receta.receta_ingredientes || [];
+      const porciones = receta.porciones || 1;
+      const factor = orden.cantidad / porciones;
+
+      doc.setFontSize(12);
+      doc.setTextColor(30, 100, 167);
+      doc.text(`Ingredientes — Receta: ${receta.nombre}`, 14, y);
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`(escalado para ${orden.cantidad} unidades, base: ${porciones} porciones)`, 14, y + 6);
+      y += 12;
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Ingrediente', 'Cantidad base', 'Unidad', `Para ${orden.cantidad} uds.`]],
+        body: ingredientes.map((ing: any) => {
+          const cantidadEscalada = (ing.cantidad * factor).toFixed(2);
+          return [
+            ing.nombre_producto || ing.insumo?.nombre || ing.productos?.nombre || 'Ingrediente',
+            ing.cantidad,
+            ing.unidad_medida || '',
+            cantidadEscalada,
+          ];
+        }),
+        theme: 'striped',
+        headStyles: { fillColor: [123, 97, 255], fontSize: 9 },
+        styles: { fontSize: 9 },
+        columnStyles: { 3: { fontStyle: 'bold' } },
+      });
+    } else {
+      doc.setFontSize(10);
+      doc.setTextColor(150, 150, 150);
+      doc.text('No se encontró una receta asociada a este producto.', 14, y);
+      doc.text('Crea la ficha técnica en el módulo Cocina → Fichas Técnicas.', 14, y + 6);
+    }
+
+    doc.save(`Orden_${orden.numero_orden}.pdf`);
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -674,6 +785,7 @@ export default function Produccion() {
                         <TableHead className="text-gray-400 text-xs text-right">Cantidad</TableHead>
                         <TableHead className="text-gray-400 text-xs">Estado</TableHead>
                         <TableHead className="text-gray-400 text-xs">Fecha</TableHead>
+                        <TableHead className="text-gray-400 text-xs">Ingredientes</TableHead>
                         <TableHead className="text-gray-400 text-xs">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -689,6 +801,24 @@ export default function Produccion() {
                             <EstadoBadge estado={o.estado} map={ORDEN_ESTADO_BADGE} labelMap={ORDEN_ESTADO_LABEL} />
                           </TableCell>
                           <TableCell className="text-gray-400 text-xs">{formatFecha(o.fecha_creacion)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => setOrdenDetalle(o)}
+                                title="Ver ingredientes"
+                                className="p-1.5 rounded-lg text-[#7B61FF] hover:bg-[#7B61FF]/10 transition-colors"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => exportOrdenPDF(o)}
+                                title="Descargar PDF"
+                                className="p-1.5 rounded-lg text-[#00E5FF] hover:bg-[#00E5FF]/10 transition-colors"
+                              >
+                                <FileDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
                               {o.estado === 'pendiente' && (
@@ -1237,6 +1367,118 @@ export default function Produccion() {
             </Button>
             <Button onClick={crearTransferencia} disabled={submitting} className="bg-[#00E5FF]/20 hover:bg-[#00E5FF]/30 text-[#00E5FF] border border-[#00E5FF]/30">
               {submitting ? 'Creando...' : 'Crear Transferencia'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal: Detalle de Orden (ingredientes) ─────────────────────────── */}
+      <Dialog open={!!ordenDetalle} onOpenChange={open => { if (!open) setOrdenDetalle(null); }}>
+        <DialogContent className="bg-[#0F2640] border-[#00E5FF]/20 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-[#7B61FF]" />
+              Detalle — {ordenDetalle?.numero_orden}
+            </DialogTitle>
+          </DialogHeader>
+          {ordenDetalle && (() => {
+            const receta = getRecetaParaProducto(ordenDetalle.producto_nombre);
+            const ingredientes = receta ? (receta.ingredientes || receta.receta_ingredientes || []) : [];
+            const porciones = receta?.porciones || 1;
+            const factor = ordenDetalle.cantidad / porciones;
+
+            return (
+              <div className="space-y-5 py-2">
+                {/* Orden info */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="bg-[#0A1A2F] rounded-lg p-3 space-y-1.5">
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Producto</p>
+                    <p className="text-white font-semibold">{ordenDetalle.producto_nombre}</p>
+                  </div>
+                  <div className="bg-[#0A1A2F] rounded-lg p-3 space-y-1.5">
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Cantidad planificada</p>
+                    <p className="text-[#00E5FF] font-mono font-semibold text-lg">{ordenDetalle.cantidad}</p>
+                  </div>
+                  <div className="bg-[#0A1A2F] rounded-lg p-3 space-y-1.5">
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Origen → Destino</p>
+                    <p className="text-gray-300 text-xs">{ordenDetalle.bodega_origen_nombre} → {ordenDetalle.bodega_destino_nombre}</p>
+                  </div>
+                  <div className="bg-[#0A1A2F] rounded-lg p-3 space-y-1.5">
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Estado</p>
+                    <EstadoBadge estado={ordenDetalle.estado} map={ORDEN_ESTADO_BADGE} labelMap={ORDEN_ESTADO_LABEL} />
+                  </div>
+                </div>
+
+                {/* Ingredients section */}
+                {receta ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h3 className="text-white font-semibold flex items-center gap-2">
+                          <BookOpen className="w-4 h-4 text-[#7B61FF]" />
+                          Ficha técnica: <span className="text-[#7B61FF]">{receta.nombre}</span>
+                        </h3>
+                        <p className="text-gray-500 text-xs mt-0.5">
+                          Receta base: {porciones} {porciones === 1 ? 'porción' : 'porciones'} → escalado ×{factor.toFixed(2)} para {ordenDetalle.cantidad} unidades
+                        </p>
+                      </div>
+                    </div>
+                    {ingredientes.length === 0 ? (
+                      <p className="text-gray-500 text-sm">La receta no tiene ingredientes registrados.</p>
+                    ) : (
+                      <div className="overflow-hidden rounded-lg border border-white/5">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-[#7B61FF]/20 text-[#7B61FF] text-xs uppercase tracking-wider">
+                              <th className="text-left px-4 py-2.5">Ingrediente</th>
+                              <th className="text-right px-4 py-2.5">Base ({porciones} uds.)</th>
+                              <th className="text-right px-4 py-2.5 text-white font-bold">Para {ordenDetalle.cantidad} uds.</th>
+                              <th className="text-left px-3 py-2.5">Unidad</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ingredientes.map((ing: any, idx: number) => {
+                              const nombre = ing.nombre_producto || ing.insumo?.nombre || ing.productos?.nombre || `Ingrediente ${idx + 1}`;
+                              const cantBase = Number(ing.cantidad) || 0;
+                              const cantEscalada = (cantBase * factor).toFixed(2);
+                              return (
+                                <tr key={idx} className={`border-t border-white/5 ${idx % 2 === 0 ? 'bg-[#0A1A2F]/40' : ''} hover:bg-white/5 transition-colors`}>
+                                  <td className="px-4 py-2.5 text-white font-medium">{nombre}</td>
+                                  <td className="px-4 py-2.5 text-gray-400 text-right font-mono">{cantBase}</td>
+                                  <td className="px-4 py-2.5 text-[#00E5FF] text-right font-mono font-bold">{cantEscalada}</td>
+                                  <td className="px-3 py-2.5 text-gray-400">{ing.unidad_medida || '-'}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 text-sm">
+                    <p className="text-yellow-400 font-semibold flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" />
+                      No se encontró ficha técnica para "{ordenDetalle.producto_nombre}"
+                    </p>
+                    <p className="text-gray-400 text-xs mt-1.5">
+                      Ve al módulo <strong className="text-white">Cocina → Fichas Técnicas</strong> y crea una receta con el mismo nombre del producto para ver los ingredientes aquí.
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button
+              onClick={() => { exportOrdenPDF(ordenDetalle!); }}
+              className="bg-[#00E5FF]/20 hover:bg-[#00E5FF]/30 text-[#00E5FF] border border-[#00E5FF]/30 gap-2"
+            >
+              <FileDown className="w-4 h-4" />
+              Descargar PDF
+            </Button>
+            <Button variant="outline" onClick={() => setOrdenDetalle(null)} className="border-white/20 text-gray-300 hover:bg-white/5">
+              Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>
