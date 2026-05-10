@@ -478,3 +478,22 @@ export async function guardarMerma(empresaId: string, merma: any): Promise<any> 
   await kv.set(`mermas_${empresaId}`, mermas);
   return merma;
 }
+
+// Sincroniza stock_actual del producto real (inventario visible) por nombre
+// delta > 0 = entrada, delta < 0 = salida
+export async function sincronizarStockProductoReal(
+  empresaId: string,
+  productoNombre: string,
+  delta: number
+): Promise<void> {
+  const productos = await obtenerProductos(empresaId);
+  const idx = productos.findIndex(
+    (p: any) => (p.nombre || '').toLowerCase().trim() === productoNombre.toLowerCase().trim()
+  );
+  if (idx === -1) return; // producto no encontrado, no bloquear el flujo
+  const stockActual = productos[idx].stock_actual ?? productos[idx].stock ?? 0;
+  productos[idx].stock_actual = Math.max(0, stockActual + delta);
+  productos[idx].stock = productos[idx].stock_actual;
+  productos[idx].updated_at = new Date().toISOString();
+  await kv.set(`empresa_${empresaId}_productos`, productos);
+}

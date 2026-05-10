@@ -134,6 +134,7 @@ export default function Produccion() {
   const [lotes, setLotes] = useState<LoteProduccion[]>([]);
   const [mermas, setMermas] = useState<Merma[]>([]);
   const [stockConsolidado, setStockConsolidado] = useState<StockBodegaItem[]>([]);
+  const [productos, setProductos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [stockExpanded, setStockExpanded] = useState(false);
 
@@ -250,9 +251,21 @@ export default function Produccion() {
     }
   };
 
+  const fetchProductos = async () => {
+    try {
+      const [headers, base] = await Promise.all([getHeaders(), getBaseUrl()]);
+      const res = await fetch(`${base}/productos`, { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      setProductos((data.productos || []).filter((p: any) => p.activo !== false));
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
+
   const loadAll = async () => {
     setLoading(true);
-    await Promise.all([fetchOrdenes(), fetchTransferencias(), fetchLotes(), fetchMermas(), fetchStockConsolidado()]);
+    await Promise.all([fetchOrdenes(), fetchTransferencias(), fetchLotes(), fetchMermas(), fetchStockConsolidado(), fetchProductos()]);
     setLoading(false);
   };
 
@@ -997,13 +1010,21 @@ export default function Produccion() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-gray-300 text-sm">Producto *</Label>
-              <Input
-                value={ordenForm.producto_nombre}
-                onChange={e => setOrdenForm(f => ({ ...f, producto_nombre: e.target.value }))}
-                placeholder="Nombre del producto"
-                className="bg-[#0A1A2F] border-white/10 text-white"
-              />
+              <Label className="text-gray-300 text-sm">Producto * <span className="text-gray-500 text-xs">(del inventario)</span></Label>
+              <Select value={ordenForm.producto_nombre} onValueChange={v => setOrdenForm(f => ({ ...f, producto_nombre: v }))}>
+                <SelectTrigger className="bg-[#0A1A2F] border-white/10 text-white">
+                  <SelectValue placeholder="Seleccionar producto..." />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 max-h-60">
+                  {productos.length === 0 && <SelectItem value="-" disabled>No hay productos en inventario</SelectItem>}
+                  {productos.map((p: any) => (
+                    <SelectItem key={p.id} value={p.nombre}>
+                      <span className="text-white">{p.nombre}</span>
+                      <span className="text-gray-400 ml-2 text-xs">Stock: {p.stock_actual ?? 0}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -1088,13 +1109,21 @@ export default function Produccion() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-gray-300 text-sm">Producto *</Label>
-              <Input
-                value={transferForm.producto_nombre}
-                onChange={e => setTransferForm(f => ({ ...f, producto_nombre: e.target.value }))}
-                placeholder="Nombre del producto"
-                className="bg-[#0A1A2F] border-white/10 text-white"
-              />
+              <Label className="text-gray-300 text-sm">Producto * <span className="text-gray-500 text-xs">(del inventario)</span></Label>
+              <Select value={transferForm.producto_nombre} onValueChange={v => setTransferForm(f => ({ ...f, producto_nombre: v }))}>
+                <SelectTrigger className="bg-[#0A1A2F] border-white/10 text-white">
+                  <SelectValue placeholder="Seleccionar producto..." />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 max-h-60">
+                  {productos.length === 0 && <SelectItem value="-" disabled>No hay productos en inventario</SelectItem>}
+                  {productos.map((p: any) => (
+                    <SelectItem key={p.id} value={p.nombre}>
+                      <span className="text-white">{p.nombre}</span>
+                      <span className="text-gray-400 ml-2 text-xs">Stock: {p.stock_actual ?? 0}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label className="text-gray-300 text-sm">Cantidad *</Label>
@@ -1153,13 +1182,21 @@ export default function Produccion() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-gray-300 text-sm">Producto *</Label>
-              <Input
-                value={mermaForm.producto_nombre}
-                onChange={e => setMermaForm(f => ({ ...f, producto_nombre: e.target.value }))}
-                placeholder="Nombre del producto"
-                className="bg-[#0A1A2F] border-white/10 text-white"
-              />
+              <Label className="text-gray-300 text-sm">Producto * <span className="text-gray-500 text-xs">(del inventario)</span></Label>
+              <Select value={mermaForm.producto_nombre} onValueChange={v => setMermaForm(f => ({ ...f, producto_nombre: v }))}>
+                <SelectTrigger className="bg-[#0A1A2F] border-white/10 text-white">
+                  <SelectValue placeholder="Seleccionar producto..." />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 max-h-60">
+                  {productos.length === 0 && <SelectItem value="-" disabled>No hay productos en inventario</SelectItem>}
+                  {productos.map((p: any) => (
+                    <SelectItem key={p.id} value={p.nombre}>
+                      <span className="text-white">{p.nombre}</span>
+                      <span className="text-gray-400 ml-2 text-xs">Stock: {p.stock_actual ?? 0}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label className="text-gray-300 text-sm">Cantidad perdida *</Label>

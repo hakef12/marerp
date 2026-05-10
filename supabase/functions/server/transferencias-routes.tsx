@@ -1,5 +1,5 @@
 import * as kv from "./kv_store.tsx";
-import { transferirStockBodega } from "./kv-helpers.tsx";
+import { transferirStockBodega, sincronizarStockProductoReal } from "./kv-helpers.tsx";
 
 export function setupTransferenciasRoutes(app: any, authMiddleware: any) {
 
@@ -94,7 +94,7 @@ export function setupTransferenciasRoutes(app: any, authMiddleware: any) {
       transferencias[idx].fecha_completada = new Date().toISOString();
       await kv.set(key, transferencias);
 
-      // Move stock between bodegas
+      // Mover stock entre bodegas (stock_bodegas KV)
       const transferencia = transferencias[idx];
       const stockResult = await transferirStockBodega(
         auth.empresaId,
@@ -103,7 +103,8 @@ export function setupTransferenciasRoutes(app: any, authMiddleware: any) {
         transferencia.producto_nombre,
         transferencia.cantidad
       );
-      // stockResult may indicate insufficient stock but we allow it for initial setup
+      // La transferencia no modifica stock_actual global (el stock ya está en destino,
+      // solo cambia de bodega — el total de la empresa no varía)
 
       return c.json({ data: transferencias[idx], stockResult });
     } catch (error: any) {

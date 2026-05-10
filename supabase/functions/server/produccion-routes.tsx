@@ -1,5 +1,5 @@
 import * as kv from "./kv_store.tsx";
-import { ajustarStockBodega, guardarMerma, transferirStockBodega } from "./kv-helpers.tsx";
+import { ajustarStockBodega, guardarMerma, transferirStockBodega, sincronizarStockProductoReal, obtenerProductos } from "./kv-helpers.tsx";
 
 export function setupProduccionRoutes(app: any, authMiddleware: any) {
 
@@ -114,8 +114,14 @@ export function setupProduccionRoutes(app: any, authMiddleware: any) {
       orden.merma_porcentaje = merma_porcentaje;
       await kv.set(key, ordenes);
 
-      // Add finished product stock to destino bodega
+      // Actualizar stock en bodega destino (stock_bodegas KV)
       await ajustarStockBodega(auth.empresaId, orden.bodega_destino_id, orden.producto_nombre, cantidad_real);
+      // Sincronizar stock_actual del producto real en el inventario
+      await sincronizarStockProductoReal(auth.empresaId, orden.producto_nombre, cantidad_real);
+      // Si hay merma, descontar también del inventario real
+      if (merma_cantidad > 0) {
+        await sincronizarStockProductoReal(auth.empresaId, orden.producto_nombre, -merma_cantidad);
+      }
 
       // If merma > 0, create merma record
       let mermaRecord = null;
