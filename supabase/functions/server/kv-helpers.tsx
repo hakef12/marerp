@@ -415,3 +415,66 @@ export async function guardarPresupuesto(empresaId: string, anio: number, items:
   await kv.set(`empresa_${empresaId}_presupuesto_${anio}`, items);
   return items;
 }
+
+// =====================================================
+// STOCK POR BODEGA
+// Stock structure: { [bodegaId]: { [productoNombre]: cantidad } }
+// =====================================================
+
+export async function getStockBodegas(empresaId: string): Promise<Record<string, Record<string, number>>> {
+  return (await kv.get(`stock_bodegas_${empresaId}`)) || {};
+}
+
+export async function getStockBodega(empresaId: string, bodegaId: string): Promise<Record<string, number>> {
+  const all = await getStockBodegas(empresaId);
+  return all[bodegaId] || {};
+}
+
+export async function ajustarStockBodega(
+  empresaId: string,
+  bodegaId: string,
+  productoNombre: string,
+  delta: number  // positive = add, negative = subtract
+): Promise<void> {
+  const all = await getStockBodegas(empresaId);
+  if (!all[bodegaId]) all[bodegaId] = {};
+  const current = all[bodegaId][productoNombre] || 0;
+  all[bodegaId][productoNombre] = Math.max(0, current + delta);
+  await kv.set(`stock_bodegas_${empresaId}`, all);
+}
+
+export async function transferirStockBodega(
+  empresaId: string,
+  bodegaOrigenId: string,
+  bodegaDestinoId: string,
+  productoNombre: string,
+  cantidad: number
+): Promise<{ ok: boolean; error?: string; stockOrigen: number }> {
+  const all = await getStockBodegas(empresaId);
+  if (!all[bodegaOrigenId]) all[bodegaOrigenId] = {};
+  if (!all[bodegaDestinoId]) all[bodegaDestinoId] = {};
+  const stockOrigen = all[bodegaOrigenId][productoNombre] || 0;
+  if (stockOrigen < cantidad) {
+    return { ok: false, error: `Stock insuficiente en bodega origen. Disponible: ${stockOrigen}`, stockOrigen };
+  }
+  all[bodegaOrigenId][productoNombre] = stockOrigen - cantidad;
+  all[bodegaDestinoId][productoNombre] = (all[bodegaDestinoId][productoNombre] || 0) + cantidad;
+  await kv.set(`stock_bodegas_${empresaId}`, all);
+  return { ok: true, stockOrigen };
+}
+
+// =====================================================
+// MERMAS (WASTE/LOSS)
+// =====================================================
+
+export async function getMermas(empresaId: string): Promise<any[]> {
+  return (await kv.get(`mermas_${empresaId}`)) || [];
+}
+
+export async function guardarMerma(empresaId: string, merma: any): Promise<any> {
+  const mermas = await getMermas(empresaId);
+  if (!merma.id) merma.id = crypto.randomUUID();
+  mermas.unshift(merma);
+  await kv.set(`mermas_${empresaId}`, mermas);
+  return merma;
+}

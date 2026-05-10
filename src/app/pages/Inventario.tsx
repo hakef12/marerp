@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useBodega } from '../context/BodegaContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -39,6 +40,7 @@ import { DeleteConfirmationModal } from '../components/shared/DeleteConfirmation
 
 export default function Inventario() {
   const { token, logout } = useAuth();
+  const { bodegaActiva } = useBodega();
   
   // Helper para obtener headers de autenticación correctos
   const getAuthHeaders = async () => {
@@ -308,6 +310,30 @@ export default function Inventario() {
         setLotes(data.lotes || []);
       }
     } catch (error) {}
+  };
+
+  // Sync product stock_actual to active bodega after saving a product
+  const sincronizarStockProductoEnBodega = async (productoNombre: string, stockActual: number) => {
+    if (!bodegaActiva || !productoNombre || !stockActual) return;
+    try {
+      const { projectId } = await import('/utils/supabase/info');
+      const headers = await getAuthHeaders();
+      await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/stock/bodega/${bodegaActiva.id}/ajustar`,
+        {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            producto_nombre: productoNombre,
+            cantidad: stockActual,
+            tipo: 'ajuste',
+            motivo: 'Stock inicial desde inventario',
+          }),
+        }
+      );
+    } catch (err) {
+      console.error('Error sincronizando stock en bodega:', err);
+    }
   };
 
   // =====================================================
@@ -1531,9 +1557,13 @@ export default function Inventario() {
           setShowProductoModal(false);
           setEditingItem(null);
         }}
-        onSuccess={() => {
-          fetchProductos();
-          fetchInventario();
+        onSuccess={async () => {
+          await fetchProductos();
+          await fetchInventario();
+          // Sync stock_actual to active bodega for this product
+          if (editingItem?.nombre && editingItem?.stock_actual) {
+            await sincronizarStockProductoEnBodega(editingItem.nombre, Number(editingItem.stock_actual));
+          }
         }}
         producto={editingItem}
         categorias={categorias}

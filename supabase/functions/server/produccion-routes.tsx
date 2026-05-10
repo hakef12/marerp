@@ -1,4 +1,5 @@
 import * as kv from "./kv_store.tsx";
+import { ajustarStockBodega, guardarMerma, transferirStockBodega } from "./kv-helpers.tsx";
 
 export function setupProduccionRoutes(app: any, authMiddleware: any) {
 
@@ -95,11 +96,48 @@ export function setupProduccionRoutes(app: any, authMiddleware: any) {
         return c.json({ error: 'Solo se pueden completar órdenes en proceso' }, 400);
       }
 
+      // Parse optional body with merma info
+      let bodyData: any = {};
+      try { bodyData = await c.req.json(); } catch { /* no body is fine */ }
+
       const orden = ordenes[idx];
+      const cantidad_real = bodyData.cantidad_real !== undefined ? Number(bodyData.cantidad_real) : orden.cantidad;
+      const merma_cantidad = bodyData.merma_cantidad !== undefined ? Number(bodyData.merma_cantidad) : 0;
+      const merma_motivo = bodyData.merma_motivo || '';
+      const merma_porcentaje = orden.cantidad > 0 ? (merma_cantidad / orden.cantidad * 100).toFixed(1) : '0.0';
+
       const now = new Date().toISOString();
       orden.estado = 'completada';
       orden.fecha_completada = now;
+      orden.cantidad_real = cantidad_real;
+      orden.merma = merma_cantidad;
+      orden.merma_porcentaje = merma_porcentaje;
       await kv.set(key, ordenes);
+
+      // Add finished product stock to destino bodega
+      await ajustarStockBodega(auth.empresaId, orden.bodega_destino_id, orden.producto_nombre, cantidad_real);
+
+      // If merma > 0, create merma record
+      let mermaRecord = null;
+      if (merma_cantidad > 0) {
+        mermaRecord = await guardarMerma(auth.empresaId, {
+          empresa_id: auth.empresaId,
+          bodega_id: orden.bodega_destino_id,
+          bodega_nombre: orden.bodega_destino_nombre,
+          producto_nombre: orden.producto_nombre,
+          cantidad_perdida: merma_cantidad,
+          cantidad_planificada: orden.cantidad,
+          cantidad_real,
+          merma_porcentaje,
+          motivo: merma_motivo,
+          tipo: 'produccion',
+          orden_id: orden.id,
+          numero_orden: orden.numero_orden,
+          fecha: now,
+          registrado_por: auth.user?.nombre_completo || 'Sistema',
+          origen: 'produccion',
+        });
+      }
 
       // Crear lote de producción
       const lote = {
@@ -108,7 +146,14 @@ export function setupProduccionRoutes(app: any, authMiddleware: any) {
         empresa_id: auth.empresaId,
         orden_id: orden.id,
         producto_nombre: orden.producto_nombre,
-        cantidad: orden.cantidad,
+        cantidad_planificada: orden.cantidad,
+        cantidad_real,
+        cantidad: cantidad_real,
+        merma: merma_cantidad,
+        merma_porcentaje,
+        merma_motivo,
+        bodega_origen_id: orden.bodega_origen_id,
+        bodega_origen_nombre: orden.bodega_origen_nombre,
         bodega_id: orden.bodega_destino_id,
         bodega_nombre: orden.bodega_destino_nombre,
         fecha_produccion: now,
@@ -118,7 +163,7 @@ export function setupProduccionRoutes(app: any, authMiddleware: any) {
       lotes.push(lote);
       await kv.set(lotesKey, lotes);
 
-      // Crear transferencia automática
+      // Crear transferencia automática (using cantidad_real)
       const transferencia = {
         id: crypto.randomUUID(),
         numero_transferencia: `TR-${Date.now()}`,
@@ -128,8 +173,8 @@ export function setupProduccionRoutes(app: any, authMiddleware: any) {
         bodega_destino_id: orden.bodega_destino_id,
         bodega_destino_nombre: orden.bodega_destino_nombre,
         producto_nombre: orden.producto_nombre,
-        cantidad: orden.cantidad,
-        notas: `Transferencia automática desde orden ${orden.numero_orden}`,
+        cantidad: cantidad_real,
+        notas: `Transferencia automática desde orden ${orden.numero_orden}${merma_cantidad > 0 ? ` (merma: ${merma_cantidad})` : ''}`,
         estado: 'completada',
         solicitado_por: auth.user?.nombre_completo || 'Sistema',
         fecha_creacion: now,
@@ -140,7 +185,7 @@ export function setupProduccionRoutes(app: any, authMiddleware: any) {
       transferencias.push(transferencia);
       await kv.set(transKey, transferencias);
 
-      return c.json({ data: orden, lote, transferencia });
+      return c.json({ data: orden, lote, transferencia, merma: mermaRecord });
     } catch (error: any) {
       return c.json({ error: 'Error al completar orden', details: error.message }, 500);
     }
