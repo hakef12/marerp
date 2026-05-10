@@ -490,31 +490,29 @@ export default function Usuarios() {
                   </div>
                 )}
 
-                {/* Sucursal asignada (siempre visible para cajero / bodeguero / cocinero) */}
-                {(['cajero', 'bodeguero', 'cocinero'] as string[]).includes(formData.rol) && (
-                  <div>
-                    <Label className="text-gray-300 mb-1.5 block">Sucursal asignada</Label>
-                    <select
-                      value={formData.bodega_id}
-                      onChange={e => {
-                        const id = e.target.value;
-                        const b = bodegas.find(x => x.id === id);
-                        setFormData(f => ({ ...f, bodega_id: id, bodega_nombre: b?.nombre ?? '' }));
-                      }}
-                      className="w-full px-3 py-2 bg-white/5 border border-[#00E5FF]/20 rounded-md text-white focus:outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF]/30"
-                    >
-                      <option value="" className="bg-[#0A1A2F] text-gray-400">Sin asignar (acceso a todas)</option>
-                      {bodegas.map(b => (
-                        <option key={b.id} value={b.id} className="bg-[#0A1A2F]">{b.nombre}</option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-gray-600 mt-1">
-                      {bodegas.length === 0
-                        ? 'No hay sucursales configuradas — créalas en Inventario → Bodegas.'
-                        : 'Si asignas una sucursal, el usuario solo podrá operar en esa ubicación.'}
-                    </p>
-                  </div>
-                )}
+                {/* Sucursal asignada */}
+                <div>
+                  <Label className="text-gray-300 mb-1.5 block">Sucursal asignada</Label>
+                  <select
+                    value={formData.bodega_id}
+                    onChange={e => {
+                      const id = e.target.value;
+                      const b = bodegas.find(x => x.id === id);
+                      setFormData(f => ({ ...f, bodega_id: id, bodega_nombre: b?.nombre ?? '' }));
+                    }}
+                    className="w-full px-3 py-2 bg-white/5 border border-[#00E5FF]/20 rounded-md text-white focus:outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF]/30"
+                  >
+                    <option value="" className="bg-[#0A1A2F] text-gray-400">Sin asignar (acceso a todas)</option>
+                    {bodegas.map(b => (
+                      <option key={b.id} value={b.id} className="bg-[#0A1A2F]">{b.nombre}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {bodegas.length === 0
+                      ? 'No hay sucursales configuradas — créalas en Inventario → Bodegas.'
+                      : 'Opcional: fija al usuario a una sucursal específica.'}
+                  </p>
+                </div>
 
                 {/* Botones */}
                 <div className="flex gap-3 pt-2">
