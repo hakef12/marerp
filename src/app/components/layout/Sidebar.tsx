@@ -40,45 +40,40 @@ const NOTIF_LABEL: Record<string, string> = {
 
 const dismissedIds = new Set<string>();
 
-const BASE_DEMO_NOTIFS: Notif[] = [
-  { id: 'demo-1', title: 'Stock bajo en Coca-Cola', time: 'hace 5 min', type: 'stock', route: '/inventario' },
-  { id: 'demo-2', title: 'Comanda Mesa 5 lleva 20 min', time: 'hace 20 min', type: 'comanda', route: '/cocina' },
-  { id: 'demo-3', title: 'Factura #001 pendiente de autorización', time: 'hace 1 hora', type: 'factura', route: '/facturacion/consulta' },
-];
-
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const [notifs, setNotifs] = useState<Notif[]>(() =>
-    BASE_DEMO_NOTIFS.filter(n => !dismissedIds.has(n.id))
-  );
+  const [notifs, setNotifs] = useState<Notif[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
 
-  // Poll notifications every 30 seconds
+  // Poll real notifications every 30 seconds
   useEffect(() => {
     async function fetchNotifs() {
       try {
         const token = localStorage.getItem('erp_token') || '';
-        const resp = await fetch('/server/notificaciones', {
-          headers: { 'Authorization': `Bearer ${token}`, 'X-User-Token': token },
-        });
-        if (!resp.ok) throw new Error('not ok');
+        const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+        const resp = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/notificaciones`,
+          {
+            headers: {
+              'Authorization': `Bearer ${publicAnonKey}`,
+              'X-User-Token': token,
+            },
+          }
+        );
+        if (!resp.ok) return;
         const data = await resp.json();
         if (Array.isArray(data.notificaciones)) {
           setNotifs(data.notificaciones.filter((n: Notif) => !dismissedIds.has(n.id)));
-          return;
         }
-      } catch {
-        // API not available — show demo notifs
-      }
-      setNotifs(BASE_DEMO_NOTIFS.filter(n => !dismissedIds.has(n.id)));
+      } catch { /* silencioso si no hay conexión */ }
     }
 
     fetchNotifs();
-    const interval = setInterval(fetchNotifs, 30000);
+    const interval = setInterval(fetchNotifs, 30_000);
     return () => clearInterval(interval);
   }, []);
 

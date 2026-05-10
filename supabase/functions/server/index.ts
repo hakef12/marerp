@@ -19,6 +19,7 @@ import { setupCajaRoutes } from "./caja-routes.tsx";
 import { setupProduccionRoutes } from "./produccion-routes.tsx";
 import { setupTransferenciasRoutes } from "./transferencias-routes.tsx";
 import { setupStockBodegaRoutes } from "./stock-bodega-routes.tsx";
+import notificacionesApp from "./notificaciones-routes.tsx";
 import { registrarAuditoria } from "./audit-helper.tsx";
 import { inicializarDatosDemo, cargarDatosDemo, limpiarTodosLosDatos, obtenerProductos, obtenerCategorias, obtenerVentas, obtenerComandas, guardarVenta, guardarComanda, actualizarComanda, guardarProducto, obtenerBodegas, obtenerRecetas, ajustarStockBodega } from "./kv-helpers.tsx";
 
@@ -464,6 +465,11 @@ setupCajaRoutes(app, authMiddleware);
 setupProduccionRoutes(app, authMiddleware);
 setupTransferenciasRoutes(app, authMiddleware);
 setupStockBodegaRoutes(app, authMiddleware);
+
+// Notificaciones reales
+app.use('/server/notificaciones/*', authMiddleware);
+app.use('/server/notificaciones', authMiddleware);
+app.route('/server/notificaciones', notificacionesApp);
 
 // Rutas de compatibilidad para evitar 404
 app.get("/server/dashboard/kpis", authMiddleware, (c) => c.json({ kpis: [] }));
