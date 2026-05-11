@@ -488,29 +488,306 @@ export const exportReporteKDSToPDF = (stats: any, comandas: any[]) => {
 // UTILIDADES GENERALES DE EXPORTACIÓN
 // =====================================================
 
-export const exportToExcel = (data: any[], filename: string, sheetName: string = 'Datos') => {
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(data);
-  const colWidths = Object.keys(data[0] || {}).map(key => ({ wch: Math.max(key.length, 15) }));
-  ws['!cols'] = colWidths;
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  XLSX.writeFile(wb, `${filename}_${new Date().getTime()}.xlsx`);
+// ─── Estilos profesionales compartidos ────────────────────────────────────────
+const BRAND_DARK  = '0A1A2F'; // azul oscuro corporativo
+const BRAND_MID   = '1e64a7'; // azul medio
+const BRAND_LIGHT = '00E5FF'; // cyan accent
+const WHITE       = 'FFFFFF';
+const GRAY_LIGHT  = 'F2F6FC';
+const GRAY_MID    = 'D0DCF0';
+const GREEN_BG    = 'E6F4EA';
+const GREEN_FG    = '1A7340';
+const RED_BG      = 'FDECEA';
+const RED_FG      = 'B71C1C';
+const TOTAL_BG    = 'E8EEF8';
+
+const border = (color = 'B0BEC5') => ({
+  top:    { style: 'thin', color: { rgb: color } },
+  bottom: { style: 'thin', color: { rgb: color } },
+  left:   { style: 'thin', color: { rgb: color } },
+  right:  { style: 'thin', color: { rgb: color } },
+});
+
+const headerStyle = (bgRgb = BRAND_MID) => ({
+  font:      { bold: true, color: { rgb: WHITE }, sz: 11 },
+  fill:      { fgColor: { rgb: bgRgb } },
+  alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+  border:    border('1A3A6B'),
+});
+
+const dataStyle = (bg = WHITE, bold = false, align: string = 'left') => ({
+  font:      { bold, sz: 10, color: { rgb: '1A1A2E' } },
+  fill:      { fgColor: { rgb: bg } },
+  alignment: { horizontal: align, vertical: 'center' },
+  border:    border(),
+});
+
+const currencyStyle = (bg = WHITE, bold = false) => ({
+  font:      { bold, sz: 10, color: { rgb: bold ? BRAND_MID : '2C3E50' } },
+  fill:      { fgColor: { rgb: bg } },
+  alignment: { horizontal: 'right', vertical: 'center' },
+  border:    border(),
+  numFmt:    '"$"#,##0.00',
+});
+
+const totalRowStyle = (align: string = 'left') => ({
+  font:      { bold: true, sz: 10, color: { rgb: BRAND_MID } },
+  fill:      { fgColor: { rgb: TOTAL_BG } },
+  alignment: { horizontal: align, vertical: 'center' },
+  border:    border('8FA8D0'),
+});
+
+const totalCurrencyStyle = () => ({
+  font:      { bold: true, sz: 11, color: { rgb: BRAND_MID } },
+  fill:      { fgColor: { rgb: TOTAL_BG } },
+  alignment: { horizontal: 'right', vertical: 'center' },
+  border:    border('8FA8D0'),
+  numFmt:    '"$"#,##0.00',
+});
+
+/** Detecta si una cadena parece número monetario ("1.50", "$1.50", "1,234.00") */
+function parseMoney(v: any): number | null {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const clean = v.replace(/[$,%]/g, '').replace(/,/g, '').trim();
+    const n = parseFloat(clean);
+    if (!isNaN(n)) return n;
+  }
+  return null;
+}
+
+/** Detecta si la clave/valor parece moneda */
+function isCurrencyCol(key: string, sample: any): boolean {
+  const currencyKeys = ['saldo','total','monto','valor','precio','costo','ingreso','gasto','utilidad',
+                        'debito','credito','presupuesto','real','variacion','caja','bancos','cxc','cxp',
+                        'debit','credit','balance','amount','budget'];
+  const lk = key.toLowerCase();
+  return currencyKeys.some(k => lk.includes(k)) || parseMoney(sample) !== null;
+}
+
+/** Determina si una fila es "TOTAL" o "RESUMEN" */
+function isTotalRow(row: any): boolean {
+  const vals = Object.values(row);
+  return vals.some(v => typeof v === 'string' && /^(TOTAL|RESUMEN|SUBTOTAL|GRAND)/i.test(v as string));
+}
+
+/**
+ * exportToExcel — Genera un .xlsx profesional con:
+ *  • Encabezado corporativo azul con nombre del reporte
+ *  • Fila de cabeceras en azul medio con texto blanco
+ *  • Filas de datos con fondo alternado
+ *  • Columnas monetarias con formato $#,##0.00
+ *  • Filas TOTAL resaltadas en azul claro y negrita
+ *  • Anchos de columna automáticos
+ *  • Pie de página con fecha de generación
+ */
+export const exportToExcel = (
+  data: any[],
+  filename: string,
+  sheetName: string = 'Datos',
+  options: { title?: string; subtitle?: string } = {}
+) => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const XLSXStyle = require('xlsx-js-style') as typeof import('xlsx-js-style');
+
+  if (!data || data.length === 0) return;
+
+  const keys    = Object.keys(data[0]);
+  const title   = options.title   || sheetName;
+  const subtitle = options.subtitle || `Generado: ${new Date().toLocaleString('es-EC')}`;
+
+  // ── Construir arreglo de filas ───────────────────────────────────────────────
+  // Fila 0: título
+  // Fila 1: subtítulo / fecha
+  // Fila 2: vacía
+  // Fila 3: cabeceras
+  // Fila 4+: datos
+  const HEADER_ROW = 3; // índice 0-based
+  const DATA_START = 4;
+
+  const wsData: any[][] = [];
+
+  // Fila título
+  wsData.push([title]);
+  // Fila subtítulo
+  wsData.push([subtitle]);
+  // Fila vacía
+  wsData.push([]);
+  // Fila cabeceras
+  wsData.push(keys);
+  // Filas de datos
+  data.forEach(row => {
+    wsData.push(keys.map(k => {
+      const v = row[k];
+      const money = parseMoney(v);
+      if (money !== null && isCurrencyCol(k, v)) return money;
+      return v ?? '';
+    }));
+  });
+
+  const ws = XLSXStyle.utils.aoa_to_sheet(wsData);
+
+  // ── Helper para obtener dirección de celda ───────────────────────────────────
+  const addr = (r: number, c: number) => XLSXStyle.utils.encode_cell({ r, c });
+
+  // ── Estilar fila título (fila 0) ─────────────────────────────────────────────
+  ws[addr(0, 0)] = {
+    v: title, t: 's',
+    s: {
+      font: { bold: true, sz: 14, color: { rgb: WHITE } },
+      fill: { fgColor: { rgb: BRAND_DARK } },
+      alignment: { horizontal: 'left', vertical: 'center' },
+    },
+  };
+
+  // ── Estilar fila subtítulo (fila 1) ──────────────────────────────────────────
+  ws[addr(1, 0)] = {
+    v: subtitle, t: 's',
+    s: {
+      font: { italic: true, sz: 9, color: { rgb: '5A6A8A' } },
+      fill: { fgColor: { rgb: 'E8EEF8' } },
+      alignment: { horizontal: 'left', vertical: 'center' },
+    },
+  };
+
+  // ── Estilar cabeceras (fila 3) ────────────────────────────────────────────────
+  keys.forEach((k, c) => {
+    ws[addr(HEADER_ROW, c)] = { v: k, t: 's', s: headerStyle() };
+  });
+
+  // ── Estilar filas de datos ────────────────────────────────────────────────────
+  data.forEach((row, ri) => {
+    const isTotal = isTotalRow(row);
+    const isEven  = ri % 2 === 0;
+    const bg = isTotal ? TOTAL_BG : isEven ? WHITE : GRAY_LIGHT;
+
+    keys.forEach((k, c) => {
+      const rawVal = row[k];
+      const money  = parseMoney(rawVal);
+      const isMoney = money !== null && isCurrencyCol(k, rawVal);
+
+      const cellAddr = addr(DATA_START + ri, c);
+      const existingCell = ws[cellAddr];
+
+      if (isTotal) {
+        ws[cellAddr] = {
+          v: isMoney ? money : (existingCell?.v ?? rawVal ?? ''),
+          t: isMoney ? 'n' : 's',
+          s: isMoney ? totalCurrencyStyle() : totalRowStyle(c === 0 ? 'left' : 'right'),
+          ...(isMoney ? { z: '"$"#,##0.00' } : {}),
+        };
+      } else {
+        ws[cellAddr] = {
+          v: isMoney ? money : (existingCell?.v ?? rawVal ?? ''),
+          t: isMoney ? 'n' : 's',
+          s: isMoney ? currencyStyle(bg) : dataStyle(bg, false, c > 0 ? 'right' : 'left'),
+          ...(isMoney ? { z: '"$"#,##0.00' } : {}),
+        };
+      }
+    });
+  });
+
+  // ── Merge fila título y subtítulo ────────────────────────────────────────────
+  const mergeEnd = Math.max(keys.length - 1, 0);
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: mergeEnd } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: mergeEnd } },
+  ];
+
+  // ── Alturas de filas ──────────────────────────────────────────────────────────
+  ws['!rows'] = [
+    { hpt: 28 }, // título
+    { hpt: 16 }, // subtítulo
+    { hpt: 6  }, // vacía
+    { hpt: 22 }, // cabeceras
+    ...data.map(() => ({ hpt: 18 })),
+  ];
+
+  // ── Anchos automáticos de columna ────────────────────────────────────────────
+  ws['!cols'] = keys.map(k => {
+    const maxData = data.reduce((max, row) => {
+      const v = String(row[k] ?? '');
+      return Math.max(max, v.length);
+    }, 0);
+    const w = Math.min(Math.max(k.length + 2, maxData + 2, 10), 45);
+    return { wch: w };
+  });
+
+  // ── Rango total ───────────────────────────────────────────────────────────────
+  ws['!ref'] = XLSXStyle.utils.encode_range({
+    s: { r: 0, c: 0 },
+    e: { r: DATA_START + data.length - 1, c: keys.length - 1 },
+  });
+
+  const wb = XLSXStyle.utils.book_new();
+  XLSXStyle.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31));
+  XLSXStyle.writeFile(wb, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
 };
 
-export const exportMultipleSheetsToExcel = (sheets: Array<{ name: string; data: any[] }>, filename: string) => {
-  const wb = XLSX.utils.book_new();
+export const exportMultipleSheetsToExcel = (
+  sheets: Array<{ name: string; data: any[]; title?: string }>,
+  filename: string
+) => {
+  // Reutiliza exportToExcel hoja por hoja generando un libro multi-hoja
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const XLSXStyle = require('xlsx-js-style') as typeof import('xlsx-js-style');
+  const wb = XLSXStyle.utils.book_new();
+
   sheets.forEach(sheet => {
-    const ws = XLSX.utils.json_to_sheet(sheet.data);
-    if (sheet.data.length > 0) {
-      const colWidths = Object.keys(sheet.data[0]).map(key => {
-        const maxLength = Math.max(key.length, ...sheet.data.map(row => String(row[key] || '').length));
-        return { wch: Math.min(maxLength + 2, 50) };
+    if (!sheet.data || sheet.data.length === 0) return;
+    const keys     = Object.keys(sheet.data[0]);
+    const title    = sheet.title || sheet.name;
+    const subtitle = `Generado: ${new Date().toLocaleString('es-EC')}`;
+    const HEADER_ROW = 3;
+    const DATA_START = 4;
+
+    const wsData: any[][] = [
+      [title], [subtitle], [],
+      keys,
+      ...sheet.data.map(row => keys.map(k => {
+        const v = row[k];
+        const m = parseMoney(v);
+        return (m !== null && isCurrencyCol(k, v)) ? m : (v ?? '');
+      })),
+    ];
+
+    const ws = XLSXStyle.utils.aoa_to_sheet(wsData);
+    const addr = (r: number, c: number) => XLSXStyle.utils.encode_cell({ r, c });
+    const mergeEnd = Math.max(keys.length - 1, 0);
+
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: mergeEnd } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: mergeEnd } },
+    ];
+
+    ws[addr(0, 0)] = { v: title, t: 's', s: { font: { bold: true, sz: 14, color: { rgb: WHITE } }, fill: { fgColor: { rgb: BRAND_DARK } }, alignment: { horizontal: 'left', vertical: 'center' } } };
+    ws[addr(1, 0)] = { v: subtitle, t: 's', s: { font: { italic: true, sz: 9, color: { rgb: '5A6A8A' } }, fill: { fgColor: { rgb: 'E8EEF8' } }, alignment: { horizontal: 'left', vertical: 'center' } } };
+    keys.forEach((k, c) => { ws[addr(HEADER_ROW, c)] = { v: k, t: 's', s: headerStyle() }; });
+
+    sheet.data.forEach((row, ri) => {
+      const isTotal = isTotalRow(row);
+      const bg = isTotal ? TOTAL_BG : ri % 2 === 0 ? WHITE : GRAY_LIGHT;
+      keys.forEach((k, c) => {
+        const rawVal = row[k];
+        const money  = parseMoney(rawVal);
+        const isMoney = money !== null && isCurrencyCol(k, rawVal);
+        ws[addr(DATA_START + ri, c)] = {
+          v: isMoney ? money : (rawVal ?? ''),
+          t: isMoney ? 'n' : 's',
+          s: isTotal ? (isMoney ? totalCurrencyStyle() : totalRowStyle(c === 0 ? 'left' : 'right')) : (isMoney ? currencyStyle(bg) : dataStyle(bg, false, c > 0 ? 'right' : 'left')),
+          ...(isMoney ? { z: '"$"#,##0.00' } : {}),
+        };
       });
-      ws['!cols'] = colWidths;
-    }
-    XLSX.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+
+    ws['!rows'] = [{ hpt: 28 }, { hpt: 16 }, { hpt: 6 }, { hpt: 22 }, ...sheet.data.map(() => ({ hpt: 18 }))];
+    ws['!cols'] = keys.map(k => ({ wch: Math.min(Math.max(k.length + 2, ...sheet.data.map(r => String(r[k] ?? '').length + 2), 10), 45) }));
+    ws['!ref'] = XLSXStyle.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: DATA_START + sheet.data.length - 1, c: keys.length - 1 } });
+
+    XLSXStyle.utils.book_append_sheet(wb, ws, sheet.name.substring(0, 31));
   });
-  XLSX.writeFile(wb, `${filename}_${new Date().getTime()}.xlsx`);
+
+  XLSXStyle.writeFile(wb, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
 };
 
 export const exportToPDF = (data: any[], columns: Array<{ header: string; key: string }>, title: string, filename: string) => {

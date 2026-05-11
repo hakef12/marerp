@@ -114,12 +114,17 @@ async function apiFetch(url: string, headers: Record<string, string>, options: R
 const fmt = (n: number) => `$${Math.abs(n).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtPct = (n: number) => `${n.toFixed(1)}%`;
 
+/** Convierte un arreglo cabeceras+filas a Excel profesional (reemplaza CSV plano) */
 const exportarCSV = (nombre: string, cabeceras: string[], filas: string[][]) => {
-  const csv = [cabeceras, ...filas].map(r => r.join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
-  a.download = `${nombre}_${new Date().toISOString().split('T')[0]}.csv`;
-  a.click();
+  // Convertir a array de objetos para reutilizar exportToExcel
+  const data = filas.map(fila => {
+    const obj: Record<string, any> = {};
+    cabeceras.forEach((h, i) => { obj[h] = fila[i] ?? ''; });
+    return obj;
+  });
+  // Título legible: reemplazar guiones bajos por espacios y capitalizar
+  const titulo = nombre.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  exportToExcel(data, nombre, titulo, { title: titulo });
 };
 
 const TIPO_COLORS: Record<string, string> = {
