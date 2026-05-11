@@ -470,44 +470,86 @@ export default function Contabilidad() {
           <h1 className="text-3xl font-bold text-white mb-1">Contabilidad</h1>
           <p className="text-gray-400 text-sm">Plan Contable NEC Ecuador · Partida Doble</p>
         </div>
-        <div className="flex gap-2">
-          <ExportButtons
-            variant="compact"
-            onExportExcel={() => exportToExcel(
-              asientos.map(a => ({
-                'Número': a.numero,
-                'Fecha': a.fecha,
-                'Descripción': a.descripcion,
-                'Referencia': a.referencia || '',
-                'Total Débito': a.total_debito,
-                'Total Crédito': a.total_credito,
-                'Estado': a.estado,
-              })),
-              'contabilidad_asientos',
-              'Asientos Contables',
-            )}
-            onExportPDF={() => exportToPDF(
-              asientos,
-              [
-                { header: 'N°', key: 'numero' },
-                { header: 'Fecha', key: 'fecha' },
-                { header: 'Descripción', key: 'descripcion' },
-                { header: 'Débito', key: 'total_debito' },
-                { header: 'Crédito', key: 'total_credito' },
-                { header: 'Estado', key: 'estado' },
-              ],
-              'Libro de Asientos Contables',
-              'contabilidad_asientos',
-            )}
-          />
-          {tab === 'asientos' && (
-            <Button onClick={() => setShowAsientoModal(true)}
-              className="bg-gradient-to-r from-green-600 to-green-500">
-              <Plus className="w-4 h-4 mr-2" /> Nuevo Asiento
+        <div className="flex gap-2 flex-wrap">
+          {/* ── DASHBOARD: resumen KPI ── */}
+          {tab === 'dashboard' && dashboard && (
+            <Button variant="outline"
+              onClick={() => exportarCSV('dashboard_contable',
+                ['Indicador', 'Valor'],
+                [
+                  ['Caja + Bancos', String((dashboard.liquidez.caja).toFixed(2))],
+                  ['Cuentas por Cobrar (CxC)', String((dashboard.liquidez.cxc).toFixed(2))],
+                  ['Cuentas por Pagar (CxP)', String((dashboard.liquidez.cxp).toFixed(2))],
+                  ['Ratio Corriente', dashboard.liquidez.ratio_corriente.toFixed(2)],
+                  ['Ingresos del Mes', String((dashboard.mes.ingreso).toFixed(2))],
+                  ['Gastos del Mes', String((dashboard.mes.gasto).toFixed(2))],
+                  ['Utilidad del Mes', String((dashboard.mes.utilidad).toFixed(2))],
+                  ['Ingresos del Año', String((dashboard.anio.ingreso).toFixed(2))],
+                  ['Total Asientos Activos', String(dashboard.total_asientos)],
+                  ['Total Cuentas (hoja)', String(dashboard.total_cuentas)],
+                ]
+              )}
+              className="border-green-500/30 text-green-400 hover:bg-green-500/10">
+              <Download className="w-4 h-4 mr-2" /> Exportar CSV
             </Button>
           )}
+
+          {/* ── ASIENTOS: Excel + PDF + nuevo ── */}
+          {tab === 'asientos' && (
+            <>
+              <ExportButtons
+                variant="compact"
+                onExportExcel={() => exportToExcel(
+                  asientos.map(a => ({
+                    'Número': a.numero,
+                    'Fecha': a.fecha,
+                    'Descripción': a.descripcion,
+                    'Referencia': a.referencia || '',
+                    'Tipo': a.tipo || 'manual',
+                    'Total Débito': a.total_debito,
+                    'Total Crédito': a.total_credito,
+                    'Estado': a.estado,
+                  })),
+                  'contabilidad_asientos',
+                  'Asientos Contables',
+                )}
+                onExportPDF={() => exportToPDF(
+                  asientos,
+                  [
+                    { header: 'N°', key: 'numero' },
+                    { header: 'Fecha', key: 'fecha' },
+                    { header: 'Descripción', key: 'descripcion' },
+                    { header: 'Débito', key: 'total_debito' },
+                    { header: 'Crédito', key: 'total_credito' },
+                    { header: 'Estado', key: 'estado' },
+                  ],
+                  'Libro de Asientos Contables',
+                  'contabilidad_asientos',
+                )}
+              />
+              <Button onClick={() => setShowAsientoModal(true)}
+                className="bg-gradient-to-r from-green-600 to-green-500">
+                <Plus className="w-4 h-4 mr-2" /> Nuevo Asiento
+              </Button>
+            </>
+          )}
+
+          {/* ── CATÁLOGO: CSV + acciones ── */}
           {tab === 'catalogo' && (
             <>
+              {cuentas.length > 0 && (
+                <Button variant="outline"
+                  onClick={() => exportarCSV('catalogo_cuentas',
+                    ['Código', 'Nombre', 'Tipo', 'Nivel', 'Naturaleza', 'Es Grupo', 'Activa'],
+                    cuentas.map(c => [
+                      c.codigo, c.nombre, c.tipo, String(c.nivel),
+                      c.naturaleza, c.es_grupo ? 'Sí' : 'No', c.activa !== false ? 'Sí' : 'No',
+                    ])
+                  )}
+                  className="border-green-500/30 text-green-400 hover:bg-green-500/10">
+                  <Download className="w-4 h-4 mr-2" /> Exportar CSV
+                </Button>
+              )}
               <Button variant="outline" onClick={handleInicializarPlan} disabled={loading}
                 className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10">
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -519,58 +561,175 @@ export default function Contabilidad() {
               </Button>
             </>
           )}
+
+          {/* ── LIBRO MAYOR: CSV con movimientos de la cuenta ── */}
+          {tab === 'mayor' && mayorData && (
+            <Button variant="outline"
+              onClick={() => {
+                const cuenta = mayorData.cuenta;
+                exportarCSV(`libro_mayor_${cuenta?.codigo || 'cuenta'}`,
+                  ['Fecha', 'Asiento', 'Descripción', 'Detalle', 'Débito', 'Crédito', 'Saldo'],
+                  (mayorData.movimientos || []).map((m: any) => [
+                    m.fecha,
+                    m.numero,
+                    m.descripcion,
+                    m.detalle || '',
+                    m.debito > 0 ? String(m.debito.toFixed(2)) : '',
+                    m.credito > 0 ? String(m.credito.toFixed(2)) : '',
+                    String(m.saldo.toFixed(2)),
+                  ])
+                );
+              }}
+              className="border-green-500/30 text-green-400 hover:bg-green-500/10">
+              <Download className="w-4 h-4 mr-2" /> Exportar CSV
+            </Button>
+          )}
+
+          {/* ── BALANCE GENERAL: actualizar + CSV + Excel ── */}
           {tab === 'balance' && (
             <>
               <Button variant="outline" onClick={loadBalance}
                 className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10">
                 <RefreshCw className="w-4 h-4 mr-2" /> Actualizar
               </Button>
-              <Button variant="outline"
-                onClick={() => {
-                  if (!balanceData) return;
-                  const bCuentas: any[] = balanceData.cuentas || [];
-                  const { totales } = balanceData;
-                  const filas: string[][] = [];
-                  bCuentas.filter((c: any) => !c.es_grupo && (c.saldo_calculado || 0) !== 0).forEach((c: any) => {
-                    filas.push([c.tipo.toUpperCase(), c.codigo, c.nombre, String((c.saldo_calculado || 0).toFixed(2))]);
-                  });
-                  filas.push(['TOTAL', 'ACTIVO', '', String(totales.activo.toFixed(2))]);
-                  filas.push(['TOTAL', 'PASIVO', '', String(totales.pasivo.toFixed(2))]);
-                  filas.push(['TOTAL', 'PATRIMONIO', '', String(totales.patrimonio.toFixed(2))]);
-                  exportarCSV('balance_general', ['Tipo', 'Codigo', 'Cuenta', 'Saldo'], filas);
-                }}
-                className="border-green-500/30 text-green-400 hover:bg-green-500/10">
-                <Download className="w-4 h-4 mr-2" /> Exportar CSV
-              </Button>
+              {balanceData && (
+                <>
+                  <Button variant="outline"
+                    onClick={() => {
+                      const bCuentas: any[] = balanceData.cuentas || [];
+                      const { totales } = balanceData;
+                      const filas: string[][] = [];
+                      bCuentas.filter((c: any) => !c.es_grupo && (c.saldo_calculado || 0) !== 0).forEach((c: any) => {
+                        filas.push([c.tipo.toUpperCase(), c.codigo, c.nombre, String((c.saldo_calculado || 0).toFixed(2))]);
+                      });
+                      filas.push(['TOTAL', 'ACTIVO', 'Total Activos', String(totales.activo.toFixed(2))]);
+                      filas.push(['TOTAL', 'PASIVO', 'Total Pasivos', String(totales.pasivo.toFixed(2))]);
+                      filas.push(['TOTAL', 'PATRIMONIO', 'Total Patrimonio', String(totales.patrimonio.toFixed(2))]);
+                      exportarCSV('balance_general', ['Tipo', 'Codigo', 'Cuenta', 'Saldo'], filas);
+                    }}
+                    className="border-green-500/30 text-green-400 hover:bg-green-500/10">
+                    <Download className="w-4 h-4 mr-2" /> Exportar CSV
+                  </Button>
+                  <Button variant="outline"
+                    onClick={() => {
+                      const bCuentas: any[] = balanceData.cuentas || [];
+                      const { totales } = balanceData;
+                      const rows = bCuentas
+                        .filter((c: any) => !c.es_grupo && (c.saldo_calculado || 0) !== 0)
+                        .map((c: any) => ({
+                          'Tipo': c.tipo.toUpperCase(),
+                          'Código': c.codigo,
+                          'Cuenta': c.nombre,
+                          'Saldo': c.saldo_calculado || 0,
+                        }));
+                      rows.push({ 'Tipo': 'TOTAL', 'Código': '', 'Cuenta': 'Total Activos', 'Saldo': totales.activo });
+                      rows.push({ 'Tipo': 'TOTAL', 'Código': '', 'Cuenta': 'Total Pasivos', 'Saldo': totales.pasivo });
+                      rows.push({ 'Tipo': 'TOTAL', 'Código': '', 'Cuenta': 'Total Patrimonio', 'Saldo': totales.patrimonio });
+                      exportToExcel(rows, 'balance_general', 'Balance General');
+                    }}
+                    className="border-purple-500/30 text-purple-400 hover:bg-purple-500/10">
+                    <Download className="w-4 h-4 mr-2" /> Exportar Excel
+                  </Button>
+                </>
+              )}
             </>
           )}
+
+          {/* ── ESTADO DE RESULTADOS: actualizar + CSV + Excel ── */}
           {tab === 'resultados' && (
             <>
               <Button variant="outline" onClick={loadResultados}
                 className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10">
                 <RefreshCw className="w-4 h-4 mr-2" /> Actualizar
               </Button>
-              <Button variant="outline"
-                onClick={() => {
-                  if (!resultadosData) return;
-                  const r = resultadosData.resumen;
-                  const rCuentas: any[] = resultadosData.cuentas || [];
-                  const filas: string[][] = [];
-                  rCuentas.filter((c: any) => !c.es_grupo && (c.saldo_calculado || 0) > 0).forEach((c: any) => {
-                    filas.push([c.tipo.toUpperCase(), c.codigo, c.nombre, String((c.saldo_calculado || 0).toFixed(2))]);
-                  });
-                  filas.push(['RESUMEN', 'TOTAL_INGRESO', 'Total Ingresos', String(r.total_ingreso.toFixed(2))]);
-                  filas.push(['RESUMEN', 'TOTAL_COSTO', 'Total Costo', String(r.total_costo.toFixed(2))]);
-                  filas.push(['RESUMEN', 'UTILIDAD_BRUTA', 'Utilidad Bruta', String(r.utilidad_bruta.toFixed(2))]);
-                  filas.push(['RESUMEN', 'TOTAL_GASTO', 'Total Gastos', String(r.total_gasto.toFixed(2))]);
-                  filas.push(['RESUMEN', 'UTILIDAD_OPERACIONAL', 'Utilidad Operacional', String(r.utilidad_operacional.toFixed(2))]);
-                  filas.push(['RESUMEN', 'UTILIDAD_NETA', 'Utilidad Neta', String(r.utilidad_neta.toFixed(2))]);
-                  exportarCSV('estado_resultados', ['Tipo', 'Codigo', 'Cuenta', 'Valor'], filas);
-                }}
-                className="border-green-500/30 text-green-400 hover:bg-green-500/10">
-                <Download className="w-4 h-4 mr-2" /> Exportar CSV
-              </Button>
+              {resultadosData && (
+                <>
+                  <Button variant="outline"
+                    onClick={() => {
+                      const r = resultadosData.resumen;
+                      const rCuentas: any[] = resultadosData.cuentas || [];
+                      const filas: string[][] = [];
+                      rCuentas.filter((c: any) => !c.es_grupo && (c.saldo_calculado || 0) > 0).forEach((c: any) => {
+                        filas.push([c.tipo.toUpperCase(), c.codigo, c.nombre, String((c.saldo_calculado || 0).toFixed(2))]);
+                      });
+                      filas.push(['RESUMEN', '', 'Total Ingresos', String(r.total_ingreso.toFixed(2))]);
+                      filas.push(['RESUMEN', '', 'Total Costo', String(r.total_costo.toFixed(2))]);
+                      filas.push(['RESUMEN', '', 'Utilidad Bruta', String(r.utilidad_bruta.toFixed(2))]);
+                      filas.push(['RESUMEN', '', 'Total Gastos', String(r.total_gasto.toFixed(2))]);
+                      filas.push(['RESUMEN', '', 'Utilidad Operacional', String(r.utilidad_operacional.toFixed(2))]);
+                      filas.push(['RESUMEN', '', 'Utilidad Neta', String(r.utilidad_neta.toFixed(2))]);
+                      exportarCSV('estado_resultados', ['Tipo', 'Codigo', 'Cuenta', 'Valor'], filas);
+                    }}
+                    className="border-green-500/30 text-green-400 hover:bg-green-500/10">
+                    <Download className="w-4 h-4 mr-2" /> Exportar CSV
+                  </Button>
+                  <Button variant="outline"
+                    onClick={() => {
+                      const r = resultadosData.resumen;
+                      exportToExcel([
+                        { 'Concepto': 'Total Ingresos', 'Valor': r.total_ingreso },
+                        { 'Concepto': 'Total Costo de Ventas', 'Valor': r.total_costo },
+                        { 'Concepto': 'Utilidad Bruta', 'Valor': r.utilidad_bruta },
+                        { 'Concepto': 'Total Gastos Operacionales', 'Valor': r.total_gasto },
+                        { 'Concepto': 'Utilidad Operacional', 'Valor': r.utilidad_operacional },
+                        { 'Concepto': '15% Participación Trabajadores', 'Valor': -r.participacion_trabajadores },
+                        { 'Concepto': 'Utilidad antes IR', 'Valor': r.utilidad_antes_ir },
+                        { 'Concepto': '25% Impuesto a la Renta', 'Valor': -r.impuesto_renta },
+                        { 'Concepto': 'UTILIDAD NETA', 'Valor': r.utilidad_neta },
+                      ], 'estado_resultados', 'Estado de Resultados');
+                    }}
+                    className="border-purple-500/30 text-purple-400 hover:bg-purple-500/10">
+                    <Download className="w-4 h-4 mr-2" /> Exportar Excel
+                  </Button>
+                </>
+              )}
             </>
+          )}
+
+          {/* ── FLUJO DE EFECTIVO: CSV ── */}
+          {tab === 'flujo' && flujoData && (
+            <Button variant="outline"
+              onClick={() => {
+                const f = flujoData.flujo;
+                exportarCSV('flujo_efectivo',
+                  ['Sección', 'Concepto', 'Valor'],
+                  [
+                    ['OPERATIVO', 'Utilidad neta del período', f.operativo.utilidad_neta.toFixed(2)],
+                    ['OPERATIVO', '(+) Depreciaciones', f.operativo.depreciacion.toFixed(2)],
+                    ['OPERATIVO', '(+/-) Variación CxC', f.operativo.variacion_cxc.toFixed(2)],
+                    ['OPERATIVO', '(+/-) Variación Inventario', f.operativo.variacion_inventario.toFixed(2)],
+                    ['OPERATIVO', '(+/-) Variación CxP', f.operativo.variacion_cxp.toFixed(2)],
+                    ['OPERATIVO', 'SUBTOTAL OPERATIVO', f.operativo.total.toFixed(2)],
+                    ['INVERSIÓN', '(-) Compra de activos fijos', f.inversion.compra_activos.toFixed(2)],
+                    ['INVERSIÓN', 'SUBTOTAL INVERSIÓN', f.inversion.total.toFixed(2)],
+                    ['FINANCIAMIENTO', '(+) Préstamos recibidos', f.financiamiento.prestamos.toFixed(2)],
+                    ['FINANCIAMIENTO', 'SUBTOTAL FINANCIAMIENTO', f.financiamiento.total.toFixed(2)],
+                    ['TOTAL', 'VARIACIÓN NETA DE EFECTIVO', f.flujo_neto.toFixed(2)],
+                  ]
+                );
+              }}
+              className="border-green-500/30 text-green-400 hover:bg-green-500/10">
+              <Download className="w-4 h-4 mr-2" /> Exportar CSV
+            </Button>
+          )}
+
+          {/* ── PRESUPUESTO: CSV ── */}
+          {tab === 'presupuesto' && presupuesto.length > 0 && (
+            <Button variant="outline"
+              onClick={() => exportarCSV(`presupuesto_${presAnio}`,
+                ['Código', 'Cuenta', 'Presupuesto', 'Real', 'Variación', '% Cumplimiento'],
+                presupuesto.map(p => [
+                  p.cuenta_codigo,
+                  p.cuenta_nombre,
+                  p.presupuesto.toFixed(2),
+                  (p.real || 0).toFixed(2),
+                  (p.variacion || 0).toFixed(2),
+                  `${(p.cumplimiento || 0).toFixed(1)}%`,
+                ])
+              )}
+              className="border-green-500/30 text-green-400 hover:bg-green-500/10">
+              <Download className="w-4 h-4 mr-2" /> Exportar CSV
+            </Button>
           )}
         </div>
       </div>
