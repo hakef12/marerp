@@ -176,13 +176,14 @@ export default function POS() {
   const [dialogRIDE, setDialogRIDE] = useState(false);
   const [facturaGenerada, setFacturaGenerada] = useState<any>(null);
 
-  // ── Verificar estado de caja al montar ────────────────────────
+  // ── Verificar estado de caja al montar (y cuando cambia bodega) ──
   useEffect(() => {
     async function checkCaja() {
+      if (!bodegaActiva?.id) return; // esperar a que cargue la bodega activa
       setCargandoCaja(true);
       try {
         const res = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/server/caja/estado`,
+          `https://${projectId}.supabase.co/functions/v1/server/caja/estado?bodega_id=${bodegaActiva.id}`,
           { headers: { Authorization: `Bearer ${publicAnonKey}`, 'X-User-Token': token } }
         );
         if (!res.ok) { setCaja({ abierta: false }); return; }
@@ -200,7 +201,7 @@ export default function POS() {
       }
     }
     if (token) checkCaja();
-  }, [token]);
+  }, [token, bodegaActiva?.id]);
 
   // ── Leer parámetros de URL (venimos desde Mesas) ──────────────
   useEffect(() => {
@@ -605,7 +606,7 @@ export default function POS() {
               onClick={() => {
                 // Reintentar verificación de caja
                 setCargandoCaja(true);
-                fetch(`https://${projectId}.supabase.co/functions/v1/server/caja/estado`, {
+                fetch(`https://${projectId}.supabase.co/functions/v1/server/caja/estado?bodega_id=${bodegaActiva?.id || ''}`, {
                   headers: { Authorization: `Bearer ${publicAnonKey}`, 'X-User-Token': token }
                 }).then(r => r.json()).then(d => {
                   const s = d.sesion;
