@@ -15,7 +15,8 @@ import {
   obtenerMovimientos,
   guardarMovimiento,
   obtenerCompras,
-  guardarCompra
+  guardarCompra,
+  registrarAsientoAutomatico
 } from "./kv-helpers.tsx";
 import { registrarAuditoria, verificarPassword } from "./audit-helper.tsx";
 
@@ -466,6 +467,36 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
         c.req.header('x-forwarded-for') || null
       );
 
+      // ── Asiento contable por tipo de movimiento ───────────────
+      const costo = Number(body.costo_unitario || 0) * Number(body.cantidad || 0);
+      const fechaMov = (body.fecha || new Date().toISOString()).split('T')[0];
+      const descMov  = body.referencia || body.observaciones || `Movimiento ${body.tipo}`;
+      if (costo > 0) {
+        if (body.tipo === 'salida' || body.tipo === 'merma' || body.tipo === 'ajuste_negativo') {
+          await registrarAsientoAutomatico(auth.empresaId, {
+            tipo: 'ajuste_inventario',
+            descripcion: descMov,
+            referencia: movimiento.id,
+            fecha: fechaMov,
+            items: [
+              { codigo: '5.1.03', debito: costo,  descripcion: 'Merma / baja de inventario' },
+              { codigo: '1.1.05', credito: costo, descripcion: 'Inventario' },
+            ],
+          });
+        } else if (body.tipo === 'entrada' || body.tipo === 'ajuste_positivo') {
+          await registrarAsientoAutomatico(auth.empresaId, {
+            tipo: 'ajuste_inventario',
+            descripcion: descMov,
+            referencia: movimiento.id,
+            fecha: fechaMov,
+            items: [
+              { codigo: '1.1.05', debito: costo,  descripcion: 'Entrada inventario' },
+              { codigo: '2.1.01', credito: costo, descripcion: 'CxP proveedores' },
+            ],
+          });
+        }
+      }
+
       return c.json({ movimiento }, 201);
     } catch (error: any) {
       return c.json({ error: 'Error al crear movimiento' }, 500);
@@ -593,6 +624,20 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
         compra.id, null, { total_compra, items: itemsCalculados.length },
         c.req.header('x-forwarded-for') || null
       );
+
+      // ── Asiento contable automático de la compra ──────────────
+      if (total_compra > 0) {
+        await registrarAsientoAutomatico(auth.empresaId, {
+          tipo: 'compra_inventario',
+          descripcion: `Compra ${numero_factura || compra.id}`,
+          referencia: compra.id,
+          fecha: (fecha || new Date().toISOString()).split('T')[0],
+          items: [
+            { codigo: '1.1.05', debito: total_compra,  descripcion: 'Inventario de alimentos y bebidas' },
+            { codigo: '2.1.01', credito: total_compra, descripcion: 'CxP proveedores' },
+          ],
+        });
+      }
 
       return c.json({ compra }, 201);
     } catch (error: any) {

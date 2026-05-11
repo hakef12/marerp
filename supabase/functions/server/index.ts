@@ -21,7 +21,7 @@ import { setupTransferenciasRoutes } from "./transferencias-routes.tsx";
 import { setupStockBodegaRoutes } from "./stock-bodega-routes.tsx";
 import notificacionesApp from "./notificaciones-routes.tsx";
 import { registrarAuditoria } from "./audit-helper.tsx";
-import { inicializarDatosDemo, cargarDatosDemo, limpiarTodosLosDatos, obtenerProductos, obtenerCategorias, obtenerVentas, obtenerComandas, guardarVenta, guardarComanda, actualizarComanda, guardarProducto, obtenerBodegas, obtenerRecetas, ajustarStockBodega } from "./kv-helpers.tsx";
+import { inicializarDatosDemo, cargarDatosDemo, limpiarTodosLosDatos, obtenerProductos, obtenerCategorias, obtenerVentas, obtenerComandas, guardarVenta, guardarComanda, actualizarComanda, guardarProducto, obtenerBodegas, obtenerRecetas, ajustarStockBodega, registrarAsientoAutomatico } from "./kv-helpers.tsx";
 
 const app = new Hono();
 
@@ -439,6 +439,41 @@ app.post("/server/pos/ventas", authMiddleware, async (c) => {
         // No fallar la venta si el descuento de ingredientes falla
       }
     }
+
+    // ── Asiento contable automático de la venta ───────────────
+    try {
+      const total    = Number(body.total)     || 0;
+      const impuesto = Number(body.impuestos) || 0;
+      const subtotal = total - impuesto;
+      const metodo   = (body.metodo_pago || 'efectivo').toLowerCase();
+      const cuentaCaja = metodo.includes('tarjeta') || metodo.includes('transfer') ? '1.1.02' : '1.1.01';
+      const numTicket  = venta.numero_ticket || numero_ticket;
+
+      if (total > 0) {
+        if (impuesto > 0) {
+          await registrarAsientoAutomatico(auth.empresaId, {
+            tipo: 'venta',
+            descripcion: `Venta POS ${numTicket}`,
+            referencia: numTicket,
+            items: [
+              { codigo: cuentaCaja, debito: total,    descripcion: 'Cobro venta' },
+              { codigo: '4.1.01',   credito: subtotal, descripcion: 'Ingresos por ventas' },
+              { codigo: '2.1.03',   credito: impuesto, descripcion: 'IVA en ventas' },
+            ],
+          });
+        } else {
+          await registrarAsientoAutomatico(auth.empresaId, {
+            tipo: 'venta',
+            descripcion: `Venta POS ${numTicket}`,
+            referencia: numTicket,
+            items: [
+              { codigo: cuentaCaja, debito: total,  descripcion: 'Cobro venta' },
+              { codigo: '4.1.02',   credito: total, descripcion: 'Ventas gravadas 0%' },
+            ],
+          });
+        }
+      }
+    } catch { /* silencioso */ }
 
     return c.json({ message: 'Venta creada exitosamente', venta }, 201);
   } catch (error: any) {

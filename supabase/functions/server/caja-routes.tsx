@@ -8,6 +8,7 @@
  */
 
 import { get as kvGet, set as kvSet } from './kv_store.tsx';
+import { registrarAsientoAutomatico } from './kv-helpers.tsx';
 
 type TipoMovimiento = 'venta' | 'ingreso_manual' | 'gasto' | 'retiro' | 'apertura' | 'cierre';
 
@@ -308,6 +309,43 @@ export function setupCajaRoutes(app: any, authMiddleware: any) {
 
       sesion.movimientos.push(movimiento);
       await saveSesion(auth.empresaId, bodegaId, sesion);
+
+      // ── Asiento contable automático del movimiento ────────────
+      const fechaHoy = new Date().toISOString().split('T')[0];
+      if (tipo === 'gasto') {
+        await registrarAsientoAutomatico(auth.empresaId, {
+          tipo: 'gasto_caja',
+          descripcion: descripcion || 'Gasto de caja',
+          referencia: referencia || movimiento.id,
+          fecha: fechaHoy,
+          items: [
+            { codigo: '6.2.05', debito: montoNum,  descripcion: descripcion || 'Gasto' },
+            { codigo: '1.1.01', credito: montoNum, descripcion: 'Salida de caja' },
+          ],
+        });
+      } else if (tipo === 'retiro') {
+        await registrarAsientoAutomatico(auth.empresaId, {
+          tipo: 'retiro_caja',
+          descripcion: descripcion || 'Retiro de caja',
+          referencia: referencia || movimiento.id,
+          fecha: fechaHoy,
+          items: [
+            { codigo: '3.1.03', debito: montoNum,  descripcion: 'Retiro propietario' },
+            { codigo: '1.1.01', credito: montoNum, descripcion: 'Salida de caja' },
+          ],
+        });
+      } else if (tipo === 'ingreso_manual') {
+        await registrarAsientoAutomatico(auth.empresaId, {
+          tipo: 'ingreso_caja',
+          descripcion: descripcion || 'Ingreso manual caja',
+          referencia: referencia || movimiento.id,
+          fecha: fechaHoy,
+          items: [
+            { codigo: '1.1.01', debito: montoNum,  descripcion: 'Entrada de caja' },
+            { codigo: '4.2.02', credito: montoNum, descripcion: 'Otros ingresos' },
+          ],
+        });
+      }
 
       const monto_real = calcularMontoReal(sesion);
       return c.json({ success: true, movimiento, monto_real });

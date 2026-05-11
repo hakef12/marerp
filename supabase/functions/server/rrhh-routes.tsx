@@ -2,12 +2,14 @@
 // RUTAS: RECURSOS HUMANOS - USANDO KV STORE
 // =====================================================
 
-import { 
+import {
   inicializarDatosDemo,
   obtenerEmpleados,
   guardarEmpleado,
-  eliminarEmpleado
+  eliminarEmpleado,
+  registrarAsientoAutomatico
 } from "./kv-helpers.tsx";
+import * as kv from './kv_store.tsx';
 
 export function setupRRHHRoutes(app: any, authMiddleware: any) {
 
@@ -282,6 +284,82 @@ export function setupRRHHRoutes(app: any, authMiddleware: any) {
       });
     } catch (error: any) {
       return c.json({ error: 'Error al obtener métricas', details: error.message }, 500);
+    }
+  });
+
+  // ── POST /rrhh/nomina — Procesar rol de pagos y registrar asiento ──────────
+  app.post("/server/rrhh/nomina", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const body = await c.req.json();
+      const { periodo, empleados_ids, observaciones } = body;
+
+      const todosEmpleados = await obtenerEmpleados(auth.empresaId);
+      const empleadosPagar = empleados_ids?.length
+        ? todosEmpleados.filter((e: any) => empleados_ids.includes(e.id) && e.activo)
+        : todosEmpleados.filter((e: any) => e.activo);
+
+      if (empleadosPagar.length === 0) {
+        return c.json({ error: 'No hay empleados activos para procesar' }, 400);
+      }
+
+      // Calcular totales
+      let totalSueldos = 0, totalIESSPersonal = 0, totalIESSPatronal = 0;
+      const detalles = empleadosPagar.map((e: any) => {
+        const sueldo       = Number(e.salario || 0);
+        const iessPersonal = +(sueldo * 0.0945).toFixed(2);   // 9.45% empleado
+        const iessPatronal = +(sueldo * 0.1215).toFixed(2);   // 12.15% patronal
+        const liquidoRecibir = +(sueldo - iessPersonal).toFixed(2);
+        totalSueldos      += sueldo;
+        totalIESSPersonal += iessPersonal;
+        totalIESSPatronal += iessPatronal;
+        return { id: e.id, nombre: e.nombre_completo, sueldo, iessPersonal, iessPatronal, liquidoRecibir };
+      });
+
+      totalSueldos      = +totalSueldos.toFixed(2);
+      totalIESSPersonal = +totalIESSPersonal.toFixed(2);
+      totalIESSPatronal = +totalIESSPatronal.toFixed(2);
+      const totalLiquido = +(totalSueldos - totalIESSPersonal).toFixed(2);
+      const gastoTotal   = +(totalSueldos + totalIESSPatronal).toFixed(2);
+
+      const fechaHoy = new Date().toISOString().split('T')[0];
+      const nominaId = `NOM-${Date.now()}`;
+
+      // Guardar nómina en KV
+      const nomina = { id: nominaId, periodo: periodo || fechaHoy, detalles, totalSueldos, totalIESSPersonal, totalIESSPatronal, totalLiquido, observaciones, creada_en: new Date().toISOString() };
+      const nominas: any[] = (await kv.get(`empresa_${auth.empresaId}_nominas`)) || [];
+      nominas.push(nomina);
+      await kv.set(`empresa_${auth.empresaId}_nominas`, nominas);
+
+      // Asiento contable: Gasto sueldos + IESS patronal | CxP sueldos + IESS por pagar
+      await registrarAsientoAutomatico(auth.empresaId, {
+        tipo: 'nomina',
+        descripcion: `Rol de pagos ${periodo || fechaHoy}`,
+        referencia: nominaId,
+        fecha: fechaHoy,
+        items: [
+          { codigo: '6.1.01', debito: totalSueldos,      descripcion: 'Sueldos y salarios' },
+          { codigo: '6.1.06', debito: totalIESSPatronal, descripcion: 'Aporte patronal IESS 12.15%' },
+          { codigo: '2.1.06', credito: totalIESSPersonal, descripcion: 'IESS personal por pagar 9.45%' },
+          { codigo: '2.1.07', credito: totalIESSPatronal, descripcion: 'IESS patronal por pagar' },
+          { codigo: '2.1.08', credito: totalLiquido,      descripcion: 'Sueldos por pagar (líquido)' },
+        ],
+      });
+
+      return c.json({ nomina, mensaje: `Nómina procesada: ${empleadosPagar.length} empleados, total $${gastoTotal}` }, 201);
+    } catch (e: any) {
+      return c.json({ error: e.message }, 500);
+    }
+  });
+
+  // ── GET /rrhh/nominas — Historial de nóminas ────────────────────────────────
+  app.get("/server/rrhh/nominas", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const nominas = (await kv.get(`empresa_${auth.empresaId}_nominas`)) || [];
+      return c.json({ nominas: [...nominas].reverse() });
+    } catch (e: any) {
+      return c.json({ error: e.message }, 500);
     }
   });
 

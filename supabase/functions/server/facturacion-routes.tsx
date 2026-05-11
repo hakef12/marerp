@@ -13,6 +13,7 @@
 import forge from "npm:node-forge@1.3.1";
 // Usar las funciones PostgreSQL (get/set con string key) — NO usar getByKey/setKey que usan Deno.openKv()
 import { get as getByKey, set as setKey, getByPrefixWithKeys } from './kv_store.tsx';
+import { registrarAsientoAutomatico } from './kv-helpers.tsx';
 
 // ============================================================
 // XML HELPERS
@@ -1054,6 +1055,38 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
 
     await setKey(`empresa:${empresaId}:factura:${facturaId}`, factura);
     console.log('📄 Factura guardada:', facturaId, factura.estado);
+
+    // ── Asiento contable automático de la factura ─────────────
+    try {
+      const totalFac    = Number(factura.importeTotal ?? factura.total ?? 0);
+      const ivaFac      = Number(factura.totalIva ?? factura.iva ?? 0);
+      const subtotalFac = totalFac - ivaFac;
+      const numeroFac   = factura.numero_factura ?? factura.secuencial ?? facturaId;
+      if (totalFac > 0) {
+        if (ivaFac > 0) {
+          await registrarAsientoAutomatico(empresaId, {
+            tipo: 'factura',
+            descripcion: `Factura ${numeroFac}`,
+            referencia: facturaId,
+            items: [
+              { codigo: '1.1.03', debito: totalFac,    descripcion: 'CxC cliente' },
+              { codigo: '4.1.01', credito: subtotalFac, descripcion: 'Ingreso por venta' },
+              { codigo: '2.1.03', credito: ivaFac,      descripcion: 'IVA en ventas' },
+            ],
+          });
+        } else {
+          await registrarAsientoAutomatico(empresaId, {
+            tipo: 'factura',
+            descripcion: `Factura ${numeroFac}`,
+            referencia: facturaId,
+            items: [
+              { codigo: '1.1.03', debito: totalFac,  descripcion: 'CxC cliente' },
+              { codigo: '4.1.02', credito: totalFac, descripcion: 'Venta gravada 0%' },
+            ],
+          });
+        }
+      }
+    } catch { /* silencioso */ }
 
     return new Response(
       JSON.stringify({ success: true, factura_id: facturaId, factura, firmada: factura.firmado_digitalmente }),

@@ -406,6 +406,64 @@ export async function guardarAsiento(empresaId: string, asiento: any) {
   return idx >= 0 ? asientos[idx] : asientos[asientos.length - 1];
 }
 
+// ─── Asiento automático desde otros módulos ─────────────────────────────────
+// Busca cada cuenta por su código NEC y crea el asiento en partida doble.
+// Falla silenciosamente para no interrumpir la transacción origen.
+
+export async function registrarAsientoAutomatico(
+  empresaId: string,
+  opciones: {
+    tipo: string;
+    descripcion: string;
+    referencia?: string;
+    fecha?: string;
+    items: Array<{ codigo: string; debito?: number; credito?: number; descripcion?: string }>;
+  }
+): Promise<void> {
+  try {
+    const cuentas: any[] = await obtenerCuentas(empresaId);
+    if (cuentas.length === 0) return; // Sin plan contable inicializado
+
+    // Resolver cada ítem: buscar cuenta_id por código
+    const itemsResueltos = opciones.items
+      .map(item => {
+        const cuenta = cuentas.find((c: any) => c.codigo === item.codigo && !c.es_grupo);
+        if (!cuenta) return null;
+        return {
+          cuenta_id: cuenta.id,
+          cuenta_codigo: cuenta.codigo,
+          cuenta_nombre: cuenta.nombre,
+          debito: item.debito ?? 0,
+          credito: item.credito ?? 0,
+          descripcion: item.descripcion ?? opciones.descripcion,
+        };
+      })
+      .filter(Boolean);
+
+    if (itemsResueltos.length === 0) return;
+
+    const totalD = itemsResueltos.reduce((s, i) => s + (i!.debito || 0), 0);
+    const totalC = itemsResueltos.reduce((s, i) => s + (i!.credito || 0), 0);
+
+    // Solo registrar si el asiento cuadra (diferencia < 1 centavo)
+    if (Math.abs(totalD - totalC) > 0.01) return;
+
+    await guardarAsiento(empresaId, {
+      tipo: opciones.tipo,
+      descripcion: opciones.descripcion,
+      referencia: opciones.referencia ?? '',
+      fecha: opciones.fecha ?? new Date().toISOString().split('T')[0],
+      estado: 'activo',
+      origen_automatico: true,
+      items: itemsResueltos,
+      total_debito: totalD,
+      total_credito: totalC,
+    });
+  } catch {
+    // Silencioso: no interrumpe el flujo principal
+  }
+}
+
 export async function obtenerPresupuesto(empresaId: string, anio: number) {
   const pres = await kv.get(`empresa_${empresaId}_presupuesto_${anio}`);
   return pres || [];
