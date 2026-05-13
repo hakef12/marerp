@@ -19,7 +19,8 @@ import {
   obtenerCuentasPorPagar,
   guardarCuentaPorPagar,
   marcarCxPPagada,
-  registrarAsientoAutomatico
+  registrarAsientoAutomatico,
+  obtenerAsientos
 } from "./kv-helpers.tsx";
 import { registrarAuditoria, verificarPassword } from "./audit-helper.tsx";
 
@@ -725,6 +726,67 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
       return c.json({ cxp });
     } catch (error: any) {
       return c.json({ error: 'Error al registrar pago', details: error.message }, 500);
+    }
+  });
+
+  // ── POST /compras/backfill-asientos — Retroactivo: crea asientos de compras sin asiento ──
+  app.post("/server/compras/backfill-asientos", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const compras = await obtenerCompras(auth.empresaId);
+      const asientosExistentes = await obtenerAsientos(auth.empresaId);
+
+      // Conjunto de referencias ya registradas en contabilidad
+      const referenciasYaExistentes = new Set(
+        asientosExistentes
+          .filter((a: any) => a.tipo === 'compra_inventario')
+          .map((a: any) => a.referencia)
+      );
+
+      const creados: string[] = [];
+      const omitidos: string[] = [];
+
+      for (const compra of compras) {
+        if (!compra.id) continue;
+
+        // Si ya existe un asiento con esta referencia, saltar
+        if (referenciasYaExistentes.has(compra.id)) {
+          omitidos.push(compra.numero_factura || compra.id);
+          continue;
+        }
+
+        const total = Number(compra.total_compra) || 0;
+        if (total <= 0) { omitidos.push(compra.numero_factura || compra.id); continue; }
+
+        const tipoPago = compra.tipo_pago || 'contado'; // compras antiguas se asumen contado
+        const cuentaCredito = tipoPago === 'credito' ? '2.1.01' : '1.1.01';
+        const descCredito   = tipoPago === 'credito' ? 'CxP proveedores' : 'Pago en efectivo/banco';
+        const fecha = (compra.fecha || compra.created_at || new Date().toISOString()).split('T')[0];
+
+        await registrarAsientoAutomatico(auth.empresaId, {
+          tipo: 'compra_inventario',
+          descripcion: `[Retroactivo] Compra ${compra.numero_factura || compra.id} (${tipoPago === 'credito' ? 'Crédito' : 'Contado'})`,
+          referencia: compra.id,
+          fecha,
+          items: [
+            { codigo: '1.1.05', debito: total,  descripcion: 'Inventario de alimentos y bebidas' },
+            { codigo: cuentaCredito, credito: total, descripcion: descCredito },
+          ],
+        });
+
+        creados.push(compra.numero_factura || compra.id);
+      }
+
+      return c.json({
+        success: true,
+        creados: creados.length,
+        omitidos: omitidos.length,
+        detalle_creados: creados,
+        detalle_omitidos: omitidos,
+        mensaje: `${creados.length} asiento(s) creado(s), ${omitidos.length} ya existían o sin monto.`,
+      });
+    } catch (error: any) {
+      return c.json({ error: 'Error en backfill de asientos', details: error.message }, 500);
     }
   });
 }

@@ -569,6 +569,39 @@ export default function Inventario() {
   };
 
   // =====================================================
+  // BACKFILL ASIENTOS CONTABLES DE COMPRAS ANTIGUAS
+  // =====================================================
+
+  const [backfilling, setBackfilling] = useState(false);
+
+  const backfillAsientos = async () => {
+    if (!confirm('¿Crear asientos contables retroactivos para todas las compras que aún no tienen asiento? Esto no duplica si ya existen.')) return;
+    setBackfilling(true);
+    try {
+      const { projectId } = await import('/utils/supabase/info');
+      const headers = await getAuthHeaders();
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server/compras/backfill-asientos`, {
+        method: 'POST',
+        headers,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(`✅ ${data.mensaje}`, { duration: 6000 });
+        if (data.detalle_creados?.length > 0) {
+          console.log('Asientos creados para:', data.detalle_creados);
+        }
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Error en backfill');
+      }
+    } catch {
+      toast.error('Error de conexión');
+    } finally {
+      setBackfilling(false);
+    }
+  };
+
+  // =====================================================
   // RENDER
   // =====================================================
 
@@ -1214,7 +1247,17 @@ export default function Inventario() {
 
               {!showCompraForm ? (
                 <>
-                  <div className="flex justify-end">
+                  <div className="flex justify-between items-center">
+                    {/* Botón retroactivo: crea asientos de compras antiguas sin asiento */}
+                    <Button
+                      onClick={backfillAsientos}
+                      disabled={backfilling || compras.length === 0}
+                      variant="outline"
+                      className="border-[#7B61FF]/40 text-[#7B61FF] hover:bg-[#7B61FF]/10 text-sm"
+                    >
+                      <Calculator className="w-4 h-4 mr-2" />
+                      {backfilling ? 'Procesando...' : 'Generar asientos faltantes'}
+                    </Button>
                     <Button onClick={() => setShowCompraForm(true)} className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
                       <Plus className="w-4 h-4 mr-2" /> Nueva Compra
                     </Button>
