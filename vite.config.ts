@@ -17,6 +17,11 @@ export default defineConfig({
     },
   },
 
+  // Force CJS packages to be pre-bundled as ESM by Vite
+  optimizeDeps: {
+    include: ['xlsx-js-style'],
+  },
+
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
 })

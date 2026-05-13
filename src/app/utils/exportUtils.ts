@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import * as XLSXStyle from 'xlsx-js-style';
 
 // =====================================================
 // EXPORTAR RECETAS A PDF
@@ -587,8 +588,6 @@ export const exportToExcel = (
   sheetName: string = 'Datos',
   options: { title?: string; subtitle?: string } = {}
 ) => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const XLSXStyle = require('xlsx-js-style') as typeof import('xlsx-js-style');
 
   if (!data || data.length === 0) return;
 
@@ -728,9 +727,6 @@ export const exportMultipleSheetsToExcel = (
   sheets: Array<{ name: string; data: any[]; title?: string }>,
   filename: string
 ) => {
-  // Reutiliza exportToExcel hoja por hoja generando un libro multi-hoja
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const XLSXStyle = require('xlsx-js-style') as typeof import('xlsx-js-style');
   const wb = XLSXStyle.utils.book_new();
 
   sheets.forEach(sheet => {
