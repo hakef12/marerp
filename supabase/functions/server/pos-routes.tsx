@@ -71,11 +71,22 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
 
       const productosParaPOS = productosReales
         .filter((p: any) => p.disponible !== false)
-        .map((producto: any) => ({
-          ...producto,
-          precio: Number(producto.precio_venta) || Number(producto.precio) || 0,
-          categorias: producto.categoria_id ? categoriasMap.get(producto.categoria_id) : null,
-        }))
+        .map((producto: any) => {
+          // Formula products that don't manage individual inventory have no physical stock
+          const esRecetaSinStock = producto.es_receta === true && producto.gestiona_inventario !== true;
+          return {
+            ...producto,
+            precio: Number(producto.precio_venta) || Number(producto.precio) || 0,
+            // Normalize stock: formula-only products get null (unlimited), others default to 0
+            stock_actual: esRecetaSinStock ? null : (producto.stock_actual ?? 0),
+            stock_minimo: producto.stock_minimo ?? 0,
+            porcentaje_iva: producto.porcentaje_iva ?? 0,
+            impuesto_incluido: producto.impuesto_incluido ?? false,
+            es_receta: producto.es_receta ?? false,
+            gestiona_inventario: producto.gestiona_inventario ?? false,
+            categorias: producto.categoria_id ? categoriasMap.get(producto.categoria_id) : null,
+          };
+        })
         .sort((a: any, b: any) => (a.nombre || '').localeCompare(b.nombre || ''));
 
       return c.json({ productos: productosParaPOS });

@@ -8,12 +8,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from 'sonner';
-import { 
-  Package, 
-  Plus, 
-  AlertCircle, 
-  TrendingDown, 
-  Search, 
+import {
+  Package,
+  Plus,
+  AlertCircle,
+  TrendingDown,
+  Search,
   Warehouse,
   BarChart3,
   ArrowLeftRight,
@@ -28,7 +28,14 @@ import {
   Calendar,
   RefreshCw,
   DollarSign,
-  Boxes
+  Boxes,
+  Eye,
+  CreditCard,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Bell,
+  X,
 } from 'lucide-react';
 import { ExportButtons } from '../components/ExportButtons';
 import { exportToPDF, exportToExcel } from '../utils/exportUtils';
@@ -64,7 +71,7 @@ export default function Inventario() {
   
   // Estados de UI
   const [isLoading, setIsLoading] = useState(false);
-  const [view, setView] = useState<'inventory' | 'products' | 'warehouses' | 'suppliers' | 'movements' | 'purchases' | 'costcenters' | 'analysis' | 'expiry'>('inventory');
+  const [view, setView] = useState<'inventory' | 'products' | 'warehouses' | 'suppliers' | 'movements' | 'purchases' | 'cuentaspagar' | 'costcenters' | 'analysis' | 'expiry'>('inventory');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWarehouse, setSelectedWarehouse] = useState('all');
   const [filterLevel, setFilterLevel] = useState<'all' | 'critical' | 'low' | 'normal'>('all');
@@ -81,8 +88,17 @@ export default function Inventario() {
   // Estados de compras
   const [showCompraForm, setShowCompraForm] = useState(false);
   const [compraSubmitting, setCompraSubmitting] = useState(false);
-  const [compraForm, setCompraForm] = useState({ proveedor_id: '', fecha: new Date().toISOString().split('T')[0], numero_factura: '', observaciones: '' });
+  const [compraForm, setCompraForm] = useState({
+    proveedor_id: '', fecha: new Date().toISOString().split('T')[0],
+    numero_factura: '', observaciones: '',
+    tipo_pago: 'contado' as 'contado' | 'credito',
+    fecha_vencimiento: '',
+  });
   const [compraItems, setCompraItems] = useState<any[]>([{ producto_id: '', cantidad: '', costo_total: '' }]);
+  const [viewingCompra, setViewingCompra] = useState<any>(null);
+  const [cxp, setCxp] = useState<any[]>([]);
+  const [cxpPagandoId, setCxpPagandoId] = useState<string | null>(null);
+  const [cxpMontoPago, setCxpMontoPago] = useState('');
 
   useEffect(() => {
     loadAllData();
@@ -98,6 +114,7 @@ export default function Inventario() {
       fetchMovimientos(),
       fetchCentrosCostos(),
       fetchCompras(),
+      fetchCxP(),
       fetchLotes()
     ]);
   };
@@ -300,6 +317,40 @@ export default function Inventario() {
     } catch (error) {}
   };
 
+  const fetchCxP = async () => {
+    try {
+      const { projectId } = await import('/utils/supabase/info');
+      const headers = await getAuthHeaders();
+      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/compras/cxp`, { headers });
+      if (response.ok) {
+        const data = await response.json();
+        setCxp(data.cxp || []);
+      }
+    } catch (error) {}
+  };
+
+  const pagarCxP = async (cxpId: string, monto: number) => {
+    try {
+      const { projectId } = await import('/utils/supabase/info');
+      const headers = await getAuthHeaders();
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server/compras/cxp/${cxpId}/pagar`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monto })
+      });
+      if (res.ok) {
+        toast.success('Pago registrado correctamente');
+        setCxpPagandoId(null);
+        setCxpMontoPago('');
+        fetchCxP();
+        fetchCompras();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Error al registrar pago');
+      }
+    } catch { toast.error('Error de conexión'); }
+  };
+
   const fetchLotes = async () => {
     try {
       const { projectId } = await import('/utils/supabase/info');
@@ -481,9 +532,14 @@ export default function Inventario() {
       const headers = await getAuthHeaders();
       const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/compras`, {
         method: 'POST',
-        headers,
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...compraForm,
+          proveedor_id: compraForm.proveedor_id,
+          fecha: compraForm.fecha,
+          numero_factura: compraForm.numero_factura,
+          observaciones: compraForm.observaciones,
+          tipo_pago: compraForm.tipo_pago,
+          fecha_vencimiento: compraForm.tipo_pago === 'credito' ? compraForm.fecha_vencimiento : undefined,
           items: itemsValidos.map(i => ({
             producto_id: i.producto_id,
             cantidad: Number(i.cantidad),
@@ -493,10 +549,11 @@ export default function Inventario() {
         })
       });
       if (response.ok) {
-        toast.success('Compra registrada y stock actualizado');
+        toast.success(compraForm.tipo_pago === 'credito' ? 'Compra a crédito registrada — se creó cuenta por pagar' : 'Compra registrada y stock actualizado');
         setShowCompraForm(false);
-        setCompraForm({ proveedor_id: '', fecha: new Date().toISOString().split('T')[0], numero_factura: '', observaciones: '' });
+        setCompraForm({ proveedor_id: '', fecha: new Date().toISOString().split('T')[0], numero_factura: '', observaciones: '', tipo_pago: 'contado', fecha_vencimiento: '' });
         setCompraItems([{ producto_id: '', cantidad: '', costo_total: '' }]);
+        fetchCxP();
         fetchCompras();
         fetchProductos();
         fetchInventario();
@@ -607,6 +664,18 @@ export default function Inventario() {
         </Card>
       </div>
 
+      {/* Banner de alertas de pago — visible en todas las vistas */}
+      {cxp.filter(c => c.estado !== 'pagada' && c.dias_restantes !== null && c.dias_restantes <= 5).length > 0 && view !== 'cuentaspagar' && view !== 'purchases' && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-red-500/15 transition-colors" onClick={() => setView('cuentaspagar')}>
+          <Bell className="w-4 h-4 text-red-400 flex-shrink-0" />
+          <p className="text-red-300 text-sm flex-1">
+            <span className="font-bold text-red-400">Atención:</span>{' '}
+            {cxp.filter(c => c.estado !== 'pagada' && c.dias_restantes !== null && c.dias_restantes <= 5).length} factura(s) de proveedor próximas a vencer o vencidas.
+          </p>
+          <span className="text-red-400 text-xs underline whitespace-nowrap">Ver Cuentas x Pagar</span>
+        </div>
+      )}
+
       {/* Tabs de navegación */}
       <div className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 rounded-xl shadow-lg border border-[#00E5FF]/20 p-2 flex gap-2 overflow-x-auto">
         <button
@@ -670,6 +739,22 @@ export default function Inventario() {
           <ShoppingCart className="w-5 h-5" /> Compras
         </button>
         <button
+          onClick={() => setView('cuentaspagar')}
+          className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
+            view === 'cuentaspagar'
+              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
+              : 'text-gray-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <CreditCard className="w-5 h-5" />
+          Cuentas x Pagar
+          {cxp.filter(c => c.estado !== 'pagada' && c.dias_restantes !== null && c.dias_restantes <= 5).length > 0 && (
+            <span className="bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+              {cxp.filter(c => c.estado !== 'pagada' && c.dias_restantes !== null && c.dias_restantes <= 5).length}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => setView('analysis')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'analysis'
@@ -692,6 +777,7 @@ export default function Inventario() {
               {view === 'suppliers' && 'Proveedores'}
               {view === 'movements' && 'Movimientos de Inventario'}
               {view === 'purchases' && 'Registro de Compras'}
+              {view === 'cuentaspagar' && 'Cuentas por Pagar'}
               {view === 'analysis' && 'Análisis de Inventario'}
             </CardTitle>
             <div className="flex gap-2">
@@ -1100,6 +1186,32 @@ export default function Inventario() {
           {/* Vista de Compras */}
           {view === 'purchases' && (
             <div className="space-y-4">
+              {/* Alerta pagos próximos */}
+              {(() => {
+                const proximos = cxp.filter(c => c.estado !== 'pagada' && c.dias_restantes !== null && c.dias_restantes <= 5);
+                if (proximos.length === 0) return null;
+                return (
+                  <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-4 flex items-start gap-3">
+                    <Bell className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-red-400 font-semibold text-sm mb-1">Pagos próximos a vencer</p>
+                      <div className="space-y-1">
+                        {proximos.map(c => (
+                          <p key={c.id} className="text-red-300 text-xs">
+                            {c.proveedor?.nombre || 'Proveedor'} — Fact. {c.numero_factura || c.id.slice(0,8)} —{' '}
+                            <span className="font-bold">${(c.saldo_pendiente || 0).toFixed(2)}</span> —{' '}
+                            {c.dias_restantes <= 0
+                              ? <span className="text-red-500 font-bold">VENCIDA</span>
+                              : <span>vence en {c.dias_restantes} día(s)</span>}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                    <button onClick={() => setView('cuentaspagar')} className="text-xs text-red-400 underline whitespace-nowrap">Ver CxP</button>
+                  </div>
+                );
+              })()}
+
               {!showCompraForm ? (
                 <>
                   <div className="flex justify-end">
@@ -1121,8 +1233,10 @@ export default function Inventario() {
                           <TableHead className="text-gray-400">Fecha</TableHead>
                           <TableHead className="text-gray-400">Factura</TableHead>
                           <TableHead className="text-gray-400">Proveedor</TableHead>
+                          <TableHead className="text-gray-400">Pago</TableHead>
                           <TableHead className="text-gray-400">Ítems</TableHead>
                           <TableHead className="text-gray-400 text-right">Total Compra</TableHead>
+                          <TableHead className="text-gray-400 text-right">Ver</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1131,8 +1245,20 @@ export default function Inventario() {
                             <TableCell className="text-gray-300">{new Date(compra.fecha || compra.created_at).toLocaleDateString('es-EC')}</TableCell>
                             <TableCell className="text-white font-mono">{compra.numero_factura || '—'}</TableCell>
                             <TableCell className="text-gray-300">{compra.proveedor?.nombre || '—'}</TableCell>
+                            <TableCell>
+                              <Badge className={compra.tipo_pago === 'credito'
+                                ? (compra.estado_pago === 'pagada' ? 'bg-green-500/20 text-green-400' : 'bg-orange-500/20 text-orange-400')
+                                : 'bg-blue-500/20 text-blue-400'}>
+                                {compra.tipo_pago === 'credito' ? (compra.estado_pago === 'pagada' ? 'Crédito pagado' : 'Crédito pend.') : 'Contado'}
+                              </Badge>
+                            </TableCell>
                             <TableCell className="text-gray-400">{(compra.items || []).length} producto(s)</TableCell>
                             <TableCell className="text-[#00E5FF] font-bold text-right">${(compra.total_compra || 0).toFixed(2)}</TableCell>
+                            <TableCell className="text-right">
+                              <Button size="sm" variant="ghost" onClick={() => setViewingCompra(compra)} className="text-gray-400 hover:text-white">
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -1168,6 +1294,48 @@ export default function Inventario() {
                       <label className="text-sm text-gray-400">N° Factura (opcional)</label>
                       <Input value={compraForm.numero_factura} onChange={e => setCompraForm(f => ({ ...f, numero_factura: e.target.value }))} className="bg-white/5 border-[#00E5FF]/20 text-white" placeholder="001-001-000001" />
                     </div>
+                  </div>
+
+                  {/* Tipo de pago */}
+                  <div className="bg-white/3 border border-[#00E5FF]/20 rounded-lg p-4 space-y-3">
+                    <label className="text-sm text-[#00E5FF] font-semibold">Tipo de Pago</label>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setCompraForm(f => ({ ...f, tipo_pago: 'contado' }))}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-semibold transition-all ${
+                          compraForm.tipo_pago === 'contado'
+                            ? 'bg-[#00E5FF]/15 border-[#00E5FF] text-[#00E5FF]'
+                            : 'border-white/10 text-gray-400 hover:border-white/30'
+                        }`}
+                      >
+                        <CheckCircle className="w-4 h-4" /> Pago al Contado
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCompraForm(f => ({ ...f, tipo_pago: 'credito' }))}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-semibold transition-all ${
+                          compraForm.tipo_pago === 'credito'
+                            ? 'bg-orange-500/15 border-orange-500 text-orange-400'
+                            : 'border-white/10 text-gray-400 hover:border-white/30'
+                        }`}
+                      >
+                        <CreditCard className="w-4 h-4" /> Crédito (CxP)
+                      </button>
+                    </div>
+                    {compraForm.tipo_pago === 'credito' && (
+                      <div className="space-y-1 pt-1">
+                        <label className="text-sm text-gray-400">Fecha de vencimiento del pago *</label>
+                        <Input
+                          type="date"
+                          value={compraForm.fecha_vencimiento}
+                          onChange={e => setCompraForm(f => ({ ...f, fecha_vencimiento: e.target.value }))}
+                          className="bg-white/5 border-orange-500/40 text-white max-w-xs"
+                          required
+                        />
+                        <p className="text-xs text-orange-400/70">Se enviará una alerta 5 días antes del vencimiento</p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Tabla de ítems */}
@@ -1271,6 +1439,131 @@ export default function Inventario() {
                     </Button>
                   </div>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Vista de Cuentas por Pagar */}
+          {view === 'cuentaspagar' && (
+            <div className="space-y-4">
+              {/* Resumen */}
+              {(() => {
+                const pendientes = cxp.filter(c => c.estado !== 'pagada');
+                const totalPendiente = pendientes.reduce((s, c) => s + (c.saldo_pendiente || 0), 0);
+                const vencidas = pendientes.filter(c => c.dias_restantes !== null && c.dias_restantes < 0);
+                const proximas = pendientes.filter(c => c.dias_restantes !== null && c.dias_restantes >= 0 && c.dias_restantes <= 5);
+                return (
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-white/5 border border-[#00E5FF]/20 rounded-xl p-4 text-center">
+                      <p className="text-gray-400 text-sm">Total por pagar</p>
+                      <p className="text-2xl font-black text-[#00E5FF]">${totalPendiente.toFixed(2)}</p>
+                    </div>
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center">
+                      <p className="text-gray-400 text-sm">Facturas vencidas</p>
+                      <p className="text-2xl font-black text-red-400">{vencidas.length}</p>
+                    </div>
+                    <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 text-center">
+                      <p className="text-gray-400 text-sm">Vencen en 5 días</p>
+                      <p className="text-2xl font-black text-orange-400">{proximas.length}</p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Tabla CxP */}
+              {cxp.length === 0 ? (
+                <div className="text-center text-gray-400 py-12">
+                  <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                  <p>No hay cuentas por pagar — solo aparecen compras a crédito</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-[#00E5FF]/20">
+                      <TableHead className="text-gray-400">Proveedor</TableHead>
+                      <TableHead className="text-gray-400">Factura</TableHead>
+                      <TableHead className="text-gray-400">Emisión</TableHead>
+                      <TableHead className="text-gray-400">Vencimiento</TableHead>
+                      <TableHead className="text-gray-400 text-right">Monto</TableHead>
+                      <TableHead className="text-gray-400 text-right">Saldo</TableHead>
+                      <TableHead className="text-gray-400">Estado</TableHead>
+                      <TableHead className="text-gray-400 text-right">Acción</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {cxp.map((item) => {
+                      const vencida = item.dias_restantes !== null && item.dias_restantes < 0;
+                      const proxima = item.dias_restantes !== null && item.dias_restantes >= 0 && item.dias_restantes <= 5;
+                      return (
+                        <TableRow key={item.id} className={`border-[#00E5FF]/10 hover:bg-white/5 ${vencida ? 'bg-red-500/5' : proxima ? 'bg-orange-500/5' : ''}`}>
+                          <TableCell className="text-white font-medium">{item.proveedor?.nombre || '—'}</TableCell>
+                          <TableCell className="text-white font-mono">{item.numero_factura || '—'}</TableCell>
+                          <TableCell className="text-gray-300">{item.fecha_emision ? new Date(item.fecha_emision).toLocaleDateString('es-EC') : '—'}</TableCell>
+                          <TableCell>
+                            {item.fecha_vencimiento ? (
+                              <span className={`text-sm font-medium ${vencida ? 'text-red-400' : proxima ? 'text-orange-400' : 'text-gray-300'}`}>
+                                {new Date(item.fecha_vencimiento).toLocaleDateString('es-EC')}
+                                {item.dias_restantes !== null && (
+                                  <span className="block text-xs">
+                                    {vencida ? `Venció hace ${Math.abs(item.dias_restantes)} día(s)` : `${item.dias_restantes} día(s) restantes`}
+                                  </span>
+                                )}
+                              </span>
+                            ) : '—'}
+                          </TableCell>
+                          <TableCell className="text-white text-right">${(item.monto || 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-right">
+                            <span className={`font-bold ${item.estado === 'pagada' ? 'text-green-400' : 'text-orange-400'}`}>
+                              ${(item.saldo_pendiente || 0).toFixed(2)}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={
+                              item.estado === 'pagada' ? 'bg-green-500/20 text-green-400' :
+                              vencida ? 'bg-red-500/20 text-red-400' :
+                              proxima ? 'bg-orange-500/20 text-orange-400' :
+                              'bg-yellow-500/20 text-yellow-400'
+                            }>
+                              {item.estado === 'pagada' ? 'Pagada' : vencida ? 'Vencida' : proxima ? 'Por vencer' : 'Pendiente'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {item.estado !== 'pagada' && (
+                              cxpPagandoId === item.id ? (
+                                <div className="flex items-center gap-2 justify-end">
+                                  <Input
+                                    type="number" step="0.01" min="0.01"
+                                    placeholder="Monto"
+                                    value={cxpMontoPago}
+                                    onChange={e => setCxpMontoPago(e.target.value)}
+                                    className="bg-white/5 border-[#00E5FF]/20 text-white h-8 w-28 text-sm"
+                                    autoFocus
+                                  />
+                                  <Button size="sm" onClick={() => pagarCxP(item.id, Number(cxpMontoPago))}
+                                    disabled={!cxpMontoPago || Number(cxpMontoPago) <= 0}
+                                    className="h-8 bg-green-600 hover:bg-green-500 text-white text-xs px-2">
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" onClick={() => { setCxpPagandoId(null); setCxpMontoPago(''); }}
+                                    className="h-8 text-gray-400 px-2">
+                                    <X className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button size="sm" variant="ghost"
+                                  onClick={() => { setCxpPagandoId(item.id); setCxpMontoPago(String(item.saldo_pendiente || item.monto)); }}
+                                  className="text-green-400 hover:text-green-300 hover:bg-green-500/10">
+                                  <DollarSign className="w-4 h-4 mr-1" /> Pagar
+                                </Button>
+                              )
+                            )}
+                            {item.estado === 'pagada' && <CheckCircle className="w-4 h-4 text-green-400 ml-auto" />}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               )}
             </div>
           )}
@@ -1548,6 +1841,78 @@ export default function Inventario() {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal de vista detalle de compra (solo lectura) */}
+      {viewingCompra && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0A1A2F] rounded-xl border border-[#00E5FF]/30 w-full max-w-3xl max-h-[85vh] overflow-y-auto">
+            <div className="sticky top-0 bg-[#0A1A2F] border-b border-[#00E5FF]/20 p-5 flex justify-between items-center z-10">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5 text-[#00E5FF]" />
+                  Factura de Compra
+                  <span className="font-mono text-[#00E5FF] text-base">{viewingCompra.numero_factura || '—'}</span>
+                </h2>
+                <p className="text-gray-400 text-sm mt-0.5">Solo lectura — no se puede editar</p>
+              </div>
+              <button onClick={() => setViewingCompra(null)} className="text-gray-400 hover:text-white">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              {/* Encabezado */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div><p className="text-gray-400">Proveedor</p><p className="text-white font-medium">{viewingCompra.proveedor?.nombre || '—'}</p></div>
+                <div><p className="text-gray-400">Fecha</p><p className="text-white">{new Date(viewingCompra.fecha || viewingCompra.created_at).toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit', year:'numeric' })}</p></div>
+                <div><p className="text-gray-400">Tipo de Pago</p>
+                  <Badge className={viewingCompra.tipo_pago === 'credito' ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'}>
+                    {viewingCompra.tipo_pago === 'credito' ? 'Crédito' : 'Contado'}
+                  </Badge>
+                </div>
+                {viewingCompra.tipo_pago === 'credito' && viewingCompra.fecha_vencimiento && (
+                  <div><p className="text-gray-400">Vencimiento</p><p className="text-orange-400 font-medium">{new Date(viewingCompra.fecha_vencimiento).toLocaleDateString('es-EC')}</p></div>
+                )}
+              </div>
+              {viewingCompra.observaciones && (
+                <div className="bg-white/5 rounded-lg p-3 text-sm text-gray-300">
+                  <span className="text-gray-500">Obs.: </span>{viewingCompra.observaciones}
+                </div>
+              )}
+              {/* Tabla de ítems */}
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-[#00E5FF]/20 bg-white/5">
+                    <TableHead className="text-gray-400">Producto</TableHead>
+                    <TableHead className="text-gray-400 text-right">Cantidad</TableHead>
+                    <TableHead className="text-gray-400 text-right">Costo Unit.</TableHead>
+                    <TableHead className="text-gray-400 text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(viewingCompra.items || []).map((item: any, idx: number) => (
+                    <TableRow key={idx} className="border-[#00E5FF]/10">
+                      <TableCell className="text-white">{item.producto?.nombre || `Producto ${item.producto_id?.slice(0,8)}`}</TableCell>
+                      <TableCell className="text-gray-300 text-right">{item.cantidad} {item.producto?.unidad_medida || ''}</TableCell>
+                      <TableCell className="text-gray-300 text-right">${(item.costo_unitario || 0).toFixed(4)}</TableCell>
+                      <TableCell className="text-[#00E5FF] font-bold text-right">${(item.costo_total || 0).toFixed(2)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {/* Total */}
+              <div className="flex justify-end">
+                <div className="bg-[#00E5FF]/10 border border-[#00E5FF]/30 rounded-lg px-6 py-3 text-right">
+                  <span className="text-gray-400 text-sm">Total de compra</span>
+                  <div className="text-[#00E5FF] text-2xl font-black">${(viewingCompra.total_compra || 0).toFixed(2)}</div>
+                  {viewingCompra.tipo_pago === 'credito' && viewingCompra.saldo_pendiente > 0 && (
+                    <div className="text-orange-400 text-sm mt-1">Saldo pendiente: ${(viewingCompra.saldo_pendiente || 0).toFixed(2)}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modales */}
       <ProductoModal

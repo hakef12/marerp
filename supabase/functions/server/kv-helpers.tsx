@@ -33,8 +33,10 @@ export async function limpiarTodosLosDatos(empresaId: string) {
     await kv.del(`empresa_${empresaId}_proveedores`);
     await kv.del(`empresa_${empresaId}_empleados`);
     await kv.del(`empresa_${empresaId}_compras`);
+    await kv.del(`empresa_${empresaId}_cxp`);
     await kv.del(`empresa_${empresaId}_bodegas`);
     await kv.del(`empresa_${empresaId}_movimientos`);
+    await kv.del(`empresa_${empresaId}_ordenes_produccion`);
 
     console.log(`✅ Todos los datos eliminados exitosamente para empresa ${empresaId}`);
     return { success: true, message: 'Todos los datos han sido eliminados' };
@@ -155,6 +157,8 @@ export async function eliminarProducto(empresaId: string, productoId: string) {
 
 export async function guardarReceta(empresaId: string, receta: any) {
   const recetas = await obtenerRecetas(empresaId);
+  // IMPORTANTE: siempre asignar UUID antes de buscar — sin esto se sobrescribe la primera receta
+  if (!receta.id) receta.id = crypto.randomUUID();
   const index = recetas.findIndex((r: any) => r.id === receta.id);
   if (index >= 0) {
     recetas[index] = { ...receta, updated_at: new Date().toISOString() };
@@ -164,6 +168,7 @@ export async function guardarReceta(empresaId: string, receta: any) {
   await kv.set(`empresa_${empresaId}_recetas`, recetas);
   return receta;
 }
+
 
 export async function eliminarReceta(empresaId: string, recetaId: string) {
   const recetas = await obtenerRecetas(empresaId);
@@ -324,6 +329,44 @@ export async function guardarCompra(empresaId: string, compra: any) {
   compras.push(nuevaCompra);
   await kv.set(`empresa_${empresaId}_compras`, compras);
   return nuevaCompra;
+}
+
+// =====================================================
+// CUENTAS POR PAGAR (CxP) — compras a crédito
+// =====================================================
+
+export async function obtenerCuentasPorPagar(empresaId: string) {
+  return (await kv.get(`empresa_${empresaId}_cxp`) as any[]) || [];
+}
+
+export async function guardarCuentaPorPagar(empresaId: string, cxp: any) {
+  const lista = await obtenerCuentasPorPagar(empresaId);
+  if (!cxp.id) cxp.id = crypto.randomUUID();
+  const idx = lista.findIndex((c: any) => c.id === cxp.id);
+  if (idx >= 0) {
+    lista[idx] = { ...cxp, updated_at: new Date().toISOString() };
+  } else {
+    lista.push({ ...cxp, created_at: new Date().toISOString() });
+  }
+  await kv.set(`empresa_${empresaId}_cxp`, lista);
+  return idx >= 0 ? lista[idx] : lista[lista.length - 1];
+}
+
+export async function marcarCxPPagada(empresaId: string, cxpId: string, montoPagado: number) {
+  const lista = await obtenerCuentasPorPagar(empresaId);
+  const idx = lista.findIndex((c: any) => c.id === cxpId);
+  if (idx < 0) return null;
+  const item = lista[idx];
+  const nuevoSaldo = Math.max(0, (item.saldo_pendiente ?? item.monto) - montoPagado);
+  lista[idx] = {
+    ...item,
+    monto_pagado: (item.monto_pagado || 0) + montoPagado,
+    saldo_pendiente: nuevoSaldo,
+    estado: nuevoSaldo <= 0.01 ? 'pagada' : 'parcial',
+    updated_at: new Date().toISOString(),
+  };
+  await kv.set(`empresa_${empresaId}_cxp`, lista);
+  return lista[idx];
 }
 
 // =====================================================

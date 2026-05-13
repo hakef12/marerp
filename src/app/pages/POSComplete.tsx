@@ -26,11 +26,15 @@ interface Producto {
   codigo: string;
   nombre: string;
   precio: number;
-  stock_actual: number;
+  stock_actual: number | null; // null = receta sin gestión de inventario (ilimitado)
   stock_minimo: number;
   disponible: boolean;
   categoria_id?: string;
   categorias?: { id: string; nombre: string; color: string };
+  es_receta?: boolean;
+  gestiona_inventario?: boolean;
+  porcentaje_iva?: number;      // 0, 5, 8, 15, etc.
+  impuesto_incluido?: boolean;  // true = precio ya incluye IVA
 }
 
 interface ItemOrden {
@@ -259,13 +263,19 @@ export default function POS() {
 
   // ─── Orden ─────────────────────────────────────────────────────────────────
 
+  // true cuando el producto es receta pura (sin gestión de stock físico)
+  const esRecetaLibre = (p: Producto) => p.es_receta === true && p.gestiona_inventario !== true;
+
   const agregarProducto = (p: Producto) => {
     if (!p.disponible) return toast.error('Producto no disponible');
-    if (p.stock_actual <= 0) return toast.error('Sin stock');
+    // Recetas libres (null stock) no tienen restricción de stock
+    if (!esRecetaLibre(p) && (p.stock_actual ?? 0) <= 0) return toast.error('Sin stock');
     setOrden(prev => {
       const idx = prev.findIndex(i => i.producto.id === p.id);
       if (idx >= 0) {
-        if (prev[idx].cantidad >= p.stock_actual) { toast.error('Stock insuficiente'); return prev; }
+        if (!esRecetaLibre(p) && prev[idx].cantidad >= (p.stock_actual ?? 0)) {
+          toast.error('Stock insuficiente'); return prev;
+        }
         return prev.map((i, n) => n === idx
           ? { ...i, cantidad: i.cantidad + 1, subtotal: (i.cantidad + 1) * i.precio_unitario }
           : i);
@@ -282,7 +292,9 @@ export default function POS() {
       if (i.producto.id !== productoId) return [i];
       const nueva = i.cantidad + delta;
       if (nueva <= 0) return [];
-      if (nueva > i.producto.stock_actual) { toast.error('Stock insuficiente'); return [i]; }
+      if (!esRecetaLibre(i.producto) && nueva > (i.producto.stock_actual ?? 0)) {
+        toast.error('Stock insuficiente'); return [i];
+      }
       return [{ ...i, cantidad: nueva, subtotal: nueva * i.precio_unitario }];
     }));
     setComandaEnviada(false);
@@ -301,7 +313,16 @@ export default function POS() {
 
   const subtotal = orden.reduce((s, i) => s + i.subtotal, 0);
   const descuentoVal = (subtotal * descuento) / 100;
-  const ivaVal = aplicarIVA ? (subtotal - descuentoVal) * 0.15 : 0;
+  // IVA calculado por producto: se respeta porcentaje_iva individual y si el precio ya incluye IVA
+  const ivaVal = aplicarIVA
+    ? orden.reduce((sum, item) => {
+        const p = item.producto;
+        if (p.impuesto_incluido) return sum; // precio ya incluye IVA, no sumar de nuevo
+        const pct = (p.porcentaje_iva ?? 0) > 0 ? (p.porcentaje_iva ?? 0) : 15;
+        const baseConDescuento = item.subtotal * (1 - descuento / 100);
+        return sum + baseConDescuento * (pct / 100);
+      }, 0)
+    : 0;
   const total = subtotal - descuentoVal + ivaVal;
   const cambio = metodoPago === 'efectivo' && montoRecibido
     ? Math.max(0, parseFloat(montoRecibido) - total) : 0;
@@ -785,7 +806,9 @@ export default function POS() {
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
                 {productosFiltrados.map(p => {
                   const enOrden = orden.find(i => i.producto.id === p.id);
-                  const sinStock = p.stock_actual <= 0;
+                  const esReceta = esRecetaLibre(p);
+                  const sinStock = !esReceta && (p.stock_actual ?? 0) <= 0;
+                  const tieneIVA = (p.porcentaje_iva ?? 0) > 0;
                   return (
                     <button
                       key={p.id}
@@ -809,18 +832,32 @@ export default function POS() {
                           {p.nombre}
                         </p>
                         <div className="flex items-end justify-between gap-1">
-                          <p className="text-[#00E5FF] font-bold text-base">
-                            ${(Number(p.precio) || 0).toFixed(2)}
-                          </p>
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                            sinStock
-                              ? 'bg-red-500/20 text-red-400'
-                              : p.stock_actual <= p.stock_minimo
-                              ? 'bg-orange-500/20 text-orange-400'
-                              : 'bg-green-500/15 text-green-400'
-                          }`}>
-                            {sinStock ? 'Agotado' : `${p.stock_actual}`}
-                          </span>
+                          <div>
+                            <p className="text-[#00E5FF] font-bold text-base">
+                              ${(Number(p.precio) || 0).toFixed(2)}
+                            </p>
+                            {tieneIVA && (
+                              <span className="text-[10px] text-yellow-400/80 leading-none">
+                                {p.impuesto_incluido ? 'IVA inc.' : `+${p.porcentaje_iva}% IVA`}
+                              </span>
+                            )}
+                          </div>
+                          {/* Badge de stock o tipo */}
+                          {esReceta ? (
+                            <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300">
+                              Receta
+                            </span>
+                          ) : (
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                              sinStock
+                                ? 'bg-red-500/20 text-red-400'
+                                : (p.stock_actual ?? 0) <= p.stock_minimo
+                                ? 'bg-orange-500/20 text-orange-400'
+                                : 'bg-green-500/15 text-green-400'
+                            }`}>
+                              {sinStock ? 'Agotado' : `${p.stock_actual}`}
+                            </span>
+                          )}
                         </div>
                         {enOrden && (
                           <div className="mt-2 bg-[#00E5FF] text-black text-xs font-bold rounded-full px-2 py-0.5 text-center">
@@ -971,7 +1008,7 @@ export default function POS() {
                     onChange={e => setAplicarIVA(e.target.checked)}
                     className="w-4 h-4 accent-[#00E5FF]"
                   />
-                  IVA 15%
+                  IVA
                 </label>
               </div>
 
@@ -987,9 +1024,9 @@ export default function POS() {
                     <span className="text-red-400">-${descuentoVal.toFixed(2)}</span>
                   </div>
                 )}
-                {aplicarIVA && (
+                {aplicarIVA && ivaVal > 0 && (
                   <div className="flex justify-between text-gray-400">
-                    <span>IVA (15%)</span>
+                    <span>IVA</span>
                     <span className="text-white">${ivaVal.toFixed(2)}</span>
                   </div>
                 )}

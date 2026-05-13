@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { toast } from 'sonner';
-import { X, Plus, Trash2, Package, DollarSign, TrendingUp } from 'lucide-react';
+import { X, Plus, Trash2, Package, DollarSign, TrendingUp, ChefHat } from 'lucide-react';
 
 interface RecetaModalProps {
   isOpen: boolean;
@@ -121,7 +121,8 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
   }, [costoPorPorcion, foodCostPorcentaje, metodoPrecio]);
 
   const foodCostReal = formData.precio_sugerido > 0 ? (costoPorPorcion / formData.precio_sugerido) * 100 : 0;
-  const margen = formData.precio_sugerido && costoPorPorcion > 0 ? ((formData.precio_sugerido - costoPorPorcion) / costoPorPorcion) * 100 : 0;
+  // Margen bruto = (precio - costo) / precio × 100  (no markup)
+  const margen = formData.precio_sugerido > 0 && costoPorPorcion > 0 ? ((formData.precio_sugerido - costoPorPorcion) / formData.precio_sugerido) * 100 : 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -280,26 +281,81 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Panel Costos */}
             <div className="bg-gradient-to-br from-[#1e64a7]/20 to-[#00E5FF]/20 rounded-lg p-4 border border-[#00E5FF]/30">
               <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><DollarSign className="w-5 h-5 text-[#00E5FF]" /> Costos</h3>
               <div className="space-y-2">
-                <div className="flex justify-between"><span className="text-gray-300">Costo Ingredientes:</span><span className="text-xl font-bold">${costoTotal.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-300">Costo Ingredientes:</span><span className="text-xl font-bold text-white">${costoTotal.toFixed(2)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-300">Porciones:</span><span className="text-xl font-bold text-[#00E5FF]">{formData.porciones}</span></div>
-                <div className="flex justify-between border-t border-white/10 pt-2"><span className="text-gray-300 font-bold">Costo / Porción:</span><span className="text-2xl font-black text-[#7B61FF]">${costoPorPorcion.toFixed(4)}</span></div>
+                <div className="flex justify-between border-t border-white/10 pt-2">
+                  <span className="text-gray-300 font-bold">Costo / Porción:</span>
+                  <span className="text-2xl font-black text-[#7B61FF]">${costoPorPorcion.toFixed(4)}</span>
+                </div>
+                {formData.producto_id && costoPorPorcion > 0 && (
+                  <div className="mt-2 bg-[#7B61FF]/10 border border-[#7B61FF]/30 rounded p-2 flex items-center gap-2 text-xs text-[#7B61FF]">
+                    <ChefHat className="w-4 h-4 flex-shrink-0" />
+                    <span>Este costo se guardará como precio de compra del producto final</span>
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* Panel Precio */}
             <div className="bg-gradient-to-br from-[#7B61FF]/20 to-[#00E5FF]/20 rounded-lg p-4 border border-[#7B61FF]/30">
-              <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-[#7B61FF]" /> Precio</h3>
+              <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-[#7B61FF]" /> Precio Sugerido</h3>
               <div className="mb-3">
-                <Label className="text-gray-300 text-sm">Método</Label>
+                <Label className="text-gray-300 text-sm">Método de cálculo</Label>
                 <div className="flex gap-2 mt-1">
-                  <Button type="button" onClick={() => setMetodoPrecio('foodcost')} className={`flex-1 ${metodoPrecio === 'foodcost' ? 'bg-[#00E5FF]' : 'bg-gray-700'}`} size="sm">Food Cost</Button>
-                  <Button type="button" onClick={() => setMetodoPrecio('manual')} className={`flex-1 ${metodoPrecio === 'manual' ? 'bg-[#00E5FF]' : 'bg-gray-700'}`} size="sm">Manual</Button>
+                  <Button type="button" onClick={() => setMetodoPrecio('foodcost')} className={`flex-1 ${metodoPrecio === 'foodcost' ? 'bg-[#00E5FF] text-black' : 'bg-gray-700 text-white'}`} size="sm">Food Cost %</Button>
+                  <Button type="button" onClick={() => setMetodoPrecio('manual')} className={`flex-1 ${metodoPrecio === 'manual' ? 'bg-[#00E5FF] text-black' : 'bg-gray-700 text-white'}`} size="sm">Manual</Button>
                 </div>
               </div>
-              <div>
-                <Input type="number" step="0.01" value={formData.precio_sugerido} onChange={(e) => setFormData({ ...formData, precio_sugerido: parseFloat(e.target.value) || 0 })} className="bg-[#1a3a52] text-white font-bold text-xl" disabled={metodoPrecio === 'foodcost'} />
+
+              {metodoPrecio === 'foodcost' && (
+                <div className="mb-3">
+                  <Label className="text-gray-300 text-sm">% Food Cost objetivo</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Input
+                      type="number" min="1" max="100" step="1"
+                      value={foodCostPorcentaje}
+                      onChange={e => setFoodCostPorcentaje(Math.min(100, Math.max(1, parseInt(e.target.value) || 30)))}
+                      className="bg-[#1a3a52] text-white w-24"
+                    />
+                    <span className="text-gray-400 text-sm">% del costo total</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-3">
+                <Label className="text-gray-300 text-sm">Precio sugerido ($)</Label>
+                <Input
+                  type="number" step="0.01"
+                  value={formData.precio_sugerido}
+                  onChange={(e) => setFormData({ ...formData, precio_sugerido: parseFloat(e.target.value) || 0 })}
+                  className="bg-[#1a3a52] text-white font-bold text-xl mt-1"
+                  disabled={metodoPrecio === 'foodcost'}
+                />
               </div>
+
+              {/* Indicadores de rentabilidad */}
+              {formData.precio_sugerido > 0 && costoPorPorcion > 0 && (
+                <div className="space-y-1 border-t border-white/10 pt-3 mt-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">% Food Cost real:</span>
+                    <span className={`font-bold ${foodCostReal <= 30 ? 'text-green-400' : foodCostReal <= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                      {foodCostReal.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Margen bruto:</span>
+                    <span className="font-bold text-[#00E5FF]">{margen.toFixed(1)}%</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Ganancia / porción:</span>
+                    <span className="font-bold text-green-400">${(formData.precio_sugerido - costoPorPorcion).toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

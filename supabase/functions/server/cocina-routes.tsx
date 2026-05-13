@@ -5,6 +5,7 @@
 import {
   inicializarDatosDemo,
   obtenerProductos,
+  guardarProducto,
   obtenerComandas,
   guardarComanda,
   actualizarComanda,
@@ -15,6 +16,27 @@ import {
   guardarOrdenProduccion,
   guardarMovimiento
 } from "./kv-helpers.tsx";
+
+// Calcula el costo por porción de una receta y lo graba como precio_compra del producto final
+async function actualizarCostoProductoDesdeReceta(empresaId: string, recetaBody: any) {
+  try {
+    const { producto_id, porciones, ingredientes } = recetaBody;
+    if (!producto_id || !porciones || !Array.isArray(ingredientes)) return;
+    const costoTotal = ingredientes.reduce((sum: number, ing: any) =>
+      sum + (parseFloat(ing.costo_total) || (parseFloat(ing.cantidad) * parseFloat(ing.costo_unitario)) || 0), 0);
+    const costoPorPorcion = costoTotal / (parseInt(porciones) || 1);
+    if (costoPorPorcion <= 0) return;
+    const productos = await obtenerProductos(empresaId);
+    const prod = productos.find((p: any) => p.id === producto_id);
+    if (prod) {
+      await guardarProducto(empresaId, {
+        ...prod,
+        precio_compra: parseFloat(costoPorPorcion.toFixed(4)),
+        costo_receta: parseFloat(costoPorPorcion.toFixed(4)),
+      });
+    }
+  } catch (_) { /* no interrumpir el flujo */ }
+}
 
 export function setupCocinaRoutes(app: any, authMiddleware: any) {
 
@@ -188,6 +210,10 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
       const body = await c.req.json();
       const recetaData = { ...body, empresa_id: auth.empresaId };
       const receta = await guardarReceta(auth.empresaId, recetaData);
+
+      // Actualizar precio_compra del producto final con el costo por porción
+      await actualizarCostoProductoDesdeReceta(auth.empresaId, body);
+
       return c.json({ receta }, 201);
     } catch (error: any) {
       return c.json({ error: 'Error al crear receta', details: error.message }, 500);
@@ -200,9 +226,13 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
     const recetaId = c.req.param('id');
     try {
       const body = await c.req.json();
-      const recetaData = { ...body, id: recetaId };
+      const recetaData = { ...body, id: recetaId, empresa_id: auth.empresaId };
       const receta = await guardarReceta(auth.empresaId, recetaData);
       if (!receta) return c.json({ error: 'Receta no encontrada' }, 404);
+
+      // Actualizar precio_compra del producto final con el costo por porción
+      await actualizarCostoProductoDesdeReceta(auth.empresaId, body);
+
       return c.json({ receta });
     } catch (error: any) {
       return c.json({ error: 'Error al actualizar receta', details: error.message }, 500);

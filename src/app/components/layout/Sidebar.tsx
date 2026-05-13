@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ShoppingCart, Package, Calculator, Users, ChefHat,
   Shield, BarChart3, Settings, LogOut, UserCog,
   FolderKanban, TrendingUp, FileText, Bell, X, CheckCheck,
-  Utensils, Wallet, CreditCard, Crown, Warehouse,
+  Utensils, Wallet, CreditCard, Crown, Warehouse, Play,
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { DiagnosticoPanel } from '../DiagnosticoPanel';
@@ -303,6 +303,16 @@ export default function Sidebar() {
         <div className="mb-2 w-full">
           <DiagnosticoPanel />
         </div>
+
+        {/* Tour del sistema */}
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('open-onboarding'))}
+          className="w-full flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-[#00E5FF]/10 transition-all duration-200 group mb-1"
+          title="Ver tour del sistema"
+        >
+          <Play className="w-4 h-4 flex-shrink-0 text-[#00E5FF] group-hover:text-[#00E5FF]" />
+          <span className="text-sm">Tour del sistema</span>
+        </button>
 
         <button
           onClick={logout}

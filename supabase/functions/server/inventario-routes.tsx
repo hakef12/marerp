@@ -16,6 +16,9 @@ import {
   guardarMovimiento,
   obtenerCompras,
   guardarCompra,
+  obtenerCuentasPorPagar,
+  guardarCuentaPorPagar,
+  marcarCxPPagada,
   registrarAsientoAutomatico
 } from "./kv-helpers.tsx";
 import { registrarAuditoria, verificarPassword } from "./audit-helper.tsx";
@@ -570,7 +573,11 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
     const auth = c.get('auth');
     try {
       const body = await c.req.json();
-      const { proveedor_id, fecha, numero_factura, items, observaciones } = body;
+      const {
+        proveedor_id, fecha, numero_factura, items, observaciones,
+        tipo_pago = 'contado',   // 'contado' | 'credito'
+        fecha_vencimiento,       // solo para crédito
+      } = body;
 
       if (!items || items.length === 0) {
         return c.json({ error: 'Debes agregar al menos un ítem a la compra' }, 400);
@@ -595,7 +602,8 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
           cantidad: item.cantidad,
           costo_unitario: item.costo_unitario,
           referencia: numero_factura ? `Compra ${numero_factura}` : 'Compra directa',
-          observaciones: observaciones || ''
+          observaciones: observaciones || '',
+          usuario_id: auth.userId,
         });
 
         // Actualizar precio_compra del producto con el nuevo costo unitario
@@ -608,7 +616,7 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
         }
       }
 
-      // Guardar la compra
+      // Guardar la compra con tipo de pago
       const compra = await guardarCompra(auth.empresaId, {
         proveedor_id: proveedor_id || null,
         fecha: fecha || new Date().toISOString(),
@@ -616,25 +624,46 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
         items: itemsCalculados,
         total_compra,
         observaciones: observaciones || '',
-        usuario_id: auth.userId
+        usuario_id: auth.userId,
+        tipo_pago,
+        fecha_vencimiento: tipo_pago === 'credito' ? (fecha_vencimiento || null) : null,
+        estado_pago: tipo_pago === 'contado' ? 'pagada' : 'pendiente',
+        saldo_pendiente: tipo_pago === 'credito' ? total_compra : 0,
       });
 
       await registrarAuditoria(
         auth.empresaId, auth.userId, 'crear', 'inventario', 'compras',
-        compra.id, null, { total_compra, items: itemsCalculados.length },
+        compra.id, null, { total_compra, tipo_pago, items: itemsCalculados.length },
         c.req.header('x-forwarded-for') || null
       );
 
-      // ── Asiento contable automático de la compra ──────────────
+      // ── Crear registro de CxP para compras a crédito ──────────
+      if (tipo_pago === 'credito' && total_compra > 0) {
+        await guardarCuentaPorPagar(auth.empresaId, {
+          proveedor_id: proveedor_id || null,
+          compra_id: compra.id,
+          numero_factura: numero_factura || '',
+          monto: total_compra,
+          saldo_pendiente: total_compra,
+          monto_pagado: 0,
+          fecha_emision: (fecha || new Date().toISOString()).split('T')[0],
+          fecha_vencimiento: fecha_vencimiento || null,
+          estado: 'pendiente',
+        });
+      }
+
+      // ── Asiento contable según tipo de pago ───────────────────
       if (total_compra > 0) {
+        const cuentaCredito = tipo_pago === 'contado' ? '1.1.01' : '2.1.01';
+        const descCredito   = tipo_pago === 'contado' ? 'Pago en efectivo/banco' : 'CxP proveedores';
         await registrarAsientoAutomatico(auth.empresaId, {
           tipo: 'compra_inventario',
-          descripcion: `Compra ${numero_factura || compra.id}`,
+          descripcion: `Compra ${numero_factura || compra.id} (${tipo_pago === 'contado' ? 'Contado' : 'Crédito'})`,
           referencia: compra.id,
           fecha: (fecha || new Date().toISOString()).split('T')[0],
           items: [
             { codigo: '1.1.05', debito: total_compra,  descripcion: 'Inventario de alimentos y bebidas' },
-            { codigo: '2.1.01', credito: total_compra, descripcion: 'CxP proveedores' },
+            { codigo: cuentaCredito, credito: total_compra, descripcion: descCredito },
           ],
         });
       }
@@ -642,6 +671,60 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
       return c.json({ compra }, 201);
     } catch (error: any) {
       return c.json({ error: 'Error al registrar compra', details: error.message }, 500);
+    }
+  });
+
+  // ── GET /compras/cxp — Cuentas por pagar ──────────────────────
+  app.get("/server/compras/cxp", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const cxpList = await obtenerCuentasPorPagar(auth.empresaId);
+      const proveedores = await obtenerProveedores(auth.empresaId);
+      const provMap = new Map(proveedores.map((p: any) => [p.id, p]));
+      const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+      const enriquecidas = cxpList
+        .map((cxp: any) => {
+          const diasRestantes = cxp.fecha_vencimiento
+            ? Math.ceil((new Date(cxp.fecha_vencimiento).getTime() - hoy.getTime()) / 86400000)
+            : null;
+          return { ...cxp, proveedor: provMap.get(cxp.proveedor_id) || null, dias_restantes: diasRestantes };
+        })
+        .sort((a: any, b: any) => {
+          if (!a.fecha_vencimiento) return 1;
+          if (!b.fecha_vencimiento) return -1;
+          return new Date(a.fecha_vencimiento).getTime() - new Date(b.fecha_vencimiento).getTime();
+        });
+      return c.json({ cxp: enriquecidas });
+    } catch (error: any) {
+      return c.json({ error: 'Error al obtener cuentas por pagar' }, 500);
+    }
+  });
+
+  // ── POST /compras/cxp/:id/pagar — Registrar pago de CxP ───────
+  app.post("/server/compras/cxp/:id/pagar", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    const cxpId = c.req.param('id');
+    try {
+      const { monto } = await c.req.json();
+      if (!monto || Number(monto) <= 0) return c.json({ error: 'Monto inválido' }, 400);
+      const cxp = await marcarCxPPagada(auth.empresaId, cxpId, Number(monto));
+      if (!cxp) return c.json({ error: 'Cuenta por pagar no encontrada' }, 404);
+
+      // Asiento contable: débito CxP → crédito Bancos
+      await registrarAsientoAutomatico(auth.empresaId, {
+        tipo: 'pago_proveedor',
+        descripcion: `Pago proveedor - ${cxp.numero_factura || cxpId}`,
+        referencia: cxpId,
+        fecha: new Date().toISOString().split('T')[0],
+        items: [
+          { codigo: '2.1.01', debito: Number(monto),  descripcion: 'Cancelación CxP proveedor' },
+          { codigo: '1.1.01', credito: Number(monto), descripcion: 'Pago desde caja/banco' },
+        ],
+      });
+
+      return c.json({ cxp });
+    } catch (error: any) {
+      return c.json({ error: 'Error al registrar pago', details: error.message }, 500);
     }
   });
 }
