@@ -507,9 +507,9 @@ app.use('/server/notificaciones', authMiddleware);
 app.route('/server/notificaciones', notificacionesApp);
 
 // Rutas de compatibilidad para evitar 404
+// NOTA: /server/compras ya está registrado por setupInventarioRoutes — NO duplicar aquí
 app.get("/server/dashboard/kpis", authMiddleware, (c) => c.json({ kpis: [] }));
 app.get("/server/centros-costos", authMiddleware, (c) => c.json({ centros_costos: [] }));
-app.get("/server/compras", authMiddleware, (c) => c.json({ compras: [] }));
 app.post("/server/categorias/inicializar", authMiddleware, (c) => c.json({ success: true }));
 
 // Inventario: vista de stock (productos con sus datos de inventario)

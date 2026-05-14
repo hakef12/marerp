@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router';
 import {
   LayoutDashboard, ShoppingCart, Package, Calculator, Users, ChefHat,
   Shield, BarChart3, Settings, Utensils, Wallet, CreditCard, TrendingUp,
@@ -287,7 +286,6 @@ interface OnboardingWizardProps {
 }
 
 export default function OnboardingWizard({ forceOpen = false, onClose }: OnboardingWizardProps) {
-  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const [animating, setAnimating] = useState(false);
@@ -328,7 +326,8 @@ export default function OnboardingWizard({ forceOpen = false, onClose }: Onboard
     localStorage.setItem(STORAGE_KEY, 'true');
     setOpen(false);
     onClose?.();
-    if (current.route) navigate(current.route);
+    // Navegar al módulo del último paso sin depender de useNavigate (evita error #310)
+    if (current.route) window.location.href = current.route;
   };
 
   const skip = () => {
