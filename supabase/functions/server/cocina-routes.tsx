@@ -152,14 +152,23 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
         
         const ingredientes = receta.ingredientes?.map((ing: any) => {
           const ingredienteProducto = productos.find((p: any) => p.id === ing.insumo_id);
+          // Costo real del insumo: buscar en todos los campos posibles
+          const costoProducto = ingredienteProducto
+            ? (parseFloat(ingredienteProducto.precio_compra)  ||
+               parseFloat(ingredienteProducto.costo_receta)   ||
+               parseFloat(ingredienteProducto.costo_unitario) ||
+               parseFloat(ingredienteProducto.costo_promedio) || 0)
+            : 0;
           return {
             ...ing,
+            // Si el ingrediente tiene costo guardado en la receta, usarlo; si no, del producto actual
+            costo_unitario: parseFloat(ing.costo_unitario) || costoProducto,
             insumo: ingredienteProducto ? {
               id: ingredienteProducto.id,
               codigo: ingredienteProducto.codigo,
               nombre: ingredienteProducto.nombre,
               unidad_medida: ingredienteProducto.unidad_medida,
-              costo_unitario: ingredienteProducto.costo_unitario
+              costo_unitario: costoProducto
             } : null
           };
         }) || [];
@@ -264,14 +273,20 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
       
       const detallesCosto = ingredientes.map((ing: any) => {
         const producto = productos.find((p: any) => p.id === ing.insumo_id);
-        const costoIngrediente = producto ? (producto.costo_unitario || 0) * (ing.cantidad || 0) : 0;
+        const costoUnitReal = producto
+          ? (parseFloat(producto.precio_compra)  ||
+             parseFloat(producto.costo_receta)   ||
+             parseFloat(producto.costo_unitario) ||
+             parseFloat(producto.costo_promedio) || 0)
+          : 0;
+        const costoIngrediente = costoUnitReal * (ing.cantidad || 0);
         costoTotal += costoIngrediente;
         return {
           insumo_id: ing.insumo_id,
           nombre: producto?.nombre || 'Desconocido',
           cantidad: ing.cantidad,
           unidad: ing.unidad || producto?.unidad_medida || 'unidad',
-          costo_unitario: producto?.costo_unitario || 0,
+          costo_unitario: costoUnitReal,
           costo_total: costoIngrediente
         };
       });
@@ -279,6 +294,73 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
       return c.json({ costo_total: costoTotal, detalles: detallesCosto });
     } catch (error: any) {
       return c.json({ error: 'Error al calcular costo', details: error.message }, 500);
+    }
+  });
+
+  // ─── POST /cocina/recetas/backfill-costos ────────────────────────────────────
+  // Recalcula el costo por porción de TODAS las recetas existentes y actualiza
+  // el precio_compra del producto final vinculado.
+  // Útil para recetas creadas antes de que existiera esta lógica automática.
+  app.post("/server/cocina/recetas/backfill-costos", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const recetas = await obtenerRecetas(auth.empresaId);
+      const productos = await obtenerProductos(auth.empresaId);
+      const actualizados: string[] = [];
+      const sinProducto: string[] = [];
+
+      for (const receta of recetas) {
+        const { producto_id, porciones, ingredientes, nombre } = receta;
+        if (!producto_id || !Array.isArray(ingredientes) || ingredientes.length === 0) {
+          sinProducto.push(nombre || receta.id);
+          continue;
+        }
+
+        // Calcular costo total usando todos los campos de costo posibles
+        const costoTotal = ingredientes.reduce((sum: number, ing: any) => {
+          const prod = productos.find((p: any) => p.id === ing.insumo_id);
+          const costoUnit = prod
+            ? (parseFloat(prod.precio_compra)  ||
+               parseFloat(prod.costo_receta)   ||
+               parseFloat(prod.costo_unitario) ||
+               parseFloat(prod.costo_promedio) || 0)
+            : (parseFloat(ing.costo_unitario) || 0);
+          return sum + costoUnit * (parseFloat(ing.cantidad) || 0);
+        }, 0);
+
+        const porcNum = parseInt(porciones) || 1;
+        const costoPorPorcion = costoTotal / porcNum;
+        if (costoPorPorcion <= 0) { sinProducto.push(nombre || receta.id); continue; }
+
+        const prod = productos.find((p: any) => p.id === producto_id);
+        if (prod) {
+          await guardarProducto(auth.empresaId, {
+            ...prod,
+            precio_compra: parseFloat(costoPorPorcion.toFixed(4)),
+            costo_receta: parseFloat(costoPorPorcion.toFixed(4)),
+          });
+          // Actualizar local para sub-recetas que usan este producto en la misma pasada
+          const idx = productos.findIndex((p: any) => p.id === producto_id);
+          if (idx >= 0) {
+            productos[idx].precio_compra = costoPorPorcion;
+            productos[idx].costo_receta  = costoPorPorcion;
+          }
+          actualizados.push(`${nombre} → $${costoPorPorcion.toFixed(4)}/porción`);
+        } else {
+          sinProducto.push(nombre || receta.id);
+        }
+      }
+
+      return c.json({
+        success: true,
+        actualizados: actualizados.length,
+        sin_producto_vinculado: sinProducto.length,
+        detalle: actualizados,
+        omitidos: sinProducto,
+        mensaje: `${actualizados.length} receta(s) recalculadas. ${sinProducto.length} sin producto vinculado o sin costo.`,
+      });
+    } catch (error: any) {
+      return c.json({ error: 'Error en backfill de costos', details: error.message }, 500);
     }
   });
 

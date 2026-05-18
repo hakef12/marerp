@@ -26,6 +26,7 @@ import {
   Bell,
   Flame,
   Users,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import RecetaModal from '../components/cocina/RecetaModal';
@@ -480,6 +481,26 @@ export default function Cocina() {
                 <FileSpreadsheet className="w-4 h-4 mr-2" /> Exportar Excel
               </Button>
             </div>
+            <Button
+              onClick={async () => {
+                try {
+                  const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+                  const res = await fetch(
+                    `https://${projectId}.supabase.co/functions/v1/server/cocina/recetas/backfill-costos`,
+                    { method: 'POST', headers: { Authorization: `Bearer ${publicAnonKey}`, 'X-User-Token': token } }
+                  );
+                  const data = await res.json();
+                  if (res.ok) toast.success(data.mensaje || 'Costos recalculados', { duration: 5000 });
+                  else toast.error(data.error || 'Error al recalcular');
+                  fetchRecetas();
+                } catch { toast.error('Error de conexión'); }
+              }}
+              variant="outline"
+              className="border-[#7B61FF]/40 text-[#7B61FF] hover:bg-[#7B61FF]/10"
+              title="Recalcula el costo por porción de todas las recetas y lo propaga a sus productos"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" /> Recalcular costos
+            </Button>
             <Button
               onClick={() => { setSelectedReceta(null); setShowRecetaModal(true); }}
               className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:shadow-lg hover:shadow-[#00E5FF]/30"

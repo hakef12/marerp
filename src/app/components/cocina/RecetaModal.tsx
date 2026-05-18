@@ -103,9 +103,17 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
     const nuevosIngredientes = [...ingredientes];
     nuevosIngredientes[index] = { ...nuevosIngredientes[index], [field]: value };
 
-    if (field === 'insumo_id') { 
+    if (field === 'insumo_id') {
       const producto = productos.find(p => String(p.id) === String(value));
-      if (producto) nuevosIngredientes[index].costo_unitario = parseFloat(producto.precio_compra) || parseFloat(producto.costo_promedio) || 0;
+      if (producto) {
+        // Intentar todos los campos donde puede estar el costo, incluyendo sub-recetas
+        nuevosIngredientes[index].costo_unitario =
+          parseFloat(producto.precio_compra)  ||  // compras / costo calculado de receta
+          parseFloat(producto.costo_receta)   ||  // campo alternativo de sub-receta
+          parseFloat(producto.costo_unitario) ||  // campo legacy
+          parseFloat(producto.costo_promedio) ||  // promedio ponderado
+          0;
+      }
     }
     setIngredientes(nuevosIngredientes);
   };
