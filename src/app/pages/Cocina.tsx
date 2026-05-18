@@ -750,6 +750,7 @@ export default function Cocina() {
 
       {showRecetaModal && (
         <RecetaModal
+          key={selectedReceta?.id ?? 'nueva-receta'}
           isOpen={showRecetaModal}
           onClose={() => { setShowRecetaModal(false); setSelectedReceta(null); }}
           onSuccess={() => { fetchRecetas(); setShowRecetaModal(false); setSelectedReceta(null); }}
