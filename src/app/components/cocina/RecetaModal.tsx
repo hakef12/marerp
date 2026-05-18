@@ -17,28 +17,51 @@ interface RecetaModalProps {
 export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: RecetaModalProps) {
   const { token } = useAuth();
   const [productos, setProductos] = useState<any[]>([]);
-  const [formData, setFormData] = useState({
-    nombre: '',
-    descripcion: '',
-    categoria: 'Platos Principales',
-    producto_id: '',
-    porciones: 1,
-    tiempo_preparacion: 0,
-    dificultad: 'media',
-    precio_sugerido: 0,
-    instrucciones: '',
-  });
 
-  const [ingredientes, setIngredientes] = useState<any[]>([{
-    insumo_id: '', 
-    cantidad: 0,
-    unidad_medida: 'und',
-    costo_unitario: 0,
-    notas: ''
-  }]);
+  // Inicialización directa desde la prop — evita la condición de carrera de useEffect
+  const buildFormData = (r: any) => r ? {
+    nombre: r.nombre || '',
+    descripcion: r.descripcion || '',
+    categoria: r.categoria || 'Platos Principales',
+    producto_id: r.producto_id ? String(r.producto_id) : '',
+    porciones: r.porciones || 1,
+    tiempo_preparacion: r.tiempo_preparacion || 0,
+    dificultad: r.dificultad || 'media',
+    precio_sugerido: r.precio_sugerido || 0,
+    instrucciones: r.instrucciones || '',
+  } : {
+    nombre: '', descripcion: '', categoria: 'Platos Principales',
+    producto_id: '', porciones: 1, tiempo_preparacion: 0,
+    dificultad: 'media', precio_sugerido: 0, instrucciones: '',
+  };
 
+  const buildIngredientes = (r: any) => {
+    const list = r?.ingredientes || r?.receta_ingredientes || [];
+    if (list.length > 0) {
+      return list.map((ing: any) => {
+        const rawId = ing.insumo_id || ing.producto_id || ing.insumo?.id || ing.productos?.id || '';
+        return {
+          insumo_id: String(rawId),
+          cantidad: parseFloat(ing.cantidad) || 0,
+          unidad_medida: ing.unidad_medida || 'und',
+          costo_unitario: parseFloat(ing.costo_unitario) || 0,
+          notas: ing.notas || ''
+        };
+      });
+    }
+    return [{ insumo_id: '', cantidad: 0, unidad_medida: 'und', costo_unitario: 0, notas: '' }];
+  };
+
+  const [formData, setFormData] = useState(() => buildFormData(receta));
+  const [ingredientes, setIngredientes] = useState<any[]>(() => buildIngredientes(receta));
   const [metodoPrecio, setMetodoPrecio] = useState<'foodcost' | 'manual'>('foodcost');
-  const [foodCostPorcentaje, setFoodCostPorcentaje] = useState(30); 
+  const [foodCostPorcentaje, setFoodCostPorcentaje] = useState(30);
+
+  // Re-inicializar cuando cambia la receta (por si el componente se reutiliza sin desmontarse)
+  useEffect(() => {
+    setFormData(buildFormData(receta));
+    setIngredientes(buildIngredientes(receta));
+  }, [receta?.id]);
 
   useEffect(() => {
     const fetchProductos = async () => {
@@ -48,53 +71,14 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
           `https://${projectId}.supabase.co/functions/v1/server/productos`,
           { headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '' } }
         );
-
         if (response.ok) {
           const data = await response.json();
           setProductos(data.productos || []);
         }
       } catch (error) {}
     };
-
     if (isOpen && token) fetchProductos();
   }, [isOpen, token]);
-
-  useEffect(() => {
-    if (receta) {
-      setFormData({
-        nombre: receta.nombre || '',
-        descripcion: receta.descripcion || '',
-        categoria: receta.categoria || 'Platos Principales',
-        producto_id: receta.producto_id ? String(receta.producto_id) : '',
-        porciones: receta.porciones || 1,
-        tiempo_preparacion: receta.tiempo_preparacion || 0,
-        dificultad: receta.dificultad || 'media',
-        precio_sugerido: receta.precio_sugerido || 0,
-        instrucciones: receta.instrucciones || '',
-      });
-
-      // ✅ EXTRACCIÓN A PRUEBA DE BALAS: Convierte los IDs a String obligatoriamente
-      const ingredientesList = receta.ingredientes || receta.receta_ingredientes || [];
-      
-      if (ingredientesList.length > 0) {
-        setIngredientes(ingredientesList.map((ing: any) => {
-          const rawId = ing.insumo_id || ing.producto_id || ing.insumo?.id || ing.productos?.id || '';
-          return {
-            insumo_id: String(rawId), // String() obliga a que el Select de React lo reconozca
-            cantidad: parseFloat(ing.cantidad) || 0,
-            unidad_medida: ing.unidad_medida || 'und',
-            costo_unitario: parseFloat(ing.costo_unitario) || 0,
-            notas: ing.notas || ''
-          };
-        }));
-      } else {
-        setIngredientes([{ insumo_id: '', cantidad: 0, unidad_medida: 'und', costo_unitario: 0, notas: '' }]);
-      }
-    } else {
-      setFormData({ nombre: '', descripcion: '', categoria: 'Platos Principales', producto_id: '', porciones: 1, tiempo_preparacion: 0, dificultad: 'media', precio_sugerido: 0, instrucciones: '' });
-      setIngredientes([{ insumo_id: '', cantidad: 0, unidad_medida: 'und', costo_unitario: 0, notas: '' }]);
-    }
-  }, [receta]);
 
   const agregarIngrediente = () => setIngredientes([...ingredientes, { insumo_id: '', cantidad: 0, unidad_medida: 'und', costo_unitario: 0, notas: '' }]);
   const eliminarIngrediente = (index: number) => { if (ingredientes.length > 1) setIngredientes(ingredientes.filter((_, i) => i !== index)); };
