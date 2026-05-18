@@ -152,29 +152,46 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
         
         const ingredientes = receta.ingredientes?.map((ing: any) => {
           const ingredienteProducto = productos.find((p: any) => p.id === ing.insumo_id);
-          // Costo real del insumo: buscar en todos los campos posibles
+          // Costo real del insumo: siempre priorizar el precio actual del producto en BD
           const costoProducto = ingredienteProducto
             ? (parseFloat(ingredienteProducto.precio_compra)  ||
                parseFloat(ingredienteProducto.costo_receta)   ||
                parseFloat(ingredienteProducto.costo_unitario) ||
                parseFloat(ingredienteProducto.costo_promedio) || 0)
-            : 0;
+            : (parseFloat(ing.costo_unitario) || 0);
+          const costoUnit = costoProducto || parseFloat(ing.costo_unitario) || 0;
+          const cantidad   = parseFloat(ing.cantidad) || 0;
           return {
             ...ing,
-            // Si el ingrediente tiene costo guardado en la receta, usarlo; si no, del producto actual
-            costo_unitario: parseFloat(ing.costo_unitario) || costoProducto,
+            costo_unitario: costoUnit,
+            costo_total: costoUnit * cantidad,
             insumo: ingredienteProducto ? {
               id: ingredienteProducto.id,
               codigo: ingredienteProducto.codigo,
               nombre: ingredienteProducto.nombre,
               unidad_medida: ingredienteProducto.unidad_medida,
-              costo_unitario: costoProducto
+              costo_unitario: costoUnit
             } : null
           };
         }) || [];
 
+        // Recalcular costo por porción dinámicamente desde precios actuales
+        const costoTotalDinamico = ingredientes.reduce(
+          (sum: number, ing: any) => sum + (parseFloat(ing.costo_total) || 0), 0
+        );
+        const porciones = parseInt(receta.porciones) || 1;
+        const costoPorPorcionDinamico = costoTotalDinamico / porciones;
+        const precioPorPorcion = parseFloat(receta.precio_venta) || parseFloat(producto?.precio) || 0;
+        const margenDinamico = precioPorPorcion > 0
+          ? ((precioPorPorcion - costoPorPorcionDinamico) / precioPorPorcion) * 100
+          : 0;
+
         return {
           ...receta,
+          // Sobreescribir con valores calculados al vuelo
+          costo_por_porcion: parseFloat(costoPorPorcionDinamico.toFixed(4)),
+          costo_total: parseFloat(costoTotalDinamico.toFixed(4)),
+          margen_bruto: parseFloat(margenDinamico.toFixed(2)),
           producto: producto ? {
             id: producto.id,
             codigo: producto.codigo,
