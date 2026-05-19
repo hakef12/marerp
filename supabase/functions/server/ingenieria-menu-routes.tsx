@@ -11,6 +11,19 @@ import {
   obtenerVentas
 } from "./kv-helpers.tsx";
 
+// Helpers de costo/precio con fallback completo
+const getCosto = (p: any): number =>
+  parseFloat(p?.precio_compra)  ||
+  parseFloat(p?.costo_receta)   ||
+  parseFloat(p?.costo_unitario) ||
+  parseFloat(p?.costo_promedio) || 0;
+
+const getPrecio = (p: any, r?: any): number =>
+  parseFloat(p?.precio)          ||
+  parseFloat(r?.precio_venta)    ||
+  parseFloat(r?.precio_sugerido) ||
+  parseFloat(p?.precio_venta)    || 0;
+
 export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
 
   // Listar recetas completas
@@ -33,7 +46,8 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
         let costoTotal = 0;
         const ingredientes = (receta.ingredientes || []).map((ing: any) => {
           const insumo = productos.find((p: any) => p.id === ing.insumo_id);
-          const costoIngrediente = insumo ? (insumo.costo_unitario || 0) * (ing.cantidad || 0) : 0;
+          const costoUnit = insumo ? getCosto(insumo) : (parseFloat(ing.costo_unitario) || 0);
+          const costoIngrediente = costoUnit * (parseFloat(ing.cantidad) || 0);
           costoTotal += costoIngrediente;
 
           return {
@@ -43,14 +57,14 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
               codigo: insumo.codigo,
               nombre: insumo.nombre,
               unidad_medida: insumo.unidad_medida,
-              costo_unitario: insumo.costo_unitario,
+              costo_unitario: costoUnit,
               stock_actual: insumo.stock_actual
             } : null,
             costo_total: costoIngrediente
           };
         });
 
-        const precioVenta = producto?.precio || 0;
+        const precioVenta = getPrecio(producto, receta);
         const margen = precioVenta > 0 ? ((precioVenta - costoTotal) / precioVenta * 100) : 0;
 
         return {
@@ -97,17 +111,18 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
       let costoTotal = 0;
       const ingredientes = (receta.ingredientes || []).map((ing: any) => {
         const insumo = productos.find((p: any) => p.id === ing.insumo_id);
-        const costoIngrediente = insumo ? (insumo.costo_unitario || 0) * (ing.cantidad || 0) : 0;
+        const costoUnit = insumo ? getCosto(insumo) : (parseFloat(ing.costo_unitario) || 0);
+        const costoIngrediente = costoUnit * (parseFloat(ing.cantidad) || 0);
         costoTotal += costoIngrediente;
 
         return {
           ...ing,
-          insumo,
+          insumo: insumo ? { ...insumo, costo_unitario: costoUnit } : null,
           costo_total: costoIngrediente
         };
       });
 
-      const precioVenta = producto?.precio || 0;
+      const precioVenta = getPrecio(producto, receta);
       const margen = precioVenta > 0 ? ((precioVenta - costoTotal) / precioVenta * 100) : 0;
 
       return c.json({ 
@@ -207,10 +222,11 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
         let costoTotal = 0;
         (receta.ingredientes || []).forEach((ing: any) => {
           const insumo = productos.find((p: any) => p.id === ing.insumo_id);
-          costoTotal += insumo ? (insumo.costo_unitario || 0) * (ing.cantidad || 0) : 0;
+          const costoUnit = insumo ? getCosto(insumo) : (parseFloat(ing.costo_unitario) || 0);
+          costoTotal += costoUnit * (parseFloat(ing.cantidad) || 0);
         });
 
-        const precioVenta = producto?.precio || 0;
+        const precioVenta = getPrecio(producto, receta);
         const margen = precioVenta > 0 ? ((precioVenta - costoTotal) / precioVenta * 100) : 0;
 
         // Calcular ventas del producto
@@ -272,7 +288,8 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
       let costoTotal = 0;
       const detallesCosto = ingredientes.map((ing: any) => {
         const producto = productos.find((p: any) => p.id === ing.insumo_id);
-        const costoIngrediente = producto ? (producto.costo_unitario || 0) * (ing.cantidad || 0) : 0;
+        const costoUnit = producto ? getCosto(producto) : (parseFloat(ing.costo_unitario) || 0);
+        const costoIngrediente = costoUnit * (parseFloat(ing.cantidad) || 0);
         costoTotal += costoIngrediente;
 
         return {
@@ -280,7 +297,7 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
           nombre: producto?.nombre || 'Desconocido',
           cantidad: ing.cantidad,
           unidad: ing.unidad || producto?.unidad_medida || 'unidad',
-          costo_unitario: producto?.costo_unitario || 0,
+          costo_unitario: costoUnit,
           costo_total: costoIngrediente,
           stock_disponible: producto?.stock_actual || 0
         };
@@ -334,12 +351,11 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
         let costoReceta = 0;
         (receta.ingredientes || []).forEach((ing: any) => {
           const insumo = productos.find((p: any) => p.id === ing.insumo_id);
-          if (insumo) {
-            costoReceta += (insumo.costo_unitario || 0) * (ing.cantidad || 0);
-          }
+          const costoUnit = insumo ? getCosto(insumo) : (parseFloat(ing.costo_unitario) || 0);
+          costoReceta += costoUnit * (parseFloat(ing.cantidad) || 0);
         });
 
-        const precioVenta = producto?.precio || 0;
+        const precioVenta = getPrecio(producto, receta);
         
         // 2. Calcular MARGEN DE CONTRIBUCIÓN
         const margenContribucion = precioVenta - costoReceta;
