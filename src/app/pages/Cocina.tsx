@@ -54,6 +54,7 @@ export default function Cocina() {
   const [showRecetaModal, setShowRecetaModal] = useState(false);
   const [showProducirModal, setShowProducirModal] = useState(false);
   const [selectedReceta, setSelectedReceta] = useState<any | null>(null);
+  const [loadingRecetaId, setLoadingRecetaId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [expandedOrders, setExpandedOrders] = useState<Set<any>>(new Set());
 
@@ -255,6 +256,29 @@ export default function Cocina() {
       }
     } catch (error) {
       toast.error('Error de conexión');
+    }
+  };
+
+  // Cargar receta completa desde API antes de abrir el editor
+  const abrirEditorReceta = async (recetaId: string) => {
+    setLoadingRecetaId(recetaId);
+    try {
+      const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/cocina/recetas/${recetaId}`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '' } }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setSelectedReceta(data.receta || null);
+        setShowRecetaModal(true);
+      } else {
+        toast.error('No se pudo cargar la receta');
+      }
+    } catch {
+      toast.error('Error de conexión');
+    } finally {
+      setLoadingRecetaId(null);
     }
   };
 
@@ -584,8 +608,8 @@ export default function Cocina() {
                       <Button variant="outline" size="sm" className="flex-1 border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10" onClick={() => { setSelectedReceta(recipe); setShowProducirModal(true); }}>
                         <Factory className="w-4 h-4 mr-1" /> Producir
                       </Button>
-                      <Button variant="outline" size="sm" className="flex-1 border-[#7B61FF]/30 text-[#7B61FF] hover:bg-[#7B61FF]/10" onClick={() => { setSelectedReceta(recipe); setShowRecetaModal(true); }}>
-                        <Pencil className="w-4 h-4 mr-1" /> Editar
+                      <Button variant="outline" size="sm" className="flex-1 border-[#7B61FF]/30 text-[#7B61FF] hover:bg-[#7B61FF]/10" onClick={() => abrirEditorReceta(recipe.id)} disabled={loadingRecetaId === recipe.id}>
+                        <Pencil className="w-4 h-4 mr-1" /> {loadingRecetaId === recipe.id ? 'Cargando...' : 'Editar'}
                       </Button>
                       <Button variant="outline" size="sm" className="border-red-500/30 text-red-400 hover:bg-red-500/10" onClick={() => eliminarReceta(recipe.id)}>
                         <Trash2 className="w-4 h-4" />
