@@ -56,29 +56,49 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
   const [ingredientes, setIngredientes] = useState<any[]>(() => buildIngredientes(receta));
   const [metodoPrecio, setMetodoPrecio] = useState<'foodcost' | 'manual'>('foodcost');
   const [foodCostPorcentaje, setFoodCostPorcentaje] = useState(30);
+  const [cargando, setCargando] = useState(false);
 
-  // Re-inicializar cuando cambia la receta (por si el componente se reutiliza sin desmontarse)
+  // Cargar datos al montar: productos + receta fresca desde la API si hay ID
   useEffect(() => {
-    setFormData(buildFormData(receta));
-    setIngredientes(buildIngredientes(receta));
-  }, [receta?.id]);
+    if (!isOpen || !token) return;
 
-  useEffect(() => {
-    const fetchProductos = async () => {
+    const cargarDatos = async () => {
+      setCargando(true);
       try {
         const { projectId, publicAnonKey } = await import('/utils/supabase/info');
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/server/productos`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '' } }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setProductos(data.productos || []);
+        const headers = { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token };
+
+        // Siempre cargar lista de productos
+        const [prodRes, recetaRes] = await Promise.all([
+          fetch(`https://${projectId}.supabase.co/functions/v1/server/productos`, { headers }),
+          // Si hay receta.id, cargar datos frescos de la API
+          receta?.id
+            ? fetch(`https://${projectId}.supabase.co/functions/v1/server/cocina/recetas/${receta.id}`, { headers })
+            : Promise.resolve(null)
+        ]);
+
+        if (prodRes.ok) {
+          const d = await prodRes.json();
+          setProductos(d.productos || []);
         }
-      } catch (error) {}
+
+        if (recetaRes && recetaRes.ok) {
+          const d = await recetaRes.json();
+          const r = d.receta;
+          if (r) {
+            setFormData(buildFormData(r));
+            setIngredientes(buildIngredientes(r));
+          }
+        }
+      } catch (e) {
+        console.error('Error cargando datos del modal:', e);
+      } finally {
+        setCargando(false);
+      }
     };
-    if (isOpen && token) fetchProductos();
-  }, [isOpen, token]);
+
+    cargarDatos();
+  }, [isOpen, token, receta?.id]);
 
   const agregarIngrediente = () => setIngredientes([...ingredientes, { insumo_id: '', cantidad: 0, unidad_medida: 'und', costo_unitario: 0, notas: '' }]);
   const eliminarIngrediente = (index: number) => { if (ingredientes.length > 1) setIngredientes(ingredientes.filter((_, i) => i !== index)); };
@@ -173,7 +193,14 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
           <button onClick={onClose} className="text-gray-400 hover:text-white"><X className="w-6 h-6" /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        {cargando && (
+          <div className="flex items-center justify-center py-12 gap-3 text-[#00E5FF]">
+            <div className="w-6 h-6 border-2 border-[#00E5FF] border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-medium">Cargando receta...</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className={`p-6 space-y-6 ${cargando ? 'hidden' : ''}`}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label className="text-gray-300">Nombre de la Receta *</Label>
