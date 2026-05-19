@@ -984,17 +984,22 @@ export default function POS() {
                       </div>
                     </div>
                     {/* Descuento por ítem */}
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <Percent className="w-3 h-3 text-gray-500 flex-none" />
+                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-white/8">
+                      <span className="text-xs text-gray-400 whitespace-nowrap flex items-center gap-1">
+                        <Percent className="w-3 h-3" /> Dcto:
+                      </span>
                       <input
                         type="number" min="0" max="100" step="1"
                         value={item.descuento_item || ''}
                         onChange={e => cambiarDescuentoItem(item.producto.id, Number(e.target.value))}
-                        placeholder="Dcto % ítem"
-                        className="w-full h-6 text-xs bg-white/5 border border-white/10 rounded px-2 text-white placeholder:text-gray-600 focus:outline-none focus:border-amber-400/40"
+                        placeholder="0"
+                        className="w-16 h-7 text-sm bg-[#1a3a52] border border-amber-400/40 rounded px-2 text-amber-300 placeholder:text-gray-500 focus:outline-none focus:border-amber-400"
                       />
+                      <span className="text-xs text-gray-500">%</span>
                       {(item.descuento_item || 0) > 0 && (
-                        <span className="text-xs text-amber-400 whitespace-nowrap">-{item.descuento_item}%</span>
+                        <span className="text-xs text-amber-400 font-bold ml-auto">
+                          -{item.descuento_item}% = -${((item.precio_unitario * item.cantidad * (item.descuento_item / 100))).toFixed(2)}
+                        </span>
                       )}
                     </div>
                   </div>
