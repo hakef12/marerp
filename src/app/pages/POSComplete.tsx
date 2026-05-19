@@ -43,6 +43,7 @@ interface ItemOrden {
   precio_unitario: number;
   subtotal: number;
   notas: string;
+  descuento_item: number; // % de descuento individual por producto
 }
 
 type TipoServicio = 'mesa' | 'para_llevar' | 'delivery';
@@ -162,6 +163,7 @@ export default function POS() {
   const [notas, setNotas] = useState('');
   const [descuento, setDescuento] = useState(0);
   const [aplicarIVA, setAplicarIVA] = useState(true);
+  const [costoEnvio, setCostoEnvio] = useState(0);
   const [editandoNota, setEditandoNota] = useState<string | null>(null);
   const [notaTemp, setNotaTemp] = useState('');
   const [comandaEnviada, setComandaEnviada] = useState(false);
@@ -277,11 +279,11 @@ export default function POS() {
           toast.error('Stock insuficiente'); return prev;
         }
         return prev.map((i, n) => n === idx
-          ? { ...i, cantidad: i.cantidad + 1, subtotal: (i.cantidad + 1) * i.precio_unitario }
+          ? { ...i, cantidad: i.cantidad + 1, subtotal: (i.cantidad + 1) * i.precio_unitario * (1 - (i.descuento_item || 0) / 100) }
           : i);
       }
       const precio = Number(p.precio) || 0;
-      return [...prev, { producto: p, cantidad: 1, precio_unitario: precio, subtotal: precio, notas: '' }];
+      return [...prev, { producto: p, cantidad: 1, precio_unitario: precio, subtotal: precio, notas: '', descuento_item: 0 }];
     });
     setComandaEnviada(false);
     toast.success(`${p.nombre} agregado`, { duration: 800 });
@@ -295,13 +297,22 @@ export default function POS() {
       if (!esRecetaLibre(i.producto) && nueva > (i.producto.stock_actual ?? 0)) {
         toast.error('Stock insuficiente'); return [i];
       }
-      return [{ ...i, cantidad: nueva, subtotal: nueva * i.precio_unitario }];
+      return [{ ...i, cantidad: nueva, subtotal: nueva * i.precio_unitario * (1 - (i.descuento_item || 0) / 100) }];
     }));
     setComandaEnviada(false);
   };
 
   const eliminarItem = (productoId: string) =>
     setOrden(prev => prev.filter(i => i.producto.id !== productoId));
+
+  const cambiarDescuentoItem = (productoId: string, pct: number) => {
+    const pctVal = Math.min(100, Math.max(0, pct || 0));
+    setOrden(prev => prev.map(i => {
+      if (i.producto.id !== productoId) return i;
+      const nuevoSubtotal = i.cantidad * i.precio_unitario * (1 - pctVal / 100);
+      return { ...i, descuento_item: pctVal, subtotal: nuevoSubtotal };
+    }));
+  };
 
   const guardarNota = (productoId: string) => {
     setOrden(prev => prev.map(i =>
@@ -323,7 +334,7 @@ export default function POS() {
         return sum + baseConDescuento * (pct / 100);
       }, 0)
     : 0;
-  const total = subtotal - descuentoVal + ivaVal;
+  const total = subtotal - descuentoVal + ivaVal + (tipoServicio === 'delivery' ? costoEnvio : 0);
   const cambio = metodoPago === 'efectivo' && montoRecibido
     ? Math.max(0, parseFloat(montoRecibido) - total) : 0;
 
@@ -415,6 +426,7 @@ export default function POS() {
         nombre: i.producto.nombre,
         cantidad: i.cantidad,
         precio_unitario: i.precio_unitario,
+        descuento_item: i.descuento_item || 0,
         subtotal: i.subtotal,
         notas: i.notas || undefined,
       }));
@@ -426,6 +438,7 @@ export default function POS() {
         subtotal,
         descuento: descuentoVal,
         impuestos: ivaVal,
+        costo_envio: tipoServicio === 'delivery' ? costoEnvio : 0,
         total,
         metodo_pago: metodoPago,
         mesa: tipoServicio === 'mesa' ? mesa : undefined,
@@ -969,6 +982,20 @@ export default function POS() {
                         </div>
                       </div>
                     </div>
+                    {/* Descuento por ítem */}
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <Percent className="w-3 h-3 text-gray-500 flex-none" />
+                      <input
+                        type="number" min="0" max="100" step="1"
+                        value={item.descuento_item || ''}
+                        onChange={e => cambiarDescuentoItem(item.producto.id, Number(e.target.value))}
+                        placeholder="Dcto % ítem"
+                        className="w-full h-6 text-xs bg-white/5 border border-white/10 rounded px-2 text-white placeholder:text-gray-600 focus:outline-none focus:border-amber-400/40"
+                      />
+                      {(item.descuento_item || 0) > 0 && (
+                        <span className="text-xs text-amber-400 whitespace-nowrap">-{item.descuento_item}%</span>
+                      )}
+                    </div>
                   </div>
                 ))}
 
@@ -989,7 +1016,7 @@ export default function POS() {
           {/* Totales + acciones */}
           {orden.length > 0 && (
             <div className="flex-none border-t border-[#00E5FF]/15 p-4 space-y-3 bg-[#060f1e]">
-              {/* Descuento e IVA */}
+              {/* Descuento global e IVA */}
               <div className="flex gap-3 items-center">
                 <div className="flex items-center gap-1.5 flex-1">
                   <Percent className="w-3.5 h-3.5 text-gray-400" />
@@ -997,7 +1024,7 @@ export default function POS() {
                     type="number" min="0" max="100"
                     value={descuento || ''}
                     onChange={e => setDescuento(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
-                    placeholder="Dcto %"
+                    placeholder="Dcto global %"
                     className="h-8 text-sm bg-white/5 border-white/10 text-white placeholder:text-gray-600"
                   />
                 </div>
@@ -1012,15 +1039,35 @@ export default function POS() {
                 </label>
               </div>
 
+              {/* Costo de envío (solo delivery) */}
+              {tipoServicio === 'delivery' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 whitespace-nowrap">🛵 Envío $</span>
+                  <Input
+                    type="number" min="0" step="0.01"
+                    value={costoEnvio || ''}
+                    onChange={e => setCostoEnvio(Math.max(0, parseFloat(e.target.value) || 0))}
+                    placeholder="0.00"
+                    className="h-8 text-sm bg-white/5 border-orange-400/30 text-white placeholder:text-gray-600 flex-1"
+                  />
+                </div>
+              )}
+
               {/* Resumen */}
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between text-gray-400">
                   <span>Subtotal</span>
                   <span className="text-white">${subtotal.toFixed(2)}</span>
                 </div>
+                {orden.some(i => (i.descuento_item || 0) > 0) && (
+                  <div className="flex justify-between text-gray-400">
+                    <span>Dcto. por ítem</span>
+                    <span className="text-amber-400">incluido</span>
+                  </div>
+                )}
                 {descuento > 0 && (
                   <div className="flex justify-between text-gray-400">
-                    <span>Descuento ({descuento}%)</span>
+                    <span>Descuento global ({descuento}%)</span>
                     <span className="text-red-400">-${descuentoVal.toFixed(2)}</span>
                   </div>
                 )}
@@ -1028,6 +1075,12 @@ export default function POS() {
                   <div className="flex justify-between text-gray-400">
                     <span>IVA</span>
                     <span className="text-white">${ivaVal.toFixed(2)}</span>
+                  </div>
+                )}
+                {tipoServicio === 'delivery' && costoEnvio > 0 && (
+                  <div className="flex justify-between text-gray-400">
+                    <span>🛵 Costo de envío</span>
+                    <span className="text-orange-400">+${costoEnvio.toFixed(2)}</span>
                   </div>
                 )}
                 <Separator className="bg-white/10 my-1" />

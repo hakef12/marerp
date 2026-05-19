@@ -28,6 +28,8 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
   const [cantidad, setCantidad] = useState(1);
   const [notas, setNotas] = useState('');
   const [produciendo, setProduciendo] = useState(false);
+  // Merma por ingrediente: índice → porcentaje de merma (0-100)
+  const [mermasPorIngrediente, setMermasPorIngrediente] = useState<Record<number, number>>({});
 
   // Cargar datos
   useEffect(() => {
@@ -97,7 +99,14 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
         bodega_destino_id: bodegaDestino,
         cantidad_lotes: cantidad,
         cantidad_porciones: cantidadPorciones,
-        notas
+        notas,
+        // Mermas por ingrediente: { índice: %, ... } — el backend lo usa para descontar más stock
+        mermas_ingredientes: ingredientesProcesados.map((ing: any) => ({
+          nombre: ing.nombre,
+          cantidad_base: ing.cantidad_base * cantidad,
+          cantidad_con_merma: ing.cantidad_necesaria,
+          merma_pct: ing.merma_pct || 0,
+        }))
       };
 
       const response = await fetch(
@@ -154,15 +163,21 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
     const costoUnitarioFinal = parseFloat(ing.costo_unitario) || parseFloat(prodCatalogo?.costo_promedio) || parseFloat(prodCatalogo?.precio_compra) || 0;
     const cantidadOriginal = parseFloat(ing.cantidad) || 0;
     
+    const mermaPct = mermasPorIngrediente[index] || 0;
+    // Con merma: se necesita más materia prima para compensar la pérdida
+    // Ej: 10% merma → necesito 100/(100-10) = 1.111x más cantidad
+    const factorMerma = mermaPct > 0 ? 1 / (1 - mermaPct / 100) : 1;
+    const cantidadConMerma = cantidadOriginal * factorMerma;
+
     return {
       nombre: nombreFinal,
       cantidad_base: cantidadOriginal,
       unidad_medida: ing.unidad_medida || 'und',
       costo_unitario: costoUnitarioFinal,
-      
-      // Calcular valores multiplicados por los lotes a producir
-      cantidad_necesaria: cantidadOriginal * cantidad,
-      costo_total_ingrediente: (costoUnitarioFinal * cantidadOriginal) * cantidad
+      merma_pct: mermaPct,
+      // Calcular valores multiplicados por los lotes a producir (incluyendo merma)
+      cantidad_necesaria: cantidadConMerma * cantidad,
+      costo_total_ingrediente: (costoUnitarioFinal * cantidadConMerma) * cantidad
     };
   });
 
@@ -302,18 +317,48 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
                     Materia prima a consumir
                   </h3>
                   
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                  <div className="mb-2 text-xs text-gray-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                    Ingresa el % de merma por ingrediente para un costeo exacto
+                  </div>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-2">
                     {ingredientesProcesados.map((ing: any, index: number) => (
-                      <div key={index} className="bg-[#1a3a52]/50 p-3 rounded-lg flex justify-between items-center border border-[#00E5FF]/10">
-                        <div>
-                          <p className="text-white font-medium">{ing.nombre}</p>
-                          <p className="text-[#00E5FF] font-bold text-sm">
-                            {ing.cantidad_necesaria.toFixed(3)} {ing.unidad_medida}
-                          </p>
+                      <div key={index} className="bg-[#1a3a52]/50 p-3 rounded-lg border border-[#00E5FF]/10">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <p className="text-white font-medium text-sm">{ing.nombre}</p>
+                            <p className="text-[#00E5FF] font-bold text-sm">
+                              {ing.cantidad_necesaria.toFixed(3)} {ing.unidad_medida}
+                              {ing.merma_pct > 0 && (
+                                <span className="text-amber-400 text-xs ml-1">
+                                  (+{ing.merma_pct}% merma)
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-white font-bold text-sm">${ing.costo_total_ingrediente.toFixed(2)}</p>
+                            <p className="text-gray-400 text-xs">${ing.costo_unitario.toFixed(2)}/{ing.unidad_medida}</p>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-white font-bold">${ing.costo_total_ingrediente.toFixed(2)}</p>
-                          <p className="text-gray-400 text-xs">${ing.costo_unitario.toFixed(2)} / {ing.unidad_medida}</p>
+                        {/* Input merma */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500 whitespace-nowrap">Merma %:</span>
+                          <input
+                            type="number" min="0" max="99" step="0.5"
+                            value={mermasPorIngrediente[index] || ''}
+                            onChange={e => setMermasPorIngrediente(prev => ({
+                              ...prev,
+                              [index]: Math.min(99, Math.max(0, parseFloat(e.target.value) || 0))
+                            }))}
+                            placeholder="0"
+                            className="w-20 h-6 text-xs bg-[#0A1A2F] border border-amber-400/30 rounded px-2 text-amber-300 placeholder:text-gray-600 focus:outline-none focus:border-amber-400"
+                          />
+                          {ing.merma_pct > 0 && (
+                            <span className="text-xs text-gray-400">
+                              (base: {(ing.cantidad_base * cantidad).toFixed(3)} → con merma: {ing.cantidad_necesaria.toFixed(3)})
+                            </span>
+                          )}
                         </div>
                       </div>
                     ))}
