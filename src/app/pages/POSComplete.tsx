@@ -408,7 +408,8 @@ export default function POS() {
   };
 
   const confirmarPago = async () => {
-    if (metodoPago === 'efectivo' && (!montoRecibido || parseFloat(montoRecibido) < total)) {
+    const totalRedondeado = parseFloat(total.toFixed(2));
+    if (metodoPago === 'efectivo' && (!montoRecibido || parseFloat(montoRecibido) < totalRedondeado)) {
       return toast.error('Monto recibido insuficiente');
     }
     setProcesando(true);
@@ -1282,7 +1283,7 @@ export default function POS() {
                     </button>
                   ))}
                 </div>
-                {montoRecibido && parseFloat(montoRecibido) >= total && (
+                {montoRecibido && parseFloat(montoRecibido) >= parseFloat(total.toFixed(2)) && (
                   <div className="mt-3 bg-green-500/15 border border-green-500/30 rounded-xl p-3 text-center">
                     <p className="text-green-400 text-xs">Cambio a entregar</p>
                     <p className="text-green-300 text-3xl font-bold">${cambio.toFixed(2)}</p>
@@ -1309,7 +1310,7 @@ export default function POS() {
               </Button>
               <Button
                 onClick={confirmarPago}
-                disabled={procesando || (metodoPago === 'efectivo' && (!montoRecibido || parseFloat(montoRecibido) < total))}
+                disabled={procesando || (metodoPago === 'efectivo' && (!montoRecibido || parseFloat(montoRecibido) < parseFloat(total.toFixed(2))))}
                 className="flex-1 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-white font-bold h-11"
               >
                 {procesando ? (
