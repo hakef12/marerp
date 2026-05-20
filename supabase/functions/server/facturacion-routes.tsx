@@ -338,6 +338,54 @@ function sha1b64(text: string): string {
  *  → ContentInfo (pkcs7-data) → OCTET STRING → SafeContents
  *  → SafeBag (certBag) → CertBag → [0] OCTET STRING { raw cert DER }
  */
+/**
+ * Extracts raw cert DER bytes from an already-parsed + decrypted forge P12 object.
+ *
+ * WHY THIS EXISTS:
+ *   extractRawCertDersFromP12 (below) only reads UNENCRYPTED cert bags (pkcs7-data).
+ *   Ecuador P12 files from BCE, Security Data, ANF AC etc. store certs in ENCRYPTED
+ *   bags (pkcs7-encryptedData OID 1.2.840.113549.1.7.6) — so that function returns [].
+ *
+ *   The fallback forge.asn1.toDer(forge.pki.certificateToAsn1(cert)) re-serializes the
+ *   cert and can change individual bytes → SRI rejects with "certificados alterados".
+ *
+ *   This function uses the forge P12 object AFTER decryption. When forge decrypts an
+ *   encrypted bag it stores the parsed ASN.1 in bag.asn1. The cert DER bytes are still
+ *   present as an OCTET STRING value deep in that ASN.1 tree — they have NOT been
+ *   re-serialized; they are the original bytes that came out of decryption.
+ *
+ *   CertBag ASN.1 structure (RFC 7292 §4.2.3):
+ *     CertBag SEQUENCE {
+ *       certId  OID (x509Certificate = 1.2.840.113549.1.9.22.1)
+ *       certValue [0] EXPLICIT OCTET STRING containing raw cert DER
+ *     }
+ *   → bag.asn1.value[1].value[0].value = raw cert DER bytes (binary string)
+ */
+function extractRawCertDersFromForgeP12(p12: any): string[] {
+  const results: string[] = [];
+  try {
+    for (const sc of (p12.safeContents || [])) {
+      for (const bag of (sc.safeBags || [])) {
+        if (!bag.asn1) continue;
+        try {
+          // bag.asn1 = CertBag SEQUENCE (for certBag type bags)
+          // value[1] = [0] context-tagged node (certValue)
+          // value[1].value[0] = OCTET STRING with raw cert DER
+          const certBag = bag.asn1;
+          if (!Array.isArray(certBag?.value) || certBag.value.length < 2) continue;
+          const certValue = certBag.value[1];
+          if (!Array.isArray(certValue?.value) || certValue.value.length < 1) continue;
+          const certOctet = certValue.value[0];
+          if (typeof certOctet?.value === 'string' && certOctet.value.length > 64) {
+            results.push(certOctet.value); // original bytes — NOT re-encoded
+          }
+        } catch (_) { /* skip malformed bag */ }
+      }
+    }
+  } catch (_) { /* ignore */ }
+  return results;
+}
+
 function extractRawCertDersFromP12(p12DerBytesOrAsn1: string | any): string[] {
   const PKCS7_DATA  = '1.2.840.113549.1.7.1';
   const CERT_BAG    = '1.2.840.113549.1.12.10.1.3';
@@ -359,7 +407,7 @@ function extractRawCertDersFromP12(p12DerBytesOrAsn1: string | any): string[] {
       if (!Array.isArray(ci.value) || ci.value.length < 2) continue;
       const ciOid = ci.value[0];
       if (ciOid?.type !== 6) continue;                          // must be OID tag
-      if (forge.asn1.derToOid(ciOid.value) !== PKCS7_DATA) continue; // skip encrypted
+      if (forge.asn1.derToOid(ciOid.value) !== PKCS7_DATA) continue; // only unencrypted
 
       // pkcs7-data: [0] OCTET STRING → SafeContents DER
       const innerOctet = ci.value[1]?.value?.[0];
@@ -449,8 +497,18 @@ async function firmarXMLXAdES(xmlSinFirmar: string, certData: any): Promise<stri
       catch { return true; }
     })?.cert || certs[0].cert!;
 
-    const rawDers = extractRawCertDersFromP12(p12Asn1);
-    certDer = rawDers.find(der => {
+    // Method 1: unencrypted bags
+    let rawDersSlow = extractRawCertDersFromP12(p12Asn1);
+    // Method 2: encrypted bags (BCE, Security Data, ANF AC format)
+    if (rawDersSlow.length === 0) {
+      rawDersSlow = extractRawCertDersFromForgeP12(p12);
+      if (rawDersSlow.length > 0) {
+        console.log('✅ [Firma] Raw DER extraído desde bags cifrados — slow path');
+      } else {
+        console.warn('⚠️ [Firma] Usando re-serialización del certificado — riesgo FIRMA INVALIDA');
+      }
+    }
+    certDer = rawDersSlow.find(der => {
       try { return forge.pki.certificateFromAsn1(forge.asn1.fromDer(der)).serialNumber === certificate.serialNumber; }
       catch { return false; }
     }) ?? forge.asn1.toDer(forge.pki.certificateToAsn1(certificate)).getBytes();
@@ -790,8 +848,22 @@ export async function handleUploadCertificado(req: Request, empresaId: string) {
         pkcs8_base64 = forge.util.encode64(pkcs8Der);
       }
 
-      // Extract raw cert DER (original bytes, no re-serialization)
-      const rawDers = extractRawCertDersFromP12(p12Asn1);
+      // Extract raw cert DER (original bytes — no re-serialization to avoid "certificados alterados")
+      // Method 1: traverse unencrypted pkcs7-data bags in raw ASN.1 (works for some P12 formats)
+      let rawDers = extractRawCertDersFromP12(p12Asn1);
+
+      // Method 2: use forge's already-decrypted bag.asn1 (handles pkcs7-encryptedData bags
+      // used by BCE, Security Data, ANF AC — the standard Ecuador CA P12 format)
+      if (rawDers.length === 0) {
+        rawDers = extractRawCertDersFromForgeP12(p12);
+        if (rawDers.length > 0) {
+          console.log('✅ [Certificado] Raw DER extraído desde bags cifrados (pkcs7-encryptedData) — método forge');
+        } else {
+          console.warn('⚠️ [Certificado] No se pudo extraer raw DER — se usará re-serialización (riesgo de "certificados alterados")');
+        }
+      } else {
+        console.log('✅ [Certificado] Raw DER extraído desde bags no cifrados (pkcs7-data)');
+      }
 
       const certBagsAll = p12.getBags({ bagType: forge.pki.oids.certBag });
       const certs = certBagsAll[forge.pki.oids.certBag] || [];
@@ -808,6 +880,7 @@ export async function handleUploadCertificado(req: Request, empresaId: string) {
           try { return forge.pki.certificateFromAsn1(forge.asn1.fromDer(der)).serialNumber === cert.serialNumber; }
           catch { return false; }
         });
+        // Only fall back to re-serialization if BOTH extraction methods failed
         rawCertDer_base64 = matchedDer
           ? forge.util.encode64(matchedDer)
           : forge.util.encode64(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes());
