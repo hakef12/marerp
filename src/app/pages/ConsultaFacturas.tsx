@@ -563,14 +563,18 @@ export default function ConsultaFacturas() {
                               <Mail className="w-4 h-4" />
                             </Button>
                           )}
-                          {(factura.estado === 'ERROR' || factura.estado === 'PENDIENTE' || factura.estado === 'NO_AUTORIZADO') && (
+                          {/* Mostrar Reintentar para TODOS los estados — permite re-verificar facturas
+                              marcadas incorrectamente como AUTORIZADO por bug anterior */}
+                          {(factura.estado === 'ERROR' || factura.estado === 'PENDIENTE' || factura.estado === 'NO_AUTORIZADO' || factura.estado === 'AUTORIZADO') && (
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={() => reintentarAutorizacion(factura)}
                               disabled={isLoading}
-                              title="Reintentar autorización con el SRI"
-                              className="border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/10"
+                              title={factura.estado === 'AUTORIZADO' ? 'Verificar autorización con SRI' : 'Reintentar autorización con el SRI'}
+                              className={factura.estado === 'AUTORIZADO'
+                                ? 'border-green-500/20 text-green-400 hover:bg-green-500/10'
+                                : 'border-yellow-500/20 text-yellow-400 hover:bg-yellow-500/10'}
                             >
                               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                             </Button>

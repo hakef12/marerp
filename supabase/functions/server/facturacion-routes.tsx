@@ -116,6 +116,13 @@ function normalizeAmbiente(a: any): 'pruebas' | 'produccion' {
 // SRI XML v1.1.0
 // ============================================================
 
+// ── Determinar la versión del XML según los campos usados ────────────────────
+// V2.1.0: requerida cuando el emisor es RIMPE o agente de retención
+function getXMLVersion(f: any): string {
+  if (f.regimen_rimpe || f.agente_retencion) return '2.1.0';
+  return '2.1.0'; // usar siempre la versión más reciente para máxima compatibilidad SRI
+}
+
 function buildSRIXML(f: any): string {
   const dt = new Date(f.fecha_emision + 'T00:00:00');
   const dd = String(dt.getDate()).padStart(2, '0');
@@ -123,12 +130,20 @@ function buildSRIXML(f: any): string {
   const yyyy = String(dt.getFullYear());
   const fechaStr = `${dd}/${mm}/${yyyy}`;
   const secStr = String(f.secuencial).padStart(9, '0');
+  const xmlVersion = getXMLVersion(f);
 
+  // ── Detalles con soporte de ítems grabados (IVA 15%) y tarifa 0% ─────────
+  // El campo item.tarifa_iva puede ser 0 o 15; si no se especifica, asume 15%
   const detalles = (f.items || []).map((item: any) => {
     const cod = xmlEncode((item.descripcion || 'PROD').substring(0, 25).replace(/\s+/g, '_'));
     const sub = Math.round(Number(item.subtotal || 0) * 100) / 100;
-    // Math.round para evitar float: (1.50*0.15).toFixed(2)="0.22" en JS, pero round(22.5)/100=0.23
-    const ivaItem = (Math.round(sub * 15) / 100).toFixed(2);
+
+    // Determinar si el ítem tiene IVA (15%) o está gravado con 0%
+    const tarifaIva    = Number(item.tarifa_iva ?? 15);   // 0 = exento/0%, 15 = gravado
+    const codPct       = tarifaIva > 0 ? '4' : '0';       // 4=15%, 0=0%
+    const tarifaStr    = tarifaIva > 0 ? '15.00' : '0.00';
+    const ivaItem      = tarifaIva > 0 ? (Math.round(sub * 15) / 100).toFixed(2) : '0.00';
+
     return `<detalle>` +
       `<codigoPrincipal>${cod}</codigoPrincipal>` +
       `<descripcion>${xmlEncode(item.descripcion)}</descripcion>` +
@@ -137,18 +152,45 @@ function buildSRIXML(f: any): string {
       `<descuento>${Number(item.descuento || 0).toFixed(2)}</descuento>` +
       `<precioTotalSinImpuesto>${sub.toFixed(2)}</precioTotalSinImpuesto>` +
       `<impuestos><impuesto>` +
-      `<codigo>2</codigo><codigoPorcentaje>4</codigoPorcentaje>` +
-      `<tarifa>15.00</tarifa>` +
+      `<codigo>2</codigo><codigoPorcentaje>${codPct}</codigoPorcentaje>` +
+      `<tarifa>${tarifaStr}</tarifa>` +
       `<baseImponible>${sub.toFixed(2)}</baseImponible>` +
       `<valor>${ivaItem}</valor>` +
       `</impuesto></impuestos>` +
       `</detalle>`;
   }).join('');
 
-  const subtotal = Number(f.subtotal_iva || f.subtotal || 0).toFixed(2);
-  const descuento = Number(f.total_descuento || f.descuento || 0).toFixed(2);
-  const iva = Number(f.iva || 0).toFixed(2);
-  const total = Number(f.total || 0).toFixed(2);
+  // ── Totales separados por tarifa ──────────────────────────────────────────
+  const subtotalGravado = Number(f.subtotal_iva || f.subtotal || 0);
+  const subtotal0       = Number(f.subtotal_0 || 0);
+  const totalSinImp     = (subtotalGravado + subtotal0).toFixed(2);
+  const descuento       = Number(f.total_descuento || f.descuento || 0).toFixed(2);
+  const iva             = Number(f.iva || 0).toFixed(2);
+  const total           = Number(f.total || 0).toFixed(2);
+
+  // totalConImpuestos: un bloque por tarifa usada
+  let totalConImpuestos = `<totalConImpuestos>`;
+  // Tarifa 15% (codigoPorcentaje=4) — base gravada
+  if (subtotalGravado > 0) {
+    totalConImpuestos +=
+      `<totalImpuesto>` +
+      `<codigo>2</codigo><codigoPorcentaje>4</codigoPorcentaje>` +
+      `<baseImponible>${subtotalGravado.toFixed(2)}</baseImponible>` +
+      `<tarifa>15.00</tarifa>` +
+      `<valor>${iva}</valor>` +
+      `</totalImpuesto>`;
+  }
+  // Tarifa 0% (codigoPorcentaje=0) — base exenta
+  if (subtotal0 > 0) {
+    totalConImpuestos +=
+      `<totalImpuesto>` +
+      `<codigo>2</codigo><codigoPorcentaje>0</codigoPorcentaje>` +
+      `<baseImponible>${subtotal0.toFixed(2)}</baseImponible>` +
+      `<tarifa>0.00</tarifa>` +
+      `<valor>0.00</valor>` +
+      `</totalImpuesto>`;
+  }
+  totalConImpuestos += `</totalConImpuestos>`;
 
   const pagos = (f.formas_pago || [{ codigo: '01', total: f.total }]).map((p: any) =>
     `<pago><formaPago>${xmlEncode(p.codigo || '01')}</formaPago><total>${Number(p.total || 0).toFixed(2)}</total></pago>`
@@ -156,17 +198,29 @@ function buildSRIXML(f: any): string {
 
   const ambCod = f.ambiente === '2' ? '2' : '1';
 
-  // infoAdicional: campoAdicional elements for email/telefono
+  // ── infoAdicional ─────────────────────────────────────────────────────────
   const camposAdicionales: string[] = [];
-  if (f.cliente_email) camposAdicionales.push(`<campoAdicional nombre="email">${xmlEncode(f.cliente_email)}</campoAdicional>`);
-  if (f.telefono) camposAdicionales.push(`<campoAdicional nombre="telefono">${xmlEncode(f.telefono)}</campoAdicional>`);
+  if (f.cliente_email)     camposAdicionales.push(`<campoAdicional nombre="email">${xmlEncode(f.cliente_email)}</campoAdicional>`);
+  if (f.telefono)          camposAdicionales.push(`<campoAdicional nombre="telefono">${xmlEncode(f.telefono)}</campoAdicional>`);
+  if (f.numero_factura)    camposAdicionales.push(`<campoAdicional nombre="numerofactura">${xmlEncode(f.numero_factura)}</campoAdicional>`);
   const infoAdicional = camposAdicionales.length > 0
     ? `<infoAdicional>${camposAdicionales.join('')}</infoAdicional>`
-    : `<infoAdicional/>`;
+    : '';
+
+  // ── infoTributaria: campos opcionales v2.1.0 ─────────────────────────────
+  // agenteRetencion: solo si aplica (número de resolución, ej: "1234")
+  const agenteRetencionXML = f.agente_retencion
+    ? `<agenteRetencion>${xmlEncode(String(f.agente_retencion))}</agenteRetencion>`
+    : '';
+  // contribuyenteRimpe: obligatorio en v2.1.0 si el emisor está en RIMPE
+  // El XSD solo permite el literal exacto "CONTRIBUYENTE RÉGIMEN RIMPE"
+  const rimpeXML = f.regimen_rimpe
+    ? `<contribuyenteRimpe>CONTRIBUYENTE RÉGIMEN RIMPE</contribuyenteRimpe>`
+    : '';
 
   return `<?xml version="1.0" encoding="UTF-8"?>` +
-    `<factura id="comprobante" version="1.1.0">` +
-    // infoTributaria: NO incluye contribuyenteEspecial ni obligadoContabilidad (van en infoFactura)
+    `<factura id="comprobante" version="${xmlVersion}">` +
+    // ── infoTributaria ── (orden obligatorio según XSD)
     `<infoTributaria>` +
     `<ambiente>${ambCod}</ambiente>` +
     `<tipoEmision>1</tipoEmision>` +
@@ -179,8 +233,10 @@ function buildSRIXML(f: any): string {
     `<ptoEmi>${String(f.punto_emision || '001').padStart(3, '0').substring(0, 3)}</ptoEmi>` +
     `<secuencial>${secStr}</secuencial>` +
     `<dirMatriz>${xmlEncode(f.direccion_matriz)}</dirMatriz>` +
+    agenteRetencionXML +   // opcional — solo si es agente de retención
+    rimpeXML +             // opcional — solo si es RIMPE
     `</infoTributaria>` +
-    // infoFactura: contribuyenteEspecial y obligadoContabilidad van AQUÍ según spec v2.26
+    // ── infoFactura ── (contribuyenteEspecial y obligadoContabilidad van aquí)
     `<infoFactura>` +
     `<fechaEmision>${fechaStr}</fechaEmision>` +
     `<dirEstablecimiento>${xmlEncode(f.direccion_establecimiento || f.direccion_matriz)}</dirEstablecimiento>` +
@@ -189,16 +245,9 @@ function buildSRIXML(f: any): string {
     `<tipoIdentificacionComprador>${xmlEncode(f.cliente_tipo_identificacion || '07')}</tipoIdentificacionComprador>` +
     `<razonSocialComprador>${xmlEncode(f.cliente_razon_social || 'Consumidor Final')}</razonSocialComprador>` +
     `<identificacionComprador>${xmlEncode(f.cliente_identificacion || '9999999999999')}</identificacionComprador>` +
-    `<totalSinImpuestos>${subtotal}</totalSinImpuestos>` +
+    `<totalSinImpuestos>${totalSinImp}</totalSinImpuestos>` +
     `<totalDescuento>${descuento}</totalDescuento>` +
-    `<totalConImpuestos>` +
-    `<totalImpuesto>` +
-    `<codigo>2</codigo><codigoPorcentaje>4</codigoPorcentaje>` +
-    `<baseImponible>${subtotal}</baseImponible>` +
-    `<tarifa>15.00</tarifa>` +
-    `<valor>${iva}</valor>` +
-    `</totalImpuesto>` +
-    `</totalConImpuestos>` +
+    totalConImpuestos +
     `<propina>0.00</propina>` +
     `<importeTotal>${total}</importeTotal>` +
     `<moneda>DOLAR</moneda>` +
@@ -668,12 +717,26 @@ async function consultarAutorizacionSRI(claveAcceso: string, ambiente: string, t
     });
     clearTimeout(timer);
     const body = await resp.text();
-    console.log('[SRI Autorizacion] HTTP', resp.status, '| resp:', body.substring(0, 600));
+    console.log('[SRI Autorizacion] HTTP', resp.status, '| resp:', body.substring(0, 800));
 
-    const autorizado = body.includes('AUTORIZADO');
+    // ✅ CRITICAL FIX: 'NO AUTORIZADO'.includes('AUTORIZADO') === true in JS
+    // Must parse the <estado> XML element and match EXACTLY — never use body.includes()
+    const estadoMatch = body.match(/<estado>\s*([^<]+?)\s*<\/estado>/i);
+    const estadoSRI = estadoMatch?.[1]?.trim() ?? '';
+    console.log('[SRI Autorizacion] estado parseado:', JSON.stringify(estadoSRI));
+
+    // AUTORIZADO only when estado element equals exactly 'AUTORIZADO'
+    // Also accept if numeroAutorizacion is present and non-empty (secondary check)
     const numeroAutorizacion = body.match(/<numeroAutorizacion>([^<]+)<\/numeroAutorizacion>/)?.[1]?.trim() || '';
     const fechaAutorizacion = body.match(/<fechaAutorizacion>([^<]+)<\/fechaAutorizacion>/)?.[1]?.trim() || '';
+    const autorizado = estadoSRI === 'AUTORIZADO' && numeroAutorizacion.length > 10;
+
     const mensajes = parsearMensajesSRI(body);
+
+    if (!autorizado && estadoSRI) {
+      // Log the real SRI status to help diagnose rejections
+      console.warn(`[SRI Autorizacion] Estado SRI: "${estadoSRI}" — NO marcado como autorizado`);
+    }
 
     return { autorizado, numeroAutorizacion, fechaAutorizacion, mensajes };
   } catch (err: any) {
