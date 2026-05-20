@@ -45,15 +45,17 @@ interface RIDEProps {
     iva: number;
     total: number;
     
-    // Formas de pago
-    formas_pago: Array<{
+    // Formas de pago (opcional para compatibilidad con facturas antiguas)
+    formas_pago?: Array<{
       codigo: string; // 01=Efectivo, 19=Tarjeta Crédito, 20=Tarjeta Débito
       descripcion: string;
       total: number;
     }>;
-    
+
     // Estado
-    estado_autorizacion: 'PENDIENTE' | 'AUTORIZADO' | 'NO_AUTORIZADO';
+    estado_autorizacion?: 'PENDIENTE' | 'AUTORIZADO' | 'NO_AUTORIZADO';
+    // Fallback: algunos registros usan "estado" en lugar de "estado_autorizacion"
+    estado?: string;
     fecha_autorizacion?: string;
   };
 }
@@ -274,11 +276,15 @@ export function RIDE({ factura }: RIDEProps) {
         {/* FORMAS DE PAGO */}
         <div className="text-xs mb-3">
           <div className="font-bold mb-1">FORMA DE PAGO:</div>
-          {factura.formas_pago.map((pago, idx) => (
-            <div key={idx}>
-              {pago.descripcion}: ${pago.total.toFixed(2)}
-            </div>
-          ))}
+          {(factura.formas_pago || []).length === 0 ? (
+            <div>Efectivo: ${factura.total.toFixed(2)}</div>
+          ) : (
+            (factura.formas_pago || []).map((pago, idx) => (
+              <div key={idx}>
+                {pago.descripcion}: ${pago.total.toFixed(2)}
+              </div>
+            ))
+          )}
         </div>
 
         <div className="border-t border-dashed border-gray-400 my-3"></div>
@@ -297,24 +303,29 @@ export function RIDE({ factura }: RIDEProps) {
         </div>
 
         {/* ESTADO DE AUTORIZACIÓN */}
-        <div className={`text-xs text-center p-2 rounded ${
-          factura.estado_autorizacion === 'AUTORIZADO' 
-            ? 'bg-green-100 text-green-800' 
-            : factura.estado_autorizacion === 'NO_AUTORIZADO'
-            ? 'bg-red-100 text-red-800'
-            : 'bg-yellow-100 text-yellow-800'
-        }`}>
-          <div className="font-bold">
-            {factura.estado_autorizacion === 'AUTORIZADO' && '✓ FACTURA AUTORIZADA'}
-            {factura.estado_autorizacion === 'NO_AUTORIZADO' && '✗ NO AUTORIZADO'}
-            {factura.estado_autorizacion === 'PENDIENTE' && '⏱ PENDIENTE DE AUTORIZACIÓN'}
-          </div>
-          {factura.fecha_autorizacion && (
-            <div className="mt-1">
-              Fecha: {factura.fecha_autorizacion}
+        {(() => {
+          const estadoFinal = factura.estado_autorizacion || (factura as any).estado || 'PENDIENTE';
+          return (
+            <div className={`text-xs text-center p-2 rounded ${
+              estadoFinal === 'AUTORIZADO'
+                ? 'bg-green-100 text-green-800'
+                : estadoFinal === 'NO_AUTORIZADO'
+                ? 'bg-red-100 text-red-800'
+                : 'bg-yellow-100 text-yellow-800'
+            }`}>
+              <div className="font-bold">
+                {estadoFinal === 'AUTORIZADO' && '✓ FACTURA AUTORIZADA'}
+                {estadoFinal === 'NO_AUTORIZADO' && '✗ NO AUTORIZADO'}
+                {estadoFinal !== 'AUTORIZADO' && estadoFinal !== 'NO_AUTORIZADO' && '⏱ PENDIENTE DE AUTORIZACIÓN'}
+              </div>
+              {factura.fecha_autorizacion && (
+                <div className="mt-1">
+                  Fecha: {factura.fecha_autorizacion}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()}
 
         <div className="border-t border-dashed border-gray-400 my-3"></div>
 

@@ -154,7 +154,7 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
   const listaIngredientesRaw = recetaSeleccionada?.ingredientes || recetaSeleccionada?.receta_ingredientes || [];
   
   // Crear una lista procesada y traducida
-  const ingredientesProcesados = listaIngredientesRaw.map((ing: any) => {
+  const ingredientesProcesados = listaIngredientesRaw.map((ing: any, index: number) => {
     // Buscar en el catálogo local
     const idBuscado = String(ing.insumo_id || ing.producto_id || ing.insumo?.id || ing.productos?.id);
     const prodCatalogo = catalogoProductos.find((p: any) => String(p.id) === idBuscado);

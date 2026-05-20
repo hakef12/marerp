@@ -511,10 +511,15 @@ export default function ConsultaFacturas() {
                             </div>
                           )}
 
-                          {factura.mensajes_sri && factura.mensajes_sri.length > 0 && (
+                          {/* Solo mostrar mensajes SRI cuando la factura NO está autorizada */}
+                          {factura.estado !== 'AUTORIZADO' && factura.mensajes_sri && factura.mensajes_sri.length > 0 && (
                             <div className="mt-2">
                               {factura.mensajes_sri.map((msg, idx) => (
-                                <p key={idx} className="text-xs text-yellow-400">
+                                <p key={idx} className={`text-xs ${
+                                  factura.estado === 'NO_AUTORIZADO' || factura.estado === 'ERROR'
+                                    ? 'text-red-400'
+                                    : 'text-yellow-400'
+                                }`}>
                                   ⚠ {msg}
                                 </p>
                               ))}
