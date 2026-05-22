@@ -29,27 +29,17 @@ async function getConfig(empresaId: string): Promise<any | null> {
   if (data) {
     return { ...data, ...(data.metadata || {}), punto_emision: data.codigo_punto_emision };
   }
-  // Fallback KV — intentar claves específicas del sistema anterior
+  // Fallback KV — formato con dos puntos (sistema anterior real)
   for (const kvKey of [
+    `empresa:${empresaId}:facturacion:config`,
+    `empresa:${empresaId}:facturacion:configuracion`,
     `empresa_${empresaId}_facturacion_config`,
     `empresa_${empresaId}_facturacion`,
     `facturacion_config_${empresaId}`,
-    `empresa_${empresaId}_config_facturacion`,
-    `config_facturacion_${empresaId}`,
-    `empresa_${empresaId}`,
   ]) {
     const kvData = await kv.get(kvKey);
     if (kvData && (kvData.ruc || kvData.razon_social || kvData.ambiente)) return kvData;
   }
-  // Escaneo amplio por prefijo — buscar cualquier clave que contenga config de facturación
-  try {
-    const entries = await kv.getByPrefixWithKeys(`empresa_${empresaId}`);
-    for (const [, val] of entries) {
-      if (val && (val.ruc || val.razon_social) && (val.ambiente || val.codigo_establecimiento || val.punto_emision)) {
-        return val;
-      }
-    }
-  } catch { /* silencioso */ }
   return null;
 }
 
@@ -105,25 +95,17 @@ async function getCert(empresaId: string): Promise<any | null> {
       },
     };
   }
-  // Fallback KV — intentar claves específicas
+  // Fallback KV — formato con dos puntos (sistema anterior real)
   for (const kvKey of [
+    `empresa:${empresaId}:facturacion:certificado`,
+    `empresa:${empresaId}:facturacion:cert`,
     `empresa_${empresaId}_facturacion_cert`,
     `empresa_${empresaId}_cert`,
     `certificado_${empresaId}`,
-    `empresa_${empresaId}_certificado`,
-    `cert_${empresaId}`,
-    `empresa_${empresaId}_p12`,
   ]) {
     const kvData = await kv.get(kvKey);
     if (kvData && (kvData.p12_base64 || kvData.password)) return kvData;
   }
-  // Escaneo amplio por prefijo — buscar cualquier clave que contenga un certificado
-  try {
-    const entries = await kv.getByPrefixWithKeys(`empresa_${empresaId}`);
-    for (const [, val] of entries) {
-      if (val && val.p12_base64) return val;
-    }
-  } catch { /* silencioso */ }
   return null;
 }
 
@@ -194,18 +176,16 @@ async function listFacturas(empresaId: string): Promise<Array<[string, any]>> {
   if (data && data.length > 0) {
     return (data as any[]).map(r => [r.factura_key || r.id, r.datos_completos || r]);
   }
-  // Fallback KV — buscar facturas por prefijo (sistema anterior)
+  // Fallback KV — formato real: empresa:ID:factura:FAC-xxx
   try {
+    // Formato con dos puntos (sistema real)
+    const colonEntries = await kv.getByPrefixWithKeys(`empresa:${empresaId}:factura:`);
+    if (colonEntries.length > 0) {
+      return colonEntries.map(([k, v]) => [k.replace(`empresa:${empresaId}:factura:`, ''), v]);
+    }
+    // Formato con guiones bajos (fallback)
     const prefixEntries = await kv.getByPrefixWithKeys(`empresa_${empresaId}_factura_`);
     if (prefixEntries.length > 0) return prefixEntries;
-    // También probar formato objeto en una sola clave
-    const obj = await kv.get(`empresa_${empresaId}_facturas`);
-    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
-      return Object.entries(obj) as [string, any][];
-    }
-    if (Array.isArray(obj) && obj.length > 0) {
-      return obj.map((f: any) => [f.numero_factura || f.id || crypto.randomUUID(), f]);
-    }
   } catch { /* silencioso */ }
   return [];
 }

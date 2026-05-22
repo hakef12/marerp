@@ -991,10 +991,13 @@ app.get("/server/admin/diagnostico-completo", authMiddleware, async (c) => {
 });
 
 // ── POST /admin/restaurar-desde-kv — re-sincroniza TODO desde KV ─────────────
+// Acepta ?empresa_id=UUID para restaurar una empresa específica
 app.post("/server/admin/restaurar-desde-kv", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   const db = createClient(supabaseUrl, supabaseServiceKey);
-  const eid = auth.empresaId;
+  // Permite especificar empresa_id destino (útil para super_admin restaurando otras empresas)
+  const eidParam = c.req.query('empresa_id');
+  const eid = eidParam || auth.empresaId;
   const res: Record<string, any> = {};
   const isUUID = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
