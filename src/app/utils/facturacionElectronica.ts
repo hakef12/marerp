@@ -91,17 +91,25 @@ export const CONSUMIDOR_FINAL = {
   razon_social: 'Consumidor Final',
 };
 
-// Generar XML de factura según especificaciones SRI v2.26
+// Generar XML de factura según especificaciones SRI v2.1.0
 export function generarXMLFactura(factura: any): string {
   const fecha = new Date(factura.fecha_emision + 'T00:00:00');
-  // SRI v2.26 requiere formato dd/mm/aaaa (NO yyyymmdd)
+  // SRI requiere formato dd/mm/aaaa
   const dd = String(fecha.getDate()).padStart(2, '0');
   const mm = String(fecha.getMonth() + 1).padStart(2, '0');
   const yyyy = String(fecha.getFullYear());
   const fechaStr = `${dd}/${mm}/${yyyy}`;
-  
+
+  // Campos opcionales infoTributaria (v2.1.0)
+  const agenteRetencionXML = factura.agente_retencion
+    ? `\n    <agenteRetencion>${escapeXML(String(factura.agente_retencion))}</agenteRetencion>`
+    : '';
+  const rimpeXML = factura.regimen_rimpe || factura.contribuyente_rimpe
+    ? `\n    <contribuyenteRimpe>CONTRIBUYENTE RÉGIMEN RIMPE</contribuyenteRimpe>`
+    : '';
+
   return `<?xml version="1.0" encoding="UTF-8"?>
-<factura id="comprobante" version="1.1.0">
+<factura id="comprobante" version="2.1.0">
   <infoTributaria>
     <ambiente>${factura.ambiente}</ambiente>
     <tipoEmision>1</tipoEmision>
@@ -113,7 +121,7 @@ export function generarXMLFactura(factura: any): string {
     <estab>${factura.codigo_establecimiento}</estab>
     <ptoEmi>${factura.punto_emision}</ptoEmi>
     <secuencial>${String(factura.secuencial).padStart(9, '0')}</secuencial>
-    <dirMatriz>${escapeXML(factura.direccion_matriz)}</dirMatriz>
+    <dirMatriz>${escapeXML(factura.direccion_matriz)}</dirMatriz>${agenteRetencionXML}${rimpeXML}
   </infoTributaria>
   <infoFactura>
     <fechaEmision>${fechaStr}</fechaEmision>
@@ -156,25 +164,31 @@ export function generarXMLFactura(factura: any): string {
     </pagos>
   </infoFactura>
   <detalles>
-    ${factura.items.map((item: any, idx: number) => `
+    ${factura.items.map((item: any, idx: number) => {
+      // Soporte multi-tarifa IVA: 0% (codigoPorcentaje=0) o 15% (codigoPorcentaje=4)
+      const tarifaIva = Number(item.tarifa_iva ?? 15);
+      const codPct    = tarifaIva > 0 ? '4' : '0';
+      const tarifaStr = tarifaIva > 0 ? '15.00' : '0.00';
+      const ivaValor  = tarifaIva > 0 ? (item.subtotal * 0.15).toFixed(2) : '0.00';
+      return `
     <detalle>
       <codigoPrincipal>${idx + 1}</codigoPrincipal>
       <descripcion>${escapeXML(item.descripcion)}</descripcion>
       <cantidad>${item.cantidad}</cantidad>
-      <precioUnitario>${item.precio_unitario.toFixed(6)}</precioUnitario>
-      <descuento>${item.descuento.toFixed(2)}</descuento>
-      <precioTotalSinImpuesto>${item.subtotal.toFixed(2)}</precioTotalSinImpuesto>
+      <precioUnitario>${Number(item.precio_unitario).toFixed(6)}</precioUnitario>
+      <descuento>${Number(item.descuento || 0).toFixed(2)}</descuento>
+      <precioTotalSinImpuesto>${Number(item.subtotal).toFixed(2)}</precioTotalSinImpuesto>
       <impuestos>
         <impuesto>
           <codigo>2</codigo>
-          <codigoPorcentaje>4</codigoPorcentaje>
-          <tarifa>15.00</tarifa>
-          <baseImponible>${item.subtotal.toFixed(2)}</baseImponible>
-          <valor>${(item.subtotal * 0.15).toFixed(2)}</valor>
+          <codigoPorcentaje>${codPct}</codigoPorcentaje>
+          <tarifa>${tarifaStr}</tarifa>
+          <baseImponible>${Number(item.subtotal).toFixed(2)}</baseImponible>
+          <valor>${ivaValor}</valor>
         </impuesto>
       </impuestos>
-    </detalle>
-    `).join('')}
+    </detalle>`;
+    }).join('')}
   </detalles>
   <infoAdicional>
     ${factura.cliente_email ? `<campoAdicional nombre="Email">${escapeXML(factura.cliente_email)}</campoAdicional>` : ''}

@@ -145,7 +145,7 @@ export default function Sidebar() {
   );
 
   return (
-    <div className="w-64 bg-gradient-to-b from-[#0A1A2F]/95 via-[#0F2640]/90 to-[#1a3a52]/95 backdrop-blur-xl border-r border-white/5 flex flex-col flex-shrink-0">
+    <div className="w-72 md:w-64 h-full min-h-screen bg-gradient-to-b from-[#0A1A2F]/95 via-[#0F2640]/90 to-[#1a3a52]/95 backdrop-blur-xl border-r border-white/5 flex flex-col flex-shrink-0">
       {/* Header */}
       <div className="p-6 border-b border-white/5">
         <div className="flex items-center gap-3 mb-2">

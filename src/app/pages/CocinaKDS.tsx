@@ -94,7 +94,7 @@ export default function CocinaKDS({
                               {comanda.cliente}
                             </p>
                           )}
-                          <Badge className={getEstadoBadge(comanda.estado)} variant="outline" className="mt-2">
+                          <Badge className={`${getEstadoBadge(comanda.estado)} mt-2`} variant="outline">
                             Pendiente
                           </Badge>
                         </div>
@@ -203,7 +203,7 @@ export default function CocinaKDS({
                               {comanda.cliente}
                             </p>
                           )}
-                          <Badge className={getEstadoBadge(comanda.estado)} variant="outline" className="mt-2">
+                          <Badge className={`${getEstadoBadge(comanda.estado)} mt-2`} variant="outline">
                             En Preparación
                           </Badge>
                         </div>

@@ -202,8 +202,18 @@ export default function ConfiguracionFacturacion() {
               </div>
               <div>
                 <Label className="text-gray-300">RUC * (13 dígitos)</Label>
-                <Input value={config.ruc} onChange={e => setConfig({ ...config, ruc: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" maxLength={13} required placeholder="0000000000001" />
+                <Input
+                  value={config.ruc}
+                  onChange={e => setConfig({ ...config, ruc: e.target.value.replace(/\D/g, '').slice(0, 13) })}
+                  className={`bg-[#0A1A2F] text-white ${config.ruc && config.ruc.length !== 13 ? 'border-red-500' : 'border-[#00E5FF]/20'}`}
+                  maxLength={13}
+                  inputMode="numeric"
+                  required
+                  placeholder="0000000000001"
+                />
+                {config.ruc && config.ruc.length !== 13 && (
+                  <p className="text-red-400 text-xs mt-1">El RUC debe tener exactamente 13 dígitos ({config.ruc.length}/13)</p>
+                )}
               </div>
               <div>
                 <Label className="text-gray-300">Teléfono</Label>

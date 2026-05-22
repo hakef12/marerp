@@ -25,6 +25,16 @@ export function BodegaSelector() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  // ─── Todos los hooks ANTES de cualquier return condicional ───────────
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+  // ─────────────────────────────────────────────────────────────────────
+
   const rol = user?.rol ?? '';
   if (!ROLES_CON_ACCESO.includes(rol)) return null;
   if (bodegas.length === 0 && !loading) return null;
@@ -34,14 +44,6 @@ export function BodegaSelector() {
     setBodegaActiva(b);
     setOpen(false);
   };
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    if (open) document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
 
   return (
     <div className="px-4 py-2" ref={ref}>

@@ -229,12 +229,16 @@ export default function ConsultaFacturas() {
       if (response.ok) {
         const data = await response.json();
         const estado = data.factura?.estado;
+        const msgs: string[] = data.factura?.mensajes_sri || [];
+        const primerMsg = msgs.find((m: string) => m.length > 0) || '';
         if (estado === 'AUTORIZADO') {
-          toast.success('✅ Factura AUTORIZADA por el SRI');
+          toast.success(`✅ Factura AUTORIZADA por el SRI${data.factura?.numero_autorizacion ? ' — N° ' + data.factura.numero_autorizacion.substring(0, 20) + '...' : ''}`);
         } else if (estado === 'NO_AUTORIZADO') {
-          toast.error('❌ SRI no autorizó la factura');
+          toast.error(`❌ SRI rechazó la factura${primerMsg ? ': ' + primerMsg.replace(/^[⚠️❌📋🔶]\s*/, '') : ''}`, { duration: 8000 });
         } else {
-          toast.info('⏳ Factura pendiente — el SRI aún está procesando. Reintente en unos segundos.');
+          // PENDIENTE — show SRI message if it tells us something useful
+          const infoMsg = primerMsg.replace(/^[⚠️❌📋🔶]\s*/, '') || 'El SRI aún está procesando. Reintente en unos segundos.';
+          toast.info(`⏳ ${infoMsg}`, { duration: 5000 });
         }
         await cargarFacturas();
       } else {
@@ -702,6 +706,36 @@ export default function ConsultaFacturas() {
                   </span>
                 </div>
               </div>
+
+              {/* Mensajes SRI */}
+              {(facturaSeleccionada as any).mensajes_sri?.length > 0 && (
+                <div>
+                  <Label className="text-gray-400 text-sm mb-2 block">Mensajes SRI</Label>
+                  <div className={`rounded-lg p-3 text-xs font-mono space-y-1 ${
+                    facturaSeleccionada.estado === 'AUTORIZADO' ? 'bg-green-500/10 border border-green-500/20' :
+                    facturaSeleccionada.estado === 'NO_AUTORIZADO' ? 'bg-red-500/10 border border-red-500/20' :
+                    'bg-yellow-500/10 border border-yellow-500/20'
+                  }`}>
+                    {(facturaSeleccionada as any).mensajes_sri.map((msg: string, idx: number) => (
+                      <p key={idx} className={
+                        facturaSeleccionada.estado === 'AUTORIZADO' ? 'text-green-300' :
+                        facturaSeleccionada.estado === 'NO_AUTORIZADO' ? 'text-red-300' :
+                        'text-yellow-300'
+                      }>{msg}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Debug: raw SRI response (only shown for non-authorized) */}
+              {facturaSeleccionada.estado !== 'AUTORIZADO' && (facturaSeleccionada as any).debug_sri_response && (
+                <div>
+                  <Label className="text-gray-400 text-sm mb-2 block">Respuesta raw SRI (debug)</Label>
+                  <pre className="bg-[#060f1e] border border-[#00E5FF]/10 rounded-lg p-2 text-[10px] text-gray-400 whitespace-pre-wrap break-all max-h-32 overflow-auto">
+                    {(facturaSeleccionada as any).debug_sri_response}
+                  </pre>
+                </div>
+              )}
 
               <div className="flex justify-end">
                 <Button

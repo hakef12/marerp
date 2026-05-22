@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { cssTermico, printHtml, esc } from '../utils/printThermal';
 import { useAuth } from '../context/AuthContext';
 import { useBodega } from '../context/BodegaContext';
 import { useSearchParams, useNavigate } from 'react-router';
@@ -74,66 +75,54 @@ function imprimirComanda(comanda: {
   notas?: string;
   fecha: Date;
 }) {
+  // Detectar ancho de papel desde configuración local (default 58mm)
+  const ancho = (parseInt(localStorage.getItem('print_ancho') || '58') as 58 | 80) === 80 ? 80 : 58;
+
   const tipoLabel = comanda.tipo_servicio === 'mesa'
     ? `Mesa ${comanda.mesa}`
     : comanda.tipo_servicio === 'para_llevar'
     ? 'Para Llevar'
     : 'Delivery';
 
+  const hora = comanda.fecha.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+  const fecha = comanda.fecha.toLocaleDateString('es-EC');
+
+  const itemsHtml = comanda.items.map(item => `
+    <div class="item" style="margin:3px 0;">
+      <div class="row">
+        <span class="bold" style="font-size:${ancho===58?'12px':'13px'}">${item.cantidad}x ${esc(item.producto.nombre)}</span>
+      </div>
+      ${item.notas ? `<div style="font-style:italic;font-size:9px;margin-left:10px;color:#333;">⚑ ${esc(item.notas)}</div>` : ''}
+    </div>
+  `).join('');
+
   const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8" />
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Courier New', monospace; font-size: 12px; width: 80mm; padding: 4mm; }
-        h1 { font-size: 18px; text-align: center; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 6px; }
-        .centro { text-align: center; }
-        .row { display: flex; justify-content: space-between; margin: 3px 0; }
-        .bold { font-weight: bold; }
-        .big { font-size: 16px; font-weight: bold; text-align: center; margin: 6px 0; }
-        .sep { border-top: 1px dashed #000; margin: 6px 0; }
-        .item { margin: 4px 0; }
-        .item-nombre { font-weight: bold; font-size: 13px; }
-        .item-nota { font-style: italic; font-size: 11px; margin-left: 8px; color: #444; }
-        .notas { margin-top: 6px; padding: 4px; border: 1px dashed #000; }
-      </style>
-    </head>
-    <body>
-      <h1>★ COMANDA ★</h1>
-      <div class="centro bold" style="font-size:14px">${tipoLabel}</div>
-      ${comanda.cliente ? `<div class="centro">Cliente: ${comanda.cliente}</div>` : ''}
+    <style>${cssTermico(ancho)}</style>
+    <div class="huge" style="border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:5px;">
+      ★ COMANDA ★
+    </div>
+    <div class="c bold" style="font-size:${ancho===58?'13px':'15px'};margin-bottom:2px;">${esc(tipoLabel)}</div>
+    ${comanda.cliente ? `<div class="c" style="font-size:9px;">Cliente: ${esc(comanda.cliente)}</div>` : ''}
+    <div class="sep"></div>
+    <div class="row"><span class="lbl">Orden:</span><span class="val bold">${esc(comanda.numero_orden)}</span></div>
+    <div class="row"><span class="lbl">Fecha:</span><span class="val">${fecha}</span></div>
+    <div class="row"><span class="lbl">Hora:</span><span class="val bold">${hora}</span></div>
+    <div class="sep"></div>
+    <div class="bold" style="margin-bottom:3px;">ITEMS:</div>
+    ${itemsHtml}
+    ${comanda.notas ? `
       <div class="sep"></div>
-      <div class="row"><span>Orden:</span><span class="bold">${comanda.numero_orden}</span></div>
-      <div class="row"><span>Fecha:</span><span>${comanda.fecha.toLocaleDateString('es-EC')}</span></div>
-      <div class="row"><span>Hora:</span><span class="bold">${comanda.fecha.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}</span></div>
-      <div class="sep"></div>
-      <div class="bold" style="font-size:13px; margin-bottom:4px;">ITEMS:</div>
-      ${comanda.items.map(item => `
-        <div class="item">
-          <div class="row">
-            <span class="item-nombre">${item.cantidad}x ${item.producto.nombre}</span>
-          </div>
-          ${item.notas ? `<div class="item-nota">⚑ ${item.notas}</div>` : ''}
-        </div>
-      `).join('')}
-      ${comanda.notas ? `
-        <div class="sep"></div>
-        <div class="notas"><div class="bold">Notas generales:</div>${comanda.notas}</div>
-      ` : ''}
-      <div class="sep"></div>
-      <div class="centro" style="font-size:11px; margin-top:4px;">*** COCINA ***</div>
-    </body>
-    </html>
+      <div style="border:1px dashed #000;padding:3px;">
+        <div class="bold">Notas:</div>
+        <div style="font-size:9px;">${esc(comanda.notas)}</div>
+      </div>
+    ` : ''}
+    <div class="sep"></div>
+    <div class="c sm">★★★ COCINA ★★★</div>
+    <div class="feed"></div>
   `;
 
-  const win = window.open('', '_blank', 'width=340,height=600');
-  if (!win) return;
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  setTimeout(() => { win.print(); win.close(); }, 400);
+  printHtml(html, `Comanda ${comanda.numero_orden}`, ancho);
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -155,11 +144,22 @@ export default function POS() {
   const [busqueda, setBusqueda] = useState('');
   const [loadingProductos, setLoadingProductos] = useState(true);
 
-  // Orden
-  const [orden, setOrden] = useState<ItemOrden[]>([]);
-  const [tipoServicio, setTipoServicio] = useState<TipoServicio>('mesa');
-  const [mesa, setMesa] = useState('');
-  const [cliente, setCliente] = useState('');
+  // Orden — se recupera de sessionStorage para sobrevivir recargas accidentales
+  const [orden, setOrden] = useState<ItemOrden[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('pos_orden_draft');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [tipoServicio, setTipoServicio] = useState<TipoServicio>(() => {
+    try { return (sessionStorage.getItem('pos_tipo_servicio') as TipoServicio) || 'mesa'; } catch { return 'mesa'; }
+  });
+  const [mesa, setMesa] = useState(() => {
+    try { return sessionStorage.getItem('pos_mesa') || ''; } catch { return ''; }
+  });
+  const [cliente, setCliente] = useState(() => {
+    try { return sessionStorage.getItem('pos_cliente') || ''; } catch { return ''; }
+  });
   const [notas, setNotas] = useState('');
   const [descuento, setDescuento] = useState(0);
   const [aplicarIVA, setAplicarIVA] = useState(true);
@@ -182,6 +182,9 @@ export default function POS() {
   const [dialogRIDE, setDialogRIDE] = useState(false);
   const [facturaGenerada, setFacturaGenerada] = useState<any>(null);
 
+  // Vista móvil: alternar entre productos y orden
+  const [vistaMovil, setVistaMovil] = useState<'productos' | 'orden'>('productos');
+
   // ── Verificar estado de caja al montar (y cuando cambia bodega) ──
   useEffect(() => {
     async function checkCaja() {
@@ -192,6 +195,10 @@ export default function POS() {
           `https://${projectId}.supabase.co/functions/v1/server/caja/estado?bodega_id=${bodegaActiva.id}`,
           { headers: { Authorization: `Bearer ${publicAnonKey}`, 'X-User-Token': token } }
         );
+        if (res.status === 401) {
+          window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+          return;
+        }
         if (!res.ok) { setCaja({ abierta: false }); return; }
         const data = await res.json();
         const s = data.sesion;
@@ -218,6 +225,20 @@ export default function POS() {
     }
   }, [searchParams]);
 
+  // ── Persistir carrito en sessionStorage (sobrevive recargas) ─
+  useEffect(() => {
+    try { sessionStorage.setItem('pos_orden_draft', JSON.stringify(orden)); } catch { /* sin acceso a storage */ }
+  }, [orden]);
+  useEffect(() => {
+    try { sessionStorage.setItem('pos_tipo_servicio', tipoServicio); } catch { /* */ }
+  }, [tipoServicio]);
+  useEffect(() => {
+    try { sessionStorage.setItem('pos_mesa', mesa); } catch { /* */ }
+  }, [mesa]);
+  useEffect(() => {
+    try { sessionStorage.setItem('pos_cliente', cliente); } catch { /* */ }
+  }, [cliente]);
+
   useEffect(() => { cargarDatos(); }, []);
 
   const cargarDatos = async () => {
@@ -234,15 +255,7 @@ export default function POS() {
       );
       if (!res.ok) return;
       const data = await res.json();
-      const isMock = (p: any) => {
-        if (p.id?.startsWith('prod_')) return true;
-        const n = (p.nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-        const mocks = ['hamburguesa', 'alitas', 'papas', 'refresco', 'cerveza', 'limonada',
-          'cheesecake', 'brownie', 'helado', 'cafe', 'cappuccino', 'capuccino', 'chai',
-          'pizza', 'ensalada', 'clasica', 'americano'];
-        return mocks.some(m => n.includes(m));
-      };
-      setProductos((data.productos || []).filter((p: any) => !isMock(p)));
+      setProductos(data.productos || []);
     } catch { /* silencioso */ }
   };
 
@@ -254,12 +267,7 @@ export default function POS() {
       );
       if (!res.ok) return;
       const data = await res.json();
-      const isMockCat = (c: any) => {
-        if (c.id?.startsWith('cat_')) return true;
-        const n = (c.nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-        return ['alimentos', 'bebidas', 'postres', 'entradas', 'platos fuertes'].some(m => n.includes(m));
-      };
-      setCategorias((data.categorias || []).filter((c: any) => !isMockCat(c)));
+      setCategorias(data.categorias || []);
     } catch { /* silencioso */ }
   };
 
@@ -287,6 +295,8 @@ export default function POS() {
     });
     setComandaEnviada(false);
     toast.success(`${p.nombre} agregado`, { duration: 800 });
+    // En mobile: ir automáticamente a la vista de orden
+    if (window.innerWidth < 768) setVistaMovil('orden');
   };
 
   const cambiarCantidad = (productoId: string, delta: number) => {
@@ -341,8 +351,10 @@ export default function POS() {
   // ─── Enviar a cocina ────────────────────────────────────────────────────────
 
   const generarNumeroOrden = () => {
-    const ts = Date.now().toString().slice(-6);
-    return tipoServicio === 'mesa' ? `M${mesa || '?'}-${ts}` : `TL-${ts}`;
+    // base36 timestamp + 3-char random suffix → colisión prácticamente imposible
+    const ts  = Date.now().toString(36).toUpperCase();
+    const rnd = Math.random().toString(36).slice(2, 5).toUpperCase();
+    return tipoServicio === 'mesa' ? `M${mesa || '?'}-${ts}${rnd}` : `TL-${ts}${rnd}`;
   };
 
   const enviarCocina = async (): Promise<string | null> => {
@@ -538,6 +550,13 @@ export default function POS() {
     setMontoRecibido('');
     setComandaEnviada(false);
     setVentaCompletada(null);
+    // Limpiar sessionStorage — venta completada, no restaurar borrador
+    try {
+      sessionStorage.removeItem('pos_orden_draft');
+      sessionStorage.removeItem('pos_tipo_servicio');
+      sessionStorage.removeItem('pos_mesa');
+      sessionStorage.removeItem('pos_cliente');
+    } catch { /* */ }
     // Si venía del plano de mesas, volver al plano
     if (volverAMesas && searchParams.get('mesa')) {
       navigate('/mesas');
@@ -760,10 +779,41 @@ export default function POS() {
         </div>
       </div>
 
+      {/* ── Tab bar mobile (solo visible en sm) ── */}
+      <div className="md:hidden flex-none flex border-b border-[#00E5FF]/15 bg-[#08111e]">
+        <button
+          onClick={() => setVistaMovil('productos')}
+          className={`flex-1 py-3 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
+            vistaMovil === 'productos'
+              ? 'text-[#00E5FF] border-b-2 border-[#00E5FF]'
+              : 'text-gray-400'
+          }`}
+        >
+          <Package className="w-4 h-4" />
+          Productos
+        </button>
+        <button
+          onClick={() => setVistaMovil('orden')}
+          className={`flex-1 py-3 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
+            vistaMovil === 'orden'
+              ? 'text-[#00E5FF] border-b-2 border-[#00E5FF]'
+              : 'text-gray-400'
+          }`}
+        >
+          <ShoppingCart className="w-4 h-4" />
+          Orden
+          {orden.length > 0 && (
+            <span className="bg-[#00E5FF] text-black text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+              {orden.length}
+            </span>
+          )}
+        </button>
+      </div>
+
       <div className="flex-1 flex overflow-hidden">
 
         {/* ── Panel izquierdo: Productos ── */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className={`flex-1 flex flex-col overflow-hidden ${vistaMovil === 'orden' ? 'hidden md:flex' : 'flex'}`}>
 
           {/* Categorías */}
           <div className="flex-none px-4 pt-3 pb-2">
@@ -888,7 +938,10 @@ export default function POS() {
         </div>
 
         {/* ── Panel derecho: Orden ── */}
-        <div className="w-[380px] flex-none flex flex-col bg-[#08111e] border-l border-[#00E5FF]/15">
+        <div className={`
+          w-full md:w-[340px] lg:w-[380px] flex-none flex flex-col bg-[#08111e] border-l border-[#00E5FF]/15
+          ${vistaMovil === 'productos' ? 'hidden md:flex' : 'flex'}
+        `}>
 
           {/* Header orden */}
           <div className="flex-none px-4 py-3 border-b border-[#00E5FF]/15">
@@ -904,7 +957,10 @@ export default function POS() {
               </div>
               {orden.length > 0 && (
                 <button
-                  onClick={() => { setOrden([]); setComandaEnviada(false); }}
+                  onClick={() => {
+                    setOrden([]); setComandaEnviada(false);
+                    try { sessionStorage.removeItem('pos_orden_draft'); } catch { /* */ }
+                  }}
                   className="text-red-400 hover:text-red-300 text-xs flex items-center gap-1"
                 >
                   <Trash2 className="w-3 h-3" /> Limpiar

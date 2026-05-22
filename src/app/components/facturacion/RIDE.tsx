@@ -1,10 +1,9 @@
-import { useRef } from 'react';
 import { Printer } from 'lucide-react';
 import { Button } from '../ui/button';
+import { cssTermico, printHtml, esc, type AnchoPapel } from '../../utils/printThermal';
 
 interface RIDEProps {
   factura: {
-    // Datos del emisor
     razon_social: string;
     nombre_comercial?: string;
     ruc: string;
@@ -15,20 +14,14 @@ interface RIDEProps {
     regimen_rimpe: boolean;
     contribuyente_especial?: string;
     agente_retencion?: string;
-    
-    // Identificación del comprobante
-    numero_factura: string; // Formato: 001-001-000000123
-    clave_acceso: string; // 49 dígitos
+    numero_factura: string;
+    clave_acceso: string;
     fecha_emision: string;
     hora_emision: string;
-    
-    // Datos del cliente
     cliente_identificacion: string;
-    cliente_tipo_identificacion: string; // RUC, CEDULA, PASAPORTE, CONSUMIDOR_FINAL
+    cliente_tipo_identificacion: string;
     cliente_razon_social: string;
     cliente_email?: string;
-    
-    // Detalle de productos
     items: Array<{
       cantidad: number;
       descripcion: string;
@@ -36,305 +29,235 @@ interface RIDEProps {
       descuento: number;
       subtotal: number;
     }>;
-    
-    // Totales
-    subtotal_iva: number; // Subtotal gravado con IVA
-    subtotal_0: number; // Subtotal tarifa 0%
-    subtotal_no_objeto: number; // Subtotal no objeto de IVA
+    subtotal_iva: number;
+    subtotal_0: number;
+    subtotal_no_objeto: number;
     total_descuento: number;
     iva: number;
     total: number;
-    
-    // Formas de pago (opcional para compatibilidad con facturas antiguas)
-    formas_pago?: Array<{
-      codigo: string; // 01=Efectivo, 19=Tarjeta Crédito, 20=Tarjeta Débito
-      descripcion: string;
-      total: number;
-    }>;
-
-    // Estado
+    formas_pago?: Array<{ codigo: string; descripcion: string; total: number }>;
     estado_autorizacion?: 'PENDIENTE' | 'AUTORIZADO' | 'NO_AUTORIZADO';
-    // Fallback: algunos registros usan "estado" en lugar de "estado_autorizacion"
     estado?: string;
     fecha_autorizacion?: string;
+    numero_autorizacion?: string;
   };
 }
 
+/** Genera HTML de RIDE para impresora térmica */
+function buildRideHtml(factura: RIDEProps['factura'], ancho: AnchoPapel): string {
+  const estadoFinal = factura.estado_autorizacion || (factura as any).estado || 'PENDIENTE';
+  const autorizado  = estadoFinal === 'AUTORIZADO';
+  const rechazado   = estadoFinal === 'NO_AUTORIZADO';
+
+  // Tabla de ítems — en 58mm omitimos descuento para ahorrar espacio
+  const colDesc = ancho === 80;
+  const itemsHtml = factura.items.map(item => `
+    <tr>
+      <td class="qty">${item.cantidad}</td>
+      <td style="padding-right:2px;">${esc(item.descripcion)}</td>
+      ${colDesc && item.descuento > 0 ? `<td class="price">${item.descuento.toFixed(2)}</td>` : ''}
+      <td class="price">${item.precio_unitario.toFixed(2)}</td>
+      <td class="price">${item.subtotal.toFixed(2)}</td>
+    </tr>
+  `).join('');
+
+  // Totales
+  const totalesHtml = [
+    factura.subtotal_iva  > 0 ? `<div class="row"><span class="lbl">Subtotal IVA 15%</span><span class="val">$${factura.subtotal_iva.toFixed(2)}</span></div>` : '',
+    factura.subtotal_0    > 0 ? `<div class="row"><span class="lbl">Subtotal IVA 0%</span><span class="val">$${factura.subtotal_0.toFixed(2)}</span></div>` : '',
+    factura.subtotal_no_objeto > 0 ? `<div class="row"><span class="lbl">No Objeto IVA</span><span class="val">$${factura.subtotal_no_objeto.toFixed(2)}</span></div>` : '',
+    factura.total_descuento > 0 ? `<div class="row"><span class="lbl">Descuento</span><span class="val">-$${factura.total_descuento.toFixed(2)}</span></div>` : '',
+    `<div class="row"><span class="lbl">IVA 15%</span><span class="val">$${factura.iva.toFixed(2)}</span></div>`,
+    `<div class="sep-solid"></div>`,
+    `<div class="row big"><span class="lbl">TOTAL</span><span class="val">$${factura.total.toFixed(2)}</span></div>`,
+  ].filter(Boolean).join('');
+
+  // Formas de pago
+  const pagosHtml = (factura.formas_pago?.length
+    ? factura.formas_pago
+    : [{ descripcion: 'Efectivo', total: factura.total }]
+  ).map(p => `<div class="row"><span class="lbl">${esc(p.descripcion)}</span><span class="val">$${p.total.toFixed(2)}</span></div>`).join('');
+
+  // Estado de autorización
+  const estadoHtml = autorizado
+    ? `<div style="border:1px solid #000;padding:3px;text-align:center;margin:4px 0;">
+        <div class="bold">✓ AUTORIZADO POR EL SRI</div>
+        ${factura.fecha_autorizacion ? `<div class="sm">${esc(factura.fecha_autorizacion)}</div>` : ''}
+       </div>`
+    : rechazado
+    ? `<div style="border:1px dashed #000;padding:3px;text-align:center;margin:4px 0;">
+        <div class="bold">✗ NO AUTORIZADO</div>
+       </div>`
+    : `<div style="border:1px dashed #000;padding:3px;text-align:center;margin:4px 0;">
+        <div class="bold">⏱ PENDIENTE DE AUTORIZACIÓN</div>
+       </div>`;
+
+  return `
+    <style>${cssTermico(ancho)}</style>
+
+    <!-- EMISOR -->
+    <div class="c bold" style="font-size:${ancho===58?'12px':'14px'};">${esc(factura.razon_social)}</div>
+    ${factura.nombre_comercial && factura.nombre_comercial !== factura.razon_social
+      ? `<div class="c sm">${esc(factura.nombre_comercial)}</div>` : ''}
+    <div class="c sm">RUC: ${esc(factura.ruc)}</div>
+    <div class="c sm">${esc(factura.direccion_matriz)}</div>
+    ${factura.telefono ? `<div class="c sm">Tel: ${esc(factura.telefono)}</div>` : ''}
+    <div class="sep"></div>
+
+    <!-- LEYENDAS -->
+    <div class="c sm">Obligado contabilidad: ${factura.obligado_contabilidad ? 'SI' : 'NO'}</div>
+    ${factura.regimen_rimpe ? '<div class="c sm">Contribuyente Régimen RIMPE</div>' : ''}
+    ${factura.contribuyente_especial ? `<div class="c sm">Contrib. Especial Nro: ${esc(factura.contribuyente_especial)}</div>` : ''}
+    <div class="sep"></div>
+
+    <!-- COMPROBANTE -->
+    <div class="c bold" style="font-size:${ancho===58?'13px':'15px'};">FACTURA</div>
+    <div class="c bold">${esc(factura.numero_factura)}</div>
+    <div class="c sm">Fecha: ${esc(factura.fecha_emision)}</div>
+    <div class="sep"></div>
+
+    <!-- CLIENTE -->
+    <div class="bold sm">CLIENTE:</div>
+    <div class="sm">${esc(factura.cliente_razon_social)}</div>
+    <div class="sm">${esc(factura.cliente_tipo_identificacion)}: ${esc(factura.cliente_identificacion)}</div>
+    ${factura.cliente_email ? `<div class="sm">${esc(factura.cliente_email)}</div>` : ''}
+    <div class="sep"></div>
+
+    <!-- DETALLE -->
+    <div class="bold sm">DETALLE:</div>
+    <table>
+      <thead>
+        <tr>
+          <th class="qty">Cant</th>
+          <th>Descripción</th>
+          ${colDesc ? '<th class="price">Desc</th>' : ''}
+          <th class="price">P.U.</th>
+          <th class="price">Total</th>
+        </tr>
+      </thead>
+      <tbody>${itemsHtml}</tbody>
+    </table>
+    <div class="sep"></div>
+
+    <!-- TOTALES -->
+    ${totalesHtml}
+    <div class="sep"></div>
+
+    <!-- PAGO -->
+    <div class="bold sm">FORMA DE PAGO:</div>
+    ${pagosHtml}
+    <div class="sep"></div>
+
+    <!-- CLAVE / ESTADO -->
+    <div class="bold sm c">CLAVE DE ACCESO:</div>
+    <div class="clave">${esc(factura.clave_acceso)}</div>
+    ${estadoHtml}
+    <div class="sep"></div>
+
+    <!-- PIE -->
+    <div class="c sm">Documento electrónico emitido</div>
+    <div class="c sm">según normativa vigente del SRI</div>
+    <div class="c bold" style="margin-top:4px;">¡Gracias por su compra!</div>
+
+    <!-- Avance para el corte -->
+    <div class="feed"></div>
+  `;
+}
+
 export function RIDE({ factura }: RIDEProps) {
-  const printRef = useRef<HTMLDivElement>(null);
+  const ancho = (parseInt(localStorage.getItem('print_ancho') || '58') as AnchoPapel) === 80 ? 80 : 58;
 
   const handlePrint = () => {
-    if (!printRef.current) return;
-    
-    const printWindow = window.open('', '', 'width=300,height=600');
-    if (!printWindow) return;
-    
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Factura ${factura.numero_factura}</title>
-        <style>
-          @page { 
-            size: 80mm auto; 
-            margin: 0; 
-          }
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          body {
-            font-family: 'Courier New', monospace;
-            font-size: 10px;
-            line-height: 1.4;
-            width: 80mm;
-            padding: 5mm;
-          }
-          .center { text-align: center; }
-          .bold { font-weight: bold; }
-          .line { 
-            border-bottom: 1px dashed #000; 
-            margin: 5px 0; 
-          }
-          .section { margin: 10px 0; }
-          table { width: 100%; border-collapse: collapse; }
-          td { padding: 2px 0; }
-          .barcode {
-            width: 100%;
-            height: 50px;
-            background: repeating-linear-gradient(
-              90deg,
-              #000 0px, #000 1px,
-              #fff 1px, #fff 2px
-            );
-            margin: 10px 0;
-          }
-        </style>
-      </head>
-      <body>
-        ${printRef.current.innerHTML}
-      </body>
-      </html>
-    `);
-    
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
+    const html = buildRideHtml(factura, ancho);
+    printHtml(html, `Factura ${factura.numero_factura}`, ancho);
   };
+
+  // ── Vista previa en pantalla (no afecta la impresión) ──────────────────────
+  const estadoFinal = factura.estado_autorizacion || (factura as any).estado || 'PENDIENTE';
 
   return (
     <div className="space-y-4">
-      {/* Botón de impresión */}
-      <div className="flex justify-end">
-        <Button
-          onClick={handlePrint}
-          className="bg-gradient-to-r from-[#00E5FF] to-[#1e64a7]"
-        >
+      {/* Botón imprimir */}
+      <div className="flex justify-end gap-2">
+        <span className="text-xs text-gray-500 self-center">Papel: {ancho}mm</span>
+        <Button onClick={handlePrint} className="bg-gradient-to-r from-[#00E5FF] to-[#1e64a7]">
           <Printer className="w-4 h-4 mr-2" />
-          Imprimir Factura
+          Imprimir {ancho}mm
         </Button>
       </div>
 
-      {/* Vista previa del RIDE */}
-      <div 
-        ref={printRef}
-        className="bg-white text-black p-6 rounded-lg shadow-lg max-w-[350px] mx-auto"
-        style={{ fontFamily: 'Courier New, monospace', fontSize: '12px' }}
-      >
-        {/* ENCABEZADO - DATOS DEL EMISOR */}
-        <div className="text-center mb-4">
-          <div className="font-bold text-lg">{factura.razon_social}</div>
-          {factura.nombre_comercial && (
-            <div className="text-sm">{factura.nombre_comercial}</div>
-          )}
-          <div className="text-sm mt-2">
-            <div>RUC: {factura.ruc}</div>
-            <div className="mt-1">{factura.direccion_matriz}</div>
-            {factura.direccion_establecimiento && (
-              <div>{factura.direccion_establecimiento}</div>
-            )}
-            {factura.telefono && <div>Tel: {factura.telefono}</div>}
-          </div>
-        </div>
+      {/* Vista previa */}
+      <div className="bg-white text-black rounded-lg shadow-lg max-w-[340px] mx-auto p-4"
+        style={{ fontFamily: 'Courier New, monospace', fontSize: '11px', lineHeight: '1.4' }}>
 
-        <div className="border-t border-dashed border-gray-400 my-3"></div>
+        <div className="text-center font-bold text-base">{factura.razon_social}</div>
+        {factura.nombre_comercial && (
+          <div className="text-center text-xs">{factura.nombre_comercial}</div>
+        )}
+        <div className="text-center text-xs">RUC: {factura.ruc}</div>
+        <div className="text-center text-xs">{factura.direccion_matriz}</div>
+        {factura.telefono && <div className="text-center text-xs">Tel: {factura.telefono}</div>}
 
-        {/* LEYENDAS OBLIGATORIAS */}
-        <div className="text-xs text-center mb-3">
-          <div>
-            Obligado a llevar contabilidad: {factura.obligado_contabilidad ? 'SI' : 'NO'}
-          </div>
-          {factura.regimen_rimpe && (
-            <div>Contribuyente Régimen RIMPE</div>
-          )}
-          {factura.contribuyente_especial && (
-            <div>Contribuyente Especial Nro: {factura.contribuyente_especial}</div>
-          )}
-          {factura.agente_retencion && (
-            <div>Agente de Retención Resolución: {factura.agente_retencion}</div>
-          )}
-        </div>
+        <div className="border-t border-dashed border-gray-400 my-2" />
 
-        <div className="border-t border-dashed border-gray-400 my-3"></div>
+        <div className="text-center font-bold">FACTURA</div>
+        <div className="text-center font-bold text-sm">{factura.numero_factura}</div>
+        <div className="text-center text-xs">Fecha: {factura.fecha_emision}</div>
 
-        {/* IDENTIFICACIÓN DEL COMPROBANTE */}
-        <div className="text-center mb-4">
-          <div className="font-bold text-lg">FACTURA</div>
-          <div className="font-bold text-base">{factura.numero_factura}</div>
-          <div className="text-xs mt-2">
-            <div>Fecha: {factura.fecha_emision}</div>
-            <div>Hora: {factura.hora_emision}</div>
-          </div>
-        </div>
+        <div className="border-t border-dashed border-gray-400 my-2" />
 
-        <div className="border-t border-dashed border-gray-400 my-3"></div>
+        <div className="text-xs font-bold">CLIENTE:</div>
+        <div className="text-xs">{factura.cliente_razon_social}</div>
+        <div className="text-xs">{factura.cliente_tipo_identificacion}: {factura.cliente_identificacion}</div>
 
-        {/* DATOS DEL CLIENTE */}
-        <div className="text-xs mb-3">
-          <div className="font-bold mb-1">DATOS DEL CLIENTE:</div>
-          <div>{factura.cliente_razon_social}</div>
-          <div>
-            {factura.cliente_tipo_identificacion}: {factura.cliente_identificacion}
-          </div>
-          {factura.cliente_email && <div>Email: {factura.cliente_email}</div>}
-        </div>
+        <div className="border-t border-dashed border-gray-400 my-2" />
 
-        <div className="border-t border-dashed border-gray-400 my-3"></div>
-
-        {/* DETALLE DE PRODUCTOS */}
-        <div className="text-xs mb-3">
-          <div className="font-bold mb-2">DETALLE:</div>
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-300">
-                <th className="text-left py-1">Cant</th>
-                <th className="text-left py-1">Descripción</th>
-                <th className="text-right py-1">P.Unit</th>
-                <th className="text-right py-1">Total</th>
+        <div className="text-xs font-bold mb-1">DETALLE:</div>
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-gray-300">
+              <th className="text-left">Cant</th>
+              <th className="text-left">Descripción</th>
+              <th className="text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {factura.items.map((item, i) => (
+              <tr key={i}>
+                <td>{item.cantidad}</td>
+                <td>{item.descripcion}</td>
+                <td className="text-right">${item.subtotal.toFixed(2)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {factura.items.map((item, idx) => (
-                <tr key={idx} className="border-b border-dotted border-gray-200">
-                  <td className="py-1">{item.cantidad}</td>
-                  <td className="py-1">{item.descripcion}</td>
-                  <td className="text-right py-1">${item.precio_unitario.toFixed(2)}</td>
-                  <td className="text-right py-1">${item.subtotal.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="border-t border-dashed border-gray-400 my-2" />
+
+        <div className="flex justify-between text-xs font-bold text-base">
+          <span>TOTAL</span>
+          <span>${factura.total.toFixed(2)}</span>
         </div>
 
-        <div className="border-t border-dashed border-gray-400 my-3"></div>
+        <div className="border-t border-dashed border-gray-400 my-2" />
 
-        {/* TOTALES */}
-        <div className="text-xs mb-3">
-          <table className="w-full">
-            <tbody>
-              {factura.subtotal_iva > 0 && (
-                <tr>
-                  <td className="text-right py-1">Subtotal IVA 15%:</td>
-                  <td className="text-right font-bold py-1">${factura.subtotal_iva.toFixed(2)}</td>
-                </tr>
-              )}
-              {factura.subtotal_0 > 0 && (
-                <tr>
-                  <td className="text-right py-1">Subtotal IVA 0%:</td>
-                  <td className="text-right font-bold py-1">${factura.subtotal_0.toFixed(2)}</td>
-                </tr>
-              )}
-              {factura.subtotal_no_objeto > 0 && (
-                <tr>
-                  <td className="text-right py-1">Subtotal No Objeto IVA:</td>
-                  <td className="text-right font-bold py-1">${factura.subtotal_no_objeto.toFixed(2)}</td>
-                </tr>
-              )}
-              {factura.total_descuento > 0 && (
-                <tr>
-                  <td className="text-right py-1">Descuento:</td>
-                  <td className="text-right font-bold py-1">-${factura.total_descuento.toFixed(2)}</td>
-                </tr>
-              )}
-              <tr>
-                <td className="text-right py-1">IVA 15%:</td>
-                <td className="text-right font-bold py-1">${factura.iva.toFixed(2)}</td>
-              </tr>
-              <tr className="border-t border-gray-400">
-                <td className="text-right py-2 font-bold text-sm">TOTAL:</td>
-                <td className="text-right font-bold py-2 text-sm">${factura.total.toFixed(2)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div className="border-t border-dashed border-gray-400 my-3"></div>
-
-        {/* FORMAS DE PAGO */}
-        <div className="text-xs mb-3">
-          <div className="font-bold mb-1">FORMA DE PAGO:</div>
-          {(factura.formas_pago || []).length === 0 ? (
-            <div>Efectivo: ${factura.total.toFixed(2)}</div>
-          ) : (
-            (factura.formas_pago || []).map((pago, idx) => (
-              <div key={idx}>
-                {pago.descripcion}: ${pago.total.toFixed(2)}
-              </div>
-            ))
+        <div className={`text-xs text-center p-2 rounded border ${
+          estadoFinal === 'AUTORIZADO'   ? 'border-green-400 text-green-700' :
+          estadoFinal === 'NO_AUTORIZADO'? 'border-red-400 text-red-700' :
+                                           'border-yellow-400 text-yellow-700'
+        }`}>
+          <div className="font-bold">
+            {estadoFinal === 'AUTORIZADO'    && '✓ AUTORIZADO POR EL SRI'}
+            {estadoFinal === 'NO_AUTORIZADO' && '✗ NO AUTORIZADO'}
+            {estadoFinal !== 'AUTORIZADO' && estadoFinal !== 'NO_AUTORIZADO' && '⏱ PENDIENTE'}
+          </div>
+          {factura.fecha_autorizacion && (
+            <div className="text-xs mt-1">{factura.fecha_autorizacion}</div>
           )}
         </div>
 
-        <div className="border-t border-dashed border-gray-400 my-3"></div>
-
-        {/* CLAVE DE ACCESO Y CÓDIGO DE BARRAS */}
-        <div className="text-xs mb-3">
-          <div className="font-bold mb-1 text-center">CLAVE DE ACCESO:</div>
-          <div className="break-all text-center" style={{ fontSize: '9px' }}>
-            {factura.clave_acceso}
-          </div>
-          
-          {/* Simulación de código de barras */}
-          <div className="mt-3 bg-gradient-to-r from-black via-gray-600 to-black h-12 flex items-center justify-center">
-            <span className="text-white text-xs">|||||||||||||||||||||||</span>
-          </div>
-        </div>
-
-        {/* ESTADO DE AUTORIZACIÓN */}
-        {(() => {
-          const estadoFinal = factura.estado_autorizacion || (factura as any).estado || 'PENDIENTE';
-          return (
-            <div className={`text-xs text-center p-2 rounded ${
-              estadoFinal === 'AUTORIZADO'
-                ? 'bg-green-100 text-green-800'
-                : estadoFinal === 'NO_AUTORIZADO'
-                ? 'bg-red-100 text-red-800'
-                : 'bg-yellow-100 text-yellow-800'
-            }`}>
-              <div className="font-bold">
-                {estadoFinal === 'AUTORIZADO' && '✓ FACTURA AUTORIZADA'}
-                {estadoFinal === 'NO_AUTORIZADO' && '✗ NO AUTORIZADO'}
-                {estadoFinal !== 'AUTORIZADO' && estadoFinal !== 'NO_AUTORIZADO' && '⏱ PENDIENTE DE AUTORIZACIÓN'}
-              </div>
-              {factura.fecha_autorizacion && (
-                <div className="mt-1">
-                  Fecha: {factura.fecha_autorizacion}
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        <div className="border-t border-dashed border-gray-400 my-3"></div>
-
-        {/* PIE DE PÁGINA */}
-        <div className="text-xs text-center">
-          <div>Documento electrónico emitido según</div>
-          <div>normativa vigente del SRI</div>
-          <div className="mt-2">¡Gracias por su compra!</div>
-        </div>
+        <div className="border-t border-dashed border-gray-400 my-2" />
+        <div className="text-center text-xs">¡Gracias por su compra!</div>
       </div>
     </div>
   );
