@@ -935,27 +935,56 @@ app.get("/server/admin/diagnostico-completo", authMiddleware, async (c) => {
   const db = createClient(supabaseUrl, supabaseServiceKey);
   try {
     const eid = auth.empresaId;
-    const tablas = ['productos','recetas','ventas','compras','clientes','proveedores','empleados','movimientos_inventario','comandas'];
-    const resultado: Record<string, any> = { empresa_id: eid, kv: {}, sql: {} };
-    for (const t of tablas) {
-      const kvKey = `empresa_${eid}_${t === 'movimientos_inventario' ? 'movimientos' : t}`;
-      const kvData: any[] = (await kv.get(kvKey)) || [];
-      resultado.kv[t] = kvData.length;
-      const { count } = await db.from(t).select('*', { count: 'exact', head: true }).eq('empresa_id', eid);
-      resultado.sql[t] = count || 0;
+
+    // ── Todas las claves en KV store (para descubrir el ID real) ─────────────
+    const { data: todasLasClaves } = await db
+      .from('kv_store_9db1b392').select('key').order('key');
+    const claves = (todasLasClaves || []).map((r: any) => r.key);
+
+    // Agrupar claves por prefijo de empresa_id
+    const prefijos: Record<string, number> = {};
+    for (const clave of claves) {
+      const match = clave.match(/^empresa_([^_]+)/);
+      if (match) {
+        prefijos[match[1]] = (prefijos[match[1]] || 0) + 1;
+      } else {
+        prefijos['(sin prefijo)'] = (prefijos['(sin prefijo)'] || 0) + 1;
+      }
     }
-    // Muestra de productos con precio > 0 en KV
-    const prodsKV: any[] = (await kv.get(`empresa_${eid}_productos`)) || [];
-    resultado.productos_kv_con_precio = prodsKV.filter((p: any) => Number(p.precio_venta || p.precio || 0) > 0).length;
-    resultado.productos_kv_sin_precio = prodsKV.filter((p: any) => Number(p.precio_venta || p.precio || 0) === 0).length;
-    // Recetas con precio > 0 en KV
-    const recsKV: any[] = (await kv.get(`empresa_${eid}_recetas`)) || [];
-    resultado.recetas_kv_con_precio  = recsKV.filter((r: any) => Number(r.precio_venta || r.precio || 0) > 0).length;
-    // Compras en KV
-    const comprasKV: any[] = (await kv.get(`empresa_${eid}_compras`)) || [];
-    resultado.compras_kv_total = comprasKV.length;
-    resultado.compras_kv_monto = comprasKV.reduce((s: number, c: any) => s + (Number(c.total) || 0), 0).toFixed(2);
-    return c.json(resultado);
+
+    // ── Empresas en SQL ───────────────────────────────────────────────────────
+    const { data: empresasSQL } = await db.from('empresas').select('id, nombre');
+
+    // ── Diagnóstico por empresa_id del usuario actual ─────────────────────────
+    const tablas = ['productos','recetas','ventas','compras','clientes','proveedores'];
+    const porEmpresaActual: Record<string, any> = {};
+    for (const t of tablas) {
+      const kvKey = `empresa_${eid}_${t}`;
+      const kvData: any[] = (await kv.get(kvKey)) || [];
+      const { count } = await db.from(t).select('*', { count: 'exact', head: true }).eq('empresa_id', eid);
+      porEmpresaActual[t] = { kv: kvData.length, sql: count || 0 };
+    }
+
+    // ── Diagnóstico para TODOS los IDs de empresa encontrados en KV ──────────
+    const porEmpresaKV: Record<string, any> = {};
+    for (const prefijo of Object.keys(prefijos)) {
+      if (prefijo === '(sin prefijo)') continue;
+      porEmpresaKV[prefijo] = {};
+      for (const t of tablas) {
+        const kvData: any[] = (await kv.get(`empresa_${prefijo}_${t}`)) || [];
+        porEmpresaKV[prefijo][t] = kvData.length;
+      }
+    }
+
+    return c.json({
+      empresa_id_actual: eid,
+      empresas_sql: empresasSQL || [],
+      claves_kv_total: claves.length,
+      prefijos_empresa_en_kv: prefijos,
+      datos_empresa_actual: porEmpresaActual,
+      datos_por_empresa_kv: porEmpresaKV,
+      todas_las_claves_kv: claves,
+    });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
