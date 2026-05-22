@@ -219,6 +219,8 @@ export default function SuperAdmin() {
   const [projectId, setProjectId] = useState('');
   const [reparando, setReparando] = useState<string | null>(null);
   const [resultadoReparacion, setResultadoReparacion] = useState<any>(null);
+  const [empresaReparar, setEmpresaReparar] = useState('');
+  const [infoKV, setInfoKV] = useState<any>(null);
 
   const callAdmin = async (pid: string, endpoint: string, method = 'GET') => {
     const { publicAnonKey } = await import('/utils/supabase/info');
@@ -235,15 +237,22 @@ export default function SuperAdmin() {
     try {
       const data = await callAdmin(projectId, '/admin/diagnostico-completo');
       setResultadoReparacion({ tipo: 'diagnostico', data });
+      setInfoKV(data.datos_por_empresa_kv || {});
+      // Auto-seleccionar la empresa con más datos
+      const conDatos = Object.entries(data.datos_por_empresa_kv || {})
+        .sort(([,a]: any, [,b]: any) => (b.productos + b.ventas) - (a.productos + a.ventas));
+      if (conDatos.length > 0 && !empresaReparar) setEmpresaReparar(conDatos[0][0]);
     } catch (e: any) {
       toast.error('Error en diagnóstico: ' + e.message);
     } finally { setReparando(null); }
   };
 
   const ejecutarFixPrecios = async () => {
+    const eid = empresaReparar;
+    if (!eid) { toast.error('Selecciona una empresa primero'); return; }
     setReparando('precios');
     try {
-      const data = await callAdmin(projectId, '/admin/fix-precios');
+      const data = await callAdmin(projectId, `/admin/fix-precios?empresa_id=${eid}`);
       setResultadoReparacion({ tipo: 'fix-precios', data });
       toast.success('✅ Precios actualizados desde KV');
     } catch (e: any) {
@@ -251,12 +260,13 @@ export default function SuperAdmin() {
     } finally { setReparando(null); }
   };
 
-  const ejecutarRestaurar = async () => {
-    if (!confirm('⚠️ Esto borrará los datos actuales de SQL y los restaurará desde KV (backup). ¿Continuar?')) return;
-    setReparando('restaurar');
+  const ejecutarRestaurar = async (eid: string) => {
+    if (!eid) { toast.error('Selecciona una empresa'); return; }
+    if (!confirm(`⚠️ Esto restaurará los datos de la empresa ${eid} desde KV. ¿Continuar?`)) return;
+    setReparando('restaurar-' + eid);
     try {
-      const data = await callAdmin(projectId, '/admin/restaurar-desde-kv', 'POST');
-      setResultadoReparacion({ tipo: 'restaurar', data });
+      const data = await callAdmin(projectId, `/admin/restaurar-desde-kv?empresa_id=${eid}`, 'POST');
+      setResultadoReparacion({ tipo: 'restaurar', empresa: eid, data });
       toast.success('✅ Datos restaurados desde KV');
     } catch (e: any) {
       toast.error('Error: ' + e.message);
@@ -547,40 +557,60 @@ export default function SuperAdmin() {
             🛠️ Herramientas de Recuperación de Datos
           </CardTitle>
           <p className="text-gray-400 text-sm">
-            Úsalas si hubo pérdida de datos o errores tras la migración KV→SQL.
-            Los datos originales en KV están intactos y se pueden restaurar.
+            Los datos originales en KV están intactos. Usa estas herramientas para restaurarlos a SQL.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-3">
+          {/* Paso 1: Diagnóstico */}
+          <div className="flex items-center gap-3">
             <Button
               onClick={ejecutarDiagnostico}
               disabled={!!reparando || !projectId}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {reparando === 'diagnostico' ? '⏳ Analizando...' : '🔍 Diagnóstico KV vs SQL'}
+              {reparando === 'diagnostico' ? '⏳ Analizando...' : '🔍 Paso 1: Diagnóstico'}
             </Button>
-            <Button
-              onClick={ejecutarFixPrecios}
-              disabled={!!reparando || !projectId}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white"
-            >
-              {reparando === 'precios' ? '⏳ Actualizando...' : '💰 Restaurar Precios desde KV'}
-            </Button>
-            <Button
-              onClick={ejecutarRestaurar}
-              disabled={!!reparando || !projectId}
-              className="bg-red-700 hover:bg-red-800 text-white"
-            >
-              {reparando === 'restaurar' ? '⏳ Restaurando...' : '♻️ Restaurar Todos los Datos desde KV'}
-            </Button>
+            <span className="text-gray-400 text-xs">Detecta qué empresas tienen datos en KV</span>
           </div>
 
-          {resultadoReparacion && (
-            <div className="bg-black/40 rounded-lg p-4 text-xs font-mono text-green-300 max-h-64 overflow-auto">
-              <div className="text-gray-400 mb-2">
-                Resultado — {resultadoReparacion.tipo}:
+          {/* Paso 2: Seleccionar empresa y restaurar */}
+          {infoKV && Object.keys(infoKV).length > 0 && (
+            <div className="space-y-3 border border-orange-500/30 rounded-lg p-4">
+              <p className="text-orange-300 text-sm font-semibold">Paso 2: Selecciona empresa a restaurar</p>
+              <div className="space-y-2">
+                {Object.entries(infoKV).map(([eid, datos]: [string, any]) => {
+                  const total = (datos.productos || 0) + (datos.ventas || 0) + (datos.recetas || 0);
+                  if (total === 0) return null;
+                  const empresaInfo = empresas.find(e => e.id === eid);
+                  return (
+                    <div key={eid} className="flex items-center justify-between bg-white/5 rounded-lg p-3">
+                      <div>
+                        <div className="text-white font-medium text-sm">
+                          {empresaInfo?.nombre || 'Empresa'} — <span className="text-gray-400 text-xs">{eid.substring(0,8)}...</span>
+                        </div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          {datos.productos} productos · {datos.recetas} recetas · {datos.ventas} ventas · {datos.compras} compras
+                        </div>
+                      </div>
+                      <Button
+                        onClick={() => ejecutarRestaurar(eid)}
+                        disabled={!!reparando}
+                        className="bg-green-700 hover:bg-green-800 text-white text-xs"
+                        size="sm"
+                      >
+                        {reparando === 'restaurar-' + eid ? '⏳ Restaurando...' : '♻️ Restaurar'}
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
+            </div>
+          )}
+
+          {/* Resultado */}
+          {resultadoReparacion && (
+            <div className="bg-black/40 rounded-lg p-4 text-xs font-mono text-green-300 max-h-72 overflow-auto">
+              <div className="text-gray-400 mb-2">Resultado — {resultadoReparacion.tipo}{resultadoReparacion.empresa ? ` (${resultadoReparacion.empresa.substring(0,8)}...)` : ''}:</div>
               <pre>{JSON.stringify(resultadoReparacion.data, null, 2)}</pre>
             </div>
           )}
