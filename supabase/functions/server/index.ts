@@ -983,8 +983,13 @@ app.get("/server/admin/fix-precios", authMiddleware, async (c) => {
       if (!r.id) continue;
       const precioVenta = Number(r.precio_venta || r.precio || r.precio_sugerido || 0);
       if (precioVenta === 0) { recSinPrecio++; continue; }
+      // Intentar actualizar columna precio_venta (puede no existir aún)
+      // Siempre actualizar metadata como fallback seguro
+      const { data: recActual } = await db.from('recetas')
+        .select('metadata').eq('id', r.id).eq('empresa_id', auth.empresaId).maybeSingle();
+      const metaActual = recActual?.metadata || {};
       await db.from('recetas')
-        .update({ precio_venta: precioVenta, updated_at: new Date().toISOString() })
+        .update({ metadata: { ...metaActual, precio_venta: precioVenta }, updated_at: new Date().toISOString() })
         .eq('id', r.id).eq('empresa_id', auth.empresaId);
       recActualizadas++;
     }

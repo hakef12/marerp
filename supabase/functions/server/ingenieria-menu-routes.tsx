@@ -19,10 +19,12 @@ const getCosto = (p: any): number =>
   parseFloat(p?.costo_promedio) || 0;
 
 const getPrecio = (p: any, r?: any): number =>
-  parseFloat(p?.precio)          ||
-  parseFloat(r?.precio_venta)    ||
-  parseFloat(r?.precio_sugerido) ||
-  parseFloat(p?.precio_venta)    || 0;
+  parseFloat(p?.precio)                  ||
+  parseFloat(p?.precio_venta)            ||
+  parseFloat(r?.precio_venta)            ||
+  parseFloat(r?.metadata?.precio_venta)  ||
+  parseFloat(r?.precio_sugerido)         ||
+  parseFloat(r?.metadata?.precio_sugerido) || 0;
 
 export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
 
