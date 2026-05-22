@@ -955,6 +955,34 @@ app.get("/server/facturacion/diagnostico", authMiddleware, async (c) => {
   }
 });
 
+// ── GET /admin/fix-precios — corrige precio=0 leyendo KV ────────────────────
+app.get("/server/admin/fix-precios", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    // Leer productos del KV (fuente de verdad)
+    const productosKV: any[] = (await kv.get(`empresa_${auth.empresaId}_productos`)) || [];
+    if (productosKV.length === 0) {
+      return c.json({ ok: false, mensaje: 'No hay productos en KV para sincronizar' });
+    }
+    let actualizados = 0;
+    let sinPrecio = 0;
+    for (const p of productosKV) {
+      const precio = Number(p.precio_venta || p.precio || 0);
+      const costo  = Number(p.precio_costo || p.costo_unitario || p.costo || 0);
+      if (precio === 0) { sinPrecio++; continue; }
+      if (!p.id) continue;
+      await db.from('productos')
+        .update({ precio, precio_costo: costo, updated_at: new Date().toISOString() })
+        .eq('id', p.id).eq('empresa_id', auth.empresaId);
+      actualizados++;
+    }
+    return c.json({ ok: true, total_kv: productosKV.length, actualizados, sin_precio: sinPrecio });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 500);
+  }
+});
+
 app.get("/server/inventario/lotes", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
