@@ -929,6 +929,32 @@ app.get("/server/facturacion/certificado/info", authMiddleware, async (c) => {
   }
 });
 
+// ── GET /facturacion/diagnostico — ver qué hay en KV y SQL ──────────────────
+app.get("/server/facturacion/diagnostico", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    const db = createClient(supabaseUrl, supabaseServiceKey);
+    // Buscar en SQL
+    const { data: sqlConfig } = await db.from('configuracion_facturacion').select('*').eq('empresa_id', auth.empresaId).maybeSingle();
+    const { data: sqlCert } = await db.from('certificados_facturacion').select('nombre,titular,valido_hasta').eq('empresa_id', auth.empresaId).maybeSingle();
+    const { data: sqlFacturas } = await db.from('facturas').select('count').eq('empresa_id', auth.empresaId);
+    // Buscar todas las claves KV de esta empresa
+    const { data: kvKeys } = await db.from('kv_store_9db1b392').select('key').like('key', `empresa_${auth.empresaId}%`);
+    const todasLasClaves = kvKeys?.map((r: any) => r.key) || [];
+    return c.json({
+      empresa_id: auth.empresaId,
+      sql: {
+        configuracion_facturacion: sqlConfig ? { ruc: sqlConfig.ruc, razon_social: sqlConfig.razon_social, ambiente: sqlConfig.ambiente } : null,
+        certificado: sqlCert || null,
+        facturas_count: sqlFacturas?.length || 0,
+      },
+      kv_claves_empresa: todasLasClaves,
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 app.get("/server/inventario/lotes", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   const supabase = createClient(supabaseUrl, supabaseServiceKey);

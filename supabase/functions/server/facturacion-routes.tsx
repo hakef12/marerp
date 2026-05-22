@@ -29,15 +29,27 @@ async function getConfig(empresaId: string): Promise<any | null> {
   if (data) {
     return { ...data, ...(data.metadata || {}), punto_emision: data.codigo_punto_emision };
   }
-  // Fallback KV — intentar claves comunes del sistema anterior
+  // Fallback KV — intentar claves específicas del sistema anterior
   for (const kvKey of [
     `empresa_${empresaId}_facturacion_config`,
     `empresa_${empresaId}_facturacion`,
     `facturacion_config_${empresaId}`,
+    `empresa_${empresaId}_config_facturacion`,
+    `config_facturacion_${empresaId}`,
+    `empresa_${empresaId}`,
   ]) {
     const kvData = await kv.get(kvKey);
-    if (kvData) return kvData;
+    if (kvData && (kvData.ruc || kvData.razon_social || kvData.ambiente)) return kvData;
   }
+  // Escaneo amplio por prefijo — buscar cualquier clave que contenga config de facturación
+  try {
+    const entries = await kv.getByPrefixWithKeys(`empresa_${empresaId}`);
+    for (const [, val] of entries) {
+      if (val && (val.ruc || val.razon_social) && (val.ambiente || val.codigo_establecimiento || val.punto_emision)) {
+        return val;
+      }
+    }
+  } catch { /* silencioso */ }
   return null;
 }
 
@@ -93,15 +105,25 @@ async function getCert(empresaId: string): Promise<any | null> {
       },
     };
   }
-  // Fallback KV
+  // Fallback KV — intentar claves específicas
   for (const kvKey of [
     `empresa_${empresaId}_facturacion_cert`,
     `empresa_${empresaId}_cert`,
     `certificado_${empresaId}`,
+    `empresa_${empresaId}_certificado`,
+    `cert_${empresaId}`,
+    `empresa_${empresaId}_p12`,
   ]) {
     const kvData = await kv.get(kvKey);
-    if (kvData) return kvData;
+    if (kvData && (kvData.p12_base64 || kvData.password)) return kvData;
   }
+  // Escaneo amplio por prefijo — buscar cualquier clave que contenga un certificado
+  try {
+    const entries = await kv.getByPrefixWithKeys(`empresa_${empresaId}`);
+    for (const [, val] of entries) {
+      if (val && val.p12_base64) return val;
+    }
+  } catch { /* silencioso */ }
   return null;
 }
 
