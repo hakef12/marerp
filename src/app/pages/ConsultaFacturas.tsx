@@ -96,7 +96,23 @@ export default function ConsultaFacturas() {
       if (response.ok) {
         const data = await response.json();
         console.log('✅ Facturas cargadas:', data.facturas?.length || 0);
-        setFacturas(data.facturas || []);
+        // Normalizar campos numéricos para evitar undefined.toFixed() crash
+        const normalizadas = (data.facturas || []).map((f: any) => ({
+          ...f,
+          subtotal:  Number(f.subtotal ?? f.subtotal_iva ?? 0),
+          iva:       Number(f.iva ?? 0),
+          total:     Number(f.total ?? 0),
+          descuento: Number(f.descuento ?? f.total_descuento ?? 0),
+          mensajes_sri: Array.isArray(f.mensajes_sri) ? f.mensajes_sri : [],
+          fecha_emision: f.fecha_emision || f.created_at || '',
+          cliente_razon_social: f.cliente_razon_social || f.cliente_nombre || 'Sin nombre',
+          cliente_identificacion: f.cliente_identificacion || '-',
+          numero_factura: f.numero_factura || f.id || '-',
+          clave_acceso: f.clave_acceso || '',
+          estado: f.estado || f.estado_autorizacion || 'PENDIENTE',
+          ambiente: f.ambiente || 'pruebas',
+        }));
+        setFacturas(normalizadas);
       } else {
         const error = await response.json();
         console.error('❌ Error cargando facturas:', error);
@@ -268,7 +284,7 @@ export default function ConsultaFacturas() {
     autorizadas: facturas.filter(f => f.estado === 'AUTORIZADO').length,
     pendientes: facturas.filter(f => f.estado === 'PENDIENTE').length,
     errores: facturas.filter(f => f.estado === 'ERROR' || f.estado === 'NO_AUTORIZADO').length,
-    montoTotal: facturas.reduce((sum, f) => sum + f.total, 0)
+    montoTotal: facturas.reduce((sum, f) => sum + (Number(f.total) || 0), 0)
   };
 
   return (
@@ -385,7 +401,7 @@ export default function ConsultaFacturas() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-400 text-sm">Monto Total</p>
-                  <p className="text-2xl font-bold text-[#00E5FF]">${totales.montoTotal.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-[#00E5FF]">${(totales.montoTotal || 0).toFixed(2)}</p>
                 </div>
                 <DollarSign className="w-10 h-10 text-[#00E5FF]/50" />
               </div>
@@ -493,16 +509,16 @@ export default function ConsultaFacturas() {
                             <div>
                               <p className="text-gray-400">Fecha Emisión</p>
                               <p className="text-white">
-                                {new Date(factura.fecha_emision).toLocaleString('es-EC', {
-                                  dateStyle: 'short',
-                                  timeStyle: 'short'
-                                })}
+                                {factura.fecha_emision
+                                ? (() => { try { return new Date(factura.fecha_emision).toLocaleString('es-EC', { dateStyle: 'short', timeStyle: 'short' }); } catch { return factura.fecha_emision; } })()
+                                : '—'
+                              }
                               </p>
                             </div>
                             <div>
                               <p className="text-gray-400">Total</p>
                               <p className="text-[#00E5FF] font-bold text-lg">
-                                ${factura.total.toFixed(2)}
+                                ${(Number(factura.total) || 0).toFixed(2)}
                               </p>
                             </div>
                           </div>
@@ -675,9 +691,9 @@ export default function ConsultaFacturas() {
                   {facturaSeleccionada.items?.map((item: any, idx: number) => (
                     <div key={idx} className="flex justify-between text-sm py-1">
                       <span className="text-white">
-                        {item.cantidad}x {item.nombre}
+                        {item.cantidad}x {item.nombre || item.descripcion || 'Producto'}
                       </span>
-                      <span className="text-gray-400">${item.subtotal.toFixed(2)}</span>
+                      <span className="text-gray-400">${(Number(item.subtotal) || 0).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -686,23 +702,23 @@ export default function ConsultaFacturas() {
               <div className="bg-gradient-to-r from-[#1e64a7]/20 to-[#00E5FF]/20 border border-[#00E5FF]/20 rounded-lg p-4">
                 <div className="flex justify-between mb-1">
                   <span className="text-gray-400">Subtotal:</span>
-                  <span className="text-white">${facturaSeleccionada.subtotal.toFixed(2)}</span>
+                  <span className="text-white">${(Number(facturaSeleccionada.subtotal) || 0).toFixed(2)}</span>
                 </div>
-                {facturaSeleccionada.descuento > 0 && (
+                {(Number(facturaSeleccionada.descuento) || 0) > 0 && (
                   <div className="flex justify-between mb-1">
                     <span className="text-gray-400">Descuento:</span>
-                    <span className="text-red-400">-${facturaSeleccionada.descuento.toFixed(2)}</span>
+                    <span className="text-red-400">-${(Number(facturaSeleccionada.descuento) || 0).toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between mb-1">
                   <span className="text-gray-400">IVA 15%:</span>
-                  <span className="text-white">${facturaSeleccionada.iva.toFixed(2)}</span>
+                  <span className="text-white">${(Number(facturaSeleccionada.iva) || 0).toFixed(2)}</span>
                 </div>
                 <Separator className="bg-[#00E5FF]/20 my-2" />
                 <div className="flex justify-between">
                   <span className="text-white font-bold text-lg">Total:</span>
                   <span className="text-[#00E5FF] font-bold text-2xl">
-                    ${facturaSeleccionada.total.toFixed(2)}
+                    ${(Number(facturaSeleccionada.total) || 0).toFixed(2)}
                   </span>
                 </div>
               </div>
