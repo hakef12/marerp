@@ -51,32 +51,33 @@ function buildRideHtml(factura: RIDEProps['factura'], ancho: AnchoPapel): string
 
   // Tabla de ítems — en 58mm omitimos descuento para ahorrar espacio
   const colDesc = ancho === 80;
-  const itemsHtml = factura.items.map(item => `
+  const n = (v: any) => (Number(v) || 0).toFixed(2);
+  const itemsHtml = (factura.items || []).map(item => `
     <tr>
       <td class="qty">${item.cantidad}</td>
       <td style="padding-right:2px;">${esc(item.descripcion)}</td>
-      ${colDesc && item.descuento > 0 ? `<td class="price">${item.descuento.toFixed(2)}</td>` : ''}
-      <td class="price">${item.precio_unitario.toFixed(2)}</td>
-      <td class="price">${item.subtotal.toFixed(2)}</td>
+      ${colDesc && Number(item.descuento) > 0 ? `<td class="price">${n(item.descuento)}</td>` : ''}
+      <td class="price">${n(item.precio_unitario)}</td>
+      <td class="price">${n(item.subtotal)}</td>
     </tr>
   `).join('');
 
   // Totales
   const totalesHtml = [
-    factura.subtotal_iva  > 0 ? `<div class="row"><span class="lbl">Subtotal IVA 15%</span><span class="val">$${factura.subtotal_iva.toFixed(2)}</span></div>` : '',
-    factura.subtotal_0    > 0 ? `<div class="row"><span class="lbl">Subtotal IVA 0%</span><span class="val">$${factura.subtotal_0.toFixed(2)}</span></div>` : '',
-    factura.subtotal_no_objeto > 0 ? `<div class="row"><span class="lbl">No Objeto IVA</span><span class="val">$${factura.subtotal_no_objeto.toFixed(2)}</span></div>` : '',
-    factura.total_descuento > 0 ? `<div class="row"><span class="lbl">Descuento</span><span class="val">-$${factura.total_descuento.toFixed(2)}</span></div>` : '',
-    `<div class="row"><span class="lbl">IVA 15%</span><span class="val">$${factura.iva.toFixed(2)}</span></div>`,
+    Number(factura.subtotal_iva)  > 0 ? `<div class="row"><span class="lbl">Subtotal IVA 15%</span><span class="val">$${n(factura.subtotal_iva)}</span></div>` : '',
+    Number(factura.subtotal_0)    > 0 ? `<div class="row"><span class="lbl">Subtotal IVA 0%</span><span class="val">$${n(factura.subtotal_0)}</span></div>` : '',
+    Number(factura.subtotal_no_objeto) > 0 ? `<div class="row"><span class="lbl">No Objeto IVA</span><span class="val">$${n(factura.subtotal_no_objeto)}</span></div>` : '',
+    Number(factura.total_descuento) > 0 ? `<div class="row"><span class="lbl">Descuento</span><span class="val">-$${n(factura.total_descuento)}</span></div>` : '',
+    `<div class="row"><span class="lbl">IVA 15%</span><span class="val">$${n(factura.iva)}</span></div>`,
     `<div class="sep-solid"></div>`,
-    `<div class="row big"><span class="lbl">TOTAL</span><span class="val">$${factura.total.toFixed(2)}</span></div>`,
+    `<div class="row big"><span class="lbl">TOTAL</span><span class="val">$${n(factura.total)}</span></div>`,
   ].filter(Boolean).join('');
 
   // Formas de pago
   const pagosHtml = (factura.formas_pago?.length
     ? factura.formas_pago
     : [{ descripcion: 'Efectivo', total: factura.total }]
-  ).map(p => `<div class="row"><span class="lbl">${esc(p.descripcion)}</span><span class="val">$${p.total.toFixed(2)}</span></div>`).join('');
+  ).map(p => `<div class="row"><span class="lbl">${esc(p.descripcion)}</span><span class="val">$${n(p.total)}</span></div>`).join('');
 
   // Estado de autorización
   const estadoHtml = autorizado
@@ -222,11 +223,11 @@ export function RIDE({ factura }: RIDEProps) {
             </tr>
           </thead>
           <tbody>
-            {factura.items.map((item, i) => (
+            {(factura.items || []).map((item, i) => (
               <tr key={i}>
                 <td>{item.cantidad}</td>
-                <td>{item.descripcion}</td>
-                <td className="text-right">${item.subtotal.toFixed(2)}</td>
+                <td>{item.descripcion || item.nombre}</td>
+                <td className="text-right">${(Number(item.subtotal) || 0).toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
@@ -236,7 +237,7 @@ export function RIDE({ factura }: RIDEProps) {
 
         <div className="flex justify-between text-xs font-bold text-base">
           <span>TOTAL</span>
-          <span>${factura.total.toFixed(2)}</span>
+          <span>${(Number(factura.total) || 0).toFixed(2)}</span>
         </div>
 
         <div className="border-t border-dashed border-gray-400 my-2" />
