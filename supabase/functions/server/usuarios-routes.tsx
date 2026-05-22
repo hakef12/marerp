@@ -9,17 +9,18 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2.39.7';
-import * as kv from './kv_store.tsx';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
-// ── KV: bodega asignada por usuario ──────────────────────────────────────────
-const usuariosBodegasKey = (empresaId: string) =>
-  `empresa_${empresaId}_usuarios_bodegas`;
-
+// ── SQL: bodega asignada por usuario (tabla usuario_bodegas) ─────────────────
 async function getUsuariosBodegas(empresaId: string): Promise<Record<string, any>> {
-  return (await kv.get(usuariosBodegasKey(empresaId))) || {};
+  const sb = createClient(supabaseUrl, supabaseServiceKey);
+  const { data } = await sb.from('usuario_bodegas')
+    .select('usuario_id, bodega_id, bodega_nombre')
+    .eq('empresa_id', empresaId);
+  if (!data) return {};
+  return Object.fromEntries(data.map((r: any) => [r.usuario_id, { bodega_id: r.bodega_id, bodega_nombre: r.bodega_nombre }]));
 }
 
 async function setUsuarioBodega(
@@ -27,9 +28,19 @@ async function setUsuarioBodega(
   userId: string,
   info: { bodega_id: string; bodega_nombre: string } | null
 ) {
-  const map = await getUsuariosBodegas(empresaId);
-  if (info) { map[userId] = info; } else { delete map[userId]; }
-  await kv.set(usuariosBodegasKey(empresaId), map);
+  const sb = createClient(supabaseUrl, supabaseServiceKey);
+  if (!info) {
+    await sb.from('usuario_bodegas').delete()
+      .eq('empresa_id', empresaId).eq('usuario_id', userId);
+  } else {
+    await sb.from('usuario_bodegas').upsert({
+      empresa_id: empresaId,
+      usuario_id: userId,
+      bodega_id: info.bodega_id || null,
+      bodega_nombre: info.bodega_nombre || '',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'empresa_id,usuario_id' });
+  }
 }
 
 // ── Roles válidos y sus módulos ───────────────────────────────

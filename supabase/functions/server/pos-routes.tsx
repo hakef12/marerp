@@ -2,6 +2,7 @@
 // RUTAS: PUNTO DE VENTA (POS)
 // =====================================================
 
+import { createClient } from "npm:@supabase/supabase-js";
 import {
   obtenerProductos,
   obtenerCategorias,
@@ -9,54 +10,29 @@ import {
   guardarVenta,
   guardarMovimiento,
 } from "./kv-helpers.tsx";
-import { get as kvGet, set as kvSet } from "./kv_store.tsx";
 
 const ROLES_ADMIN = ['gerente', 'admin', 'super_admin'];
 
-// ── Registrar venta como movimiento en la sesión de caja ─────
-async function registrarVentaEnCaja(empresaId: string, auth: any, venta: any): Promise<boolean> {
-  const cajaKey = `empresa_${empresaId}_caja_actual`;
-  try {
-    const sesion = await kvGet(cajaKey);
-    if (!sesion || sesion.estado !== 'abierta') {
-      console.warn(`⚠ registrarVentaEnCaja: no hay caja abierta (empresa ${empresaId})`);
-      return false;
-    }
+const getDB = () => createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
 
-    // Asegurar que movimientos sea un array
-    if (!Array.isArray(sesion.movimientos)) {
-      console.warn('⚠ sesion.movimientos no es array, inicializando');
-      sesion.movimientos = [];
-    }
-
-    // Un movimiento por método de pago (soporta multipago)
-    const pagos = Array.isArray(venta.pagos) && venta.pagos.length > 0
-      ? venta.pagos
-      : [{ metodo: venta.metodo_pago ?? 'efectivo', monto: venta.total }];
-
-    for (const pago of pagos) {
-      const monto = Number(pago.monto ?? pago.amount ?? 0);
-      if (monto <= 0) continue;
-      sesion.movimientos.push({
-        id: `mov-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        tipo: 'venta',
-        monto,
-        descripcion: `Venta ${venta.numero_ticket || venta.id}${venta.mesa ? ` · Mesa ${venta.mesa}` : ''}`,
-        usuario_id: auth.userId,
-        usuario_nombre: auth.user?.nombre_completo || auth.user?.email || 'Cajero',
-        fecha: new Date().toISOString(),
-        metodo_pago: pago.metodo || pago.metodo_pago || 'efectivo',
-        referencia: venta.numero_ticket || venta.id,
-      });
-    }
-
-    await kvSet(cajaKey, sesion);
-    console.log(`✅ Venta ${venta.numero_ticket} → caja. Movimientos: ${sesion.movimientos.length}`);
-    return true;
-  } catch (e: any) {
-    console.error(`❌ Error registrando venta en caja: ${e.message}`);
-    return false;
+// ── Buscar sesión de caja activa (SQL) ────────────────────────
+async function getCajaAbierta(empresaId: string, bodegaId?: string): Promise<{ sesion: any } | null> {
+  const db = getDB();
+  let query = db.from('turnos_caja').select('*')
+    .eq('empresa_id', empresaId).eq('estado', 'abierta');
+  if (bodegaId) query = query.eq('bodega_id', bodegaId);
+  const { data } = await query.limit(1).single();
+  if (data) return { sesion: data };
+  // If bodega_id filter found nothing, try any open caja
+  if (bodegaId) {
+    const { data: any } = await db.from('turnos_caja').select('*')
+      .eq('empresa_id', empresaId).eq('estado', 'abierta').limit(1).single();
+    if (any) return { sesion: any };
   }
+  return null;
 }
 
 export function setupPOSRoutes(app: any, authMiddleware: any) {
@@ -102,8 +78,9 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
       const body = await c.req.json();
 
       // ── VERIFICAR CAJA ABIERTA (obligatorio) ──────────────────
-      const cajaActual = await kvGet(`empresa_${auth.empresaId}_caja_actual`);
-      if (!cajaActual || cajaActual.estado !== 'abierta') {
+      const bodegaIdReq = body.bodega_id || auth.user?.bodega_id || '';
+      const cajaResult = await getCajaAbierta(auth.empresaId, bodegaIdReq);
+      if (!cajaResult) {
         return c.json({
           error: 'La caja está cerrada. Debe abrir la caja antes de registrar ventas.',
           codigo: 'CAJA_CERRADA',
@@ -144,28 +121,20 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
       // NOTA: El registro en caja lo hace el frontend directamente vía POST /caja/movimiento
       // para garantizar visibilidad y evitar problemas de KV dentro de la misma invocación.
 
-      // ── Auto-liberar mesa si la venta era de mesa ──────────────
+      // ── Auto-liberar mesa si la venta era de mesa (SQL) ─────────
       if (venta.mesa && venta.tipo_servicio === 'mesa') {
         try {
-          const mesaKey = `empresa_${auth.empresaId}_mesas`;
-          const mesas: any[] = (await kvGet(mesaKey)) || [];
           const mesaNum = String(venta.mesa);
-          const idx = mesas.findIndex((m: any) => String(m.numero) === mesaNum);
-          if (idx !== -1 && mesas[idx].estado !== 'libre') {
-            mesas[idx] = {
-              ...mesas[idx],
-              estado: 'libre',
-              mesero_id: null,
-              mesero_nombre: null,
-              hora_ocupacion: null,
-              consumo_acumulado: 0,
-              numero_comanda: null,
-              personas: 0,
-              nota: null,
-            };
-            await kvSet(mesaKey, mesas);
-            console.log(`✅ Mesa ${venta.mesa} liberada tras venta ${venta.numero_ticket}`);
-          }
+          await getDB().from('mesas')
+            .update({
+              estado: 'libre', mesero_id: null, mesero_nombre: null,
+              hora_ocupacion: null, consumo_acumulado: 0,
+              numero_comanda: null, personas: 0, nota: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('empresa_id', auth.empresaId)
+            .or(`codigo.eq.mesa-${mesaNum},numero.eq.${mesaNum}`);
+          console.log(`✅ Mesa ${venta.mesa} liberada tras venta ${venta.numero_ticket}`);
         } catch (e) {
           console.warn('⚠ No se pudo liberar mesa automáticamente:', e);
         }
@@ -205,7 +174,8 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
         fecha_anulacion: new Date().toISOString(),
       };
 
-      await kvSet(`empresa_${auth.empresaId}_ventas`, ventas);
+      // Guardar venta anulada en SQL (guardarVenta hace upsert por id)
+      await guardarVenta(auth.empresaId, ventas[idx]);
 
       // Revertir stock
       const items = ventas[idx].items || [];

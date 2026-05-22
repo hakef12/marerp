@@ -2,12 +2,17 @@
 // RUTAS: CONTABILIDAD - Plan NEC Ecuador + Partida Doble
 // =====================================================
 
+import { createClient } from "npm:@supabase/supabase-js";
 import {
   obtenerCuentas, guardarCuenta, eliminarCuenta,
   obtenerAsientos, guardarAsiento,
   obtenerPresupuesto, guardarPresupuesto,
 } from "./kv-helpers.tsx";
-import * as kv from "./kv_store.tsx";
+
+const getDB = () => createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
 
 // ─── Plan Contable NEC Ecuador para restaurante ───────────────────────────────
 
@@ -282,7 +287,10 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
         activa: true,
         created_at: new Date().toISOString(),
       }));
-      await kv.set(`empresa_${auth.empresaId}_cuentas_contables`, cuentas);
+      // Bulk insert into SQL (guardarCuenta upserts one at a time — use bulk for performance)
+      const { error: insErr } = await getDB().from('cuentas_contables')
+        .upsert(cuentas.map((ct: any) => ({ ...ct, empresa_id: auth.empresaId })), { onConflict: 'id' });
+      if (insErr) throw insErr;
       return c.json({ message: 'Plan Contable NEC Ecuador inicializado', total: cuentas.length });
     } catch (e: any) {
       return c.json({ error: e.message }, 500);

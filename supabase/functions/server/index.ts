@@ -63,13 +63,29 @@ async function authMiddleware(c: any, next: any) {
 
     const { data: userData, error: userError } = await supabase
       .from('usuarios')
-      .select('*, empresas(*)')
+      .select('*')
       .eq('auth_user_id', user.id)
-      .single();
+      .maybeSingle();
 
-    if (userError || !userData) {
+    if (userError) {
+      console.error('Error buscando usuario en middleware:', JSON.stringify(userError));
+      return c.json({ error: 'Error al buscar usuario', details: userError.message }, 500);
+    }
+    if (!userData) {
       return c.json({ error: 'Usuario no encontrado en el sistema' }, 404);
     }
+
+    // Obtener empresa por separado (evita problemas con join embebido en RLS)
+    let empresaData: any = null;
+    if (userData.empresa_id) {
+      const { data: emp } = await supabase
+        .from('empresas')
+        .select('*')
+        .eq('id', userData.empresa_id)
+        .maybeSingle();
+      empresaData = emp;
+    }
+    userData.empresas = empresaData;
 
     // Super admin no tiene empresa asignada — permitir siempre
     if (userData.rol !== 'super_admin' && userData.empresas?.estado !== 'activo') {
@@ -111,7 +127,7 @@ app.get("/server/health", (c) => {
 });
 
 app.get("/server/debug/test", (c) => {
-  return c.json({ 
+  return c.json({
     status: "🟢 Servidor funcionando correctamente",
     timestamp: new Date().toISOString(),
     env: {
@@ -120,6 +136,69 @@ app.get("/server/debug/test", (c) => {
       hasAnonKey: !!Deno.env.get('SUPABASE_ANON_KEY')
     }
   });
+});
+
+// ── SRI connectivity diagnostic (no auth required) ────────────────────────────
+app.get("/server/debug/sri", async (c) => {
+  const results: Record<string, any> = { timestamp: new Date().toISOString() };
+
+  // Test reception WSDL
+  for (const env of ['pruebas', 'produccion'] as const) {
+    const base = env === 'produccion'
+      ? 'https://cel.sri.gob.ec'
+      : 'https://celcer.sri.gob.ec';
+    const wsdlUrl = `${base}/comprobantes-electronicos-ws/RecepcionComprobantesOffline?wsdl`;
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      const r = await fetch(wsdlUrl, {
+        method: 'GET', headers: { 'Accept': 'text/xml, */*' }, signal: ctrl.signal
+      });
+      clearTimeout(t);
+      const txt = await r.text();
+      results[`${env}_recepcion`] = {
+        ok: r.ok, status: r.status, bytes: txt.length,
+        es_wsdl: txt.includes('wsdl') || txt.includes('definitions') || txt.includes('RecepcionComprobantes'),
+        preview: txt.substring(0, 300),
+      };
+    } catch (e: any) {
+      results[`${env}_recepcion`] = { ok: false, error: `${e.name}: ${e.message}` };
+    }
+  }
+
+  // Test a minimal SOAP call to pruebas (should return DEVUELTA for invalid XML)
+  try {
+    const testXml = '<?xml version="1.0" encoding="UTF-8"?><factura id="comprobante" version="2.1.0"><infoTributaria><ambiente>1</ambiente><tipoEmision>1</tipoEmision><razonSocial>DIAG</razonSocial><ruc>9999999999999</ruc><claveAcceso>9999999999999999999999999999999999999999999999993</claveAcceso><codDoc>01</codDoc><estab>001</estab><ptoEmi>001</ptoEmi><secuencial>000000001</secuencial><dirMatriz>DIAG</dirMatriz></infoTributaria></factura>';
+    const bytes = new TextEncoder().encode(testXml);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    const b64 = btoa(bin);
+    const soap = `<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.recepcion"><soapenv:Header/><soapenv:Body><ec:validarComprobante><xml>${b64}</xml></ec:validarComprobante></soapenv:Body></soapenv:Envelope>`;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 10000);
+    const r = await fetch('https://celcer.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': '""' },
+      body: soap, signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    const body = await r.text();
+    results.soap_test = {
+      ok: r.ok, status: r.status,
+      sri_respondio: body.length > 0,
+      recibida: body.includes('RECIBIDA'),
+      devuelta: body.includes('DEVUELTA'),
+      preview: body.substring(0, 600),
+    };
+  } catch (e: any) {
+    results.soap_test = { ok: false, error: `${e.name}: ${e.message}` };
+  }
+
+  results.diagnostico = results.soap_test?.sri_respondio
+    ? '✅ SRI responde correctamente desde Supabase Edge Functions'
+    : '❌ SRI no responde desde Supabase — posible bloqueo de red o timeout';
+
+  return c.json(results);
 });
 
 app.post("/server/auth/signup", async (c) => {
@@ -211,13 +290,32 @@ app.post("/server/auth/login", async (c) => {
     if (error) return c.json({ error: 'Credenciales inválidas' }, 401);
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: usuario } = await supabaseAdmin
+    const { data: usuario, error: usuarioError } = await supabaseAdmin
       .from('usuarios')
-      .select('*, empresas(*)')
+      .select('*')
       .eq('auth_user_id', data.user.id)
-      .single();
+      .maybeSingle();
 
-    if (!usuario) return c.json({ error: 'Usuario no encontrado' }, 404);
+    if (usuarioError) {
+      console.error('Error buscando usuario en login:', JSON.stringify(usuarioError));
+      return c.json({ error: 'Error al buscar usuario', details: usuarioError.message }, 500);
+    }
+    if (!usuario) {
+      console.error('Usuario no encontrado en public.usuarios para auth_user_id:', data.user.id);
+      return c.json({ error: 'Usuario no encontrado' }, 404);
+    }
+
+    // Obtener empresa por separado (evita problemas con join embebido)
+    let empresaRow: any = null;
+    if (usuario.empresa_id) {
+      const { data: emp } = await supabaseAdmin
+        .from('empresas')
+        .select('*')
+        .eq('id', usuario.empresa_id)
+        .maybeSingle();
+      empresaRow = emp;
+    }
+    usuario.empresas = empresaRow;
 
     // Super admin no tiene empresa — permitir igual
     if (usuario.rol !== 'super_admin' && usuario.empresas?.estado !== 'activo') {
@@ -235,14 +333,17 @@ app.post("/server/auth/login", async (c) => {
       );
     }
 
-    // Obtener bodega asignada al usuario (KV)
+    // Obtener bodega asignada al usuario (SQL — tabla usuario_bodegas)
     let bodegaId: string | null = null;
     let bodegaNombre: string | null = null;
     if (usuario.empresa_id) {
       try {
-        const bodegasMap: Record<string, any> = (await kv.get(`empresa_${usuario.empresa_id}_usuarios_bodegas`)) || {};
-        const bi = bodegasMap[usuario.id];
-        if (bi) { bodegaId = bi.bodega_id; bodegaNombre = bi.bodega_nombre; }
+        const { data: ub } = await supabaseAdmin.from('usuario_bodegas')
+          .select('bodega_id, bodega_nombre')
+          .eq('empresa_id', usuario.empresa_id)
+          .eq('usuario_id', usuario.id)
+          .maybeSingle();
+        if (ub) { bodegaId = ub.bodega_id; bodegaNombre = ub.bodega_nombre; }
       } catch { /* ignora */ }
     }
 
@@ -833,6 +934,296 @@ app.get("/server/inventario/lotes", authMiddleware, async (c) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   const { data } = await supabase.from('inventario_lotes').select('*').eq('empresa_id', auth.empresaId);
   return c.json({ lotes: data || [] });
+});
+
+// =====================================================
+// MIGRACIÓN KV → SQL  (ejecutar UNA SOLA VEZ)
+// POST /server/admin/migrar-datos
+// Solo accesible para super_admin
+// =====================================================
+
+app.post("/server/admin/migrar-datos", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  if (auth.userRole !== 'super_admin') {
+    return c.json({ error: 'Solo super_admin puede ejecutar la migración' }, 403);
+  }
+
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  const resumen: Record<string, any> = { inicio: new Date().toISOString(), empresas: {} };
+
+  // UUID validator
+  const isUUID = (s: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+  // Columnas permitidas por tabla (basado en migraciones 003-006)
+  const COLS: Record<string, Set<string>> = {
+    categorias: new Set(['id','empresa_id','nombre','color','icono','activo','metadata','created_at','updated_at']),
+    productos: new Set(['id','empresa_id','nombre','descripcion','precio','precio_costo','stock_actual','stock','stock_minimo','unidad','categoria_id','categoria','codigo','codigo_barras','imagen_url','tiene_iva','es_compuesto','tipo','activo','metadata','updated_at','created_at','proveedor_id','proveedor_nombre']),
+    clientes: new Set(['id','empresa_id','nombre','identificacion','tipo_identificacion','email','telefono','direccion','activo','metadata','created_at','updated_at']),
+    proveedores: new Set(['id','empresa_id','nombre','ruc','contacto','activo','metadata','created_at','updated_at','dias_credito','email','telefono','direccion','ciudad','pais','banco','cuenta_bancaria','tipo_cuenta']),
+    empleados: new Set(['id','empresa_id','nombre','puesto','cedula','salario','email','telefono','fecha_ingreso','activo','metadata','created_at','updated_at']),
+    recetas: new Set(['id','empresa_id','nombre','activo','producto_id','rendimiento','costo_total','ingredientes','metadata','created_at','updated_at','categoria','tiempo_preparacion','porciones','notas']),
+    ordenes_produccion: new Set(['id','empresa_id','numero','receta_id','receta_nombre','cantidad','estado','fecha_inicio','fecha_fin','notas','metadata','created_at','updated_at','bodega_origen_id','bodega_origen_nombre','bodega_destino_id','bodega_destino_nombre','producto_nombre','cantidad_real','merma','merma_porcentaje','responsable']),
+    comandas: new Set(['id','empresa_id','numero_orden','mesa','tipo_servicio','estado','notas','mesero_id','cajero_id','items','metadata','created_at','updated_at','fecha_completado','tiempo_preparacion','prioridad','bodega_id','cliente_nombre','subtotal','descuento','iva','total','forma_pago']),
+    ventas: new Set(['id','empresa_id','numero','comanda_id','cliente_id','cliente_nombre','subtotal','descuento','iva','total','forma_pago','estado','cajero_id','notas','items','metadata','created_at','bodega_id','mesero_id','mesa','tipo_servicio','numero_orden','anulada','motivo_anulacion','updated_at']),
+    compras: new Set(['id','empresa_id','numero','proveedor_id','proveedor_nombre','subtotal','iva','total','estado','fecha','items','metadata','created_at','estado_pago','forma_pago','bodega_id','notas','updated_at']),
+    cuentas_por_pagar: new Set(['id','empresa_id','compra_id','proveedor_id','proveedor_nombre','monto','monto_pagado','saldo_pendiente','estado','fecha_vencimiento','metadata','created_at','updated_at']),
+    movimientos_inventario: new Set(['id','empresa_id','producto_id','producto_nombre','bodega_id','tipo','cantidad','precio_unitario','motivo','referencia','usuario_id','metadata','created_at','bodega_destino_id','costo_total','stock_anterior','stock_nuevo']),
+    cuentas_contables: new Set(['id','empresa_id','codigo','nombre','tipo','es_grupo','padre_id','activo','metadata','created_at','updated_at','nivel']),
+    asientos_contables: new Set(['id','empresa_id','numero','fecha','descripcion','tipo','referencia','estado','origen_automatico','total_debito','total_credito','items','metadata','created_at','updated_at']),
+    mermas: new Set(['id','empresa_id','producto_id','producto_nombre','cantidad','motivo','bodega_id','usuario_id','metadata','created_at']),
+  };
+
+  // Obtener todas las empresas
+  const { data: empresas } = await db.from('empresas').select('id, nombre');
+
+  for (const empresa of (empresas || [])) {
+    const eid = empresa.id;
+    resumen.empresas[empresa.nombre || eid] = {};
+    const res = resumen.empresas[empresa.nombre || eid];
+
+    // Helper para migrar — solo inserta columnas conocidas de la tabla SQL
+    const migrar = async (kvKey: string, tabla: string, extras: Record<string,any> = {}) => {
+      try {
+        const datos: any[] = (await kv.get(kvKey)) || [];
+        if (datos.length === 0) { res[tabla] = 'vacío en KV'; return; }
+        const cols = COLS[tabla] || new Set<string>();
+        // Campos que deben ser UUID o null (no strings de texto)
+        const UUID_FIELDS = new Set(['categoria_id','proveedor_id','cliente_id','receta_id','comanda_id','producto_id','bodega_id','bodega_destino_id','padre_id','compra_id']);
+        const filas = datos.map((d: any) => {
+          const raw = { ...d, empresa_id: eid, ...extras };
+          raw.id = isUUID(raw.id) ? raw.id : crypto.randomUUID();
+          const fila: Record<string, any> = {};
+          for (const [k, v] of Object.entries(raw)) {
+            if (!cols.has(k)) continue;
+            // Si es campo UUID y el valor no es UUID válido → null
+            if (UUID_FIELDS.has(k) && v !== null && v !== undefined && !isUUID(String(v))) {
+              fila[k] = null;
+            } else {
+              fila[k] = v;
+            }
+          }
+          return fila;
+        });
+        const { error } = await db.from(tabla).upsert(filas, { onConflict: 'id' });
+        res[tabla] = error ? `ERROR: ${error.message}` : `✅ ${datos.length} registros`;
+      } catch (e: any) {
+        res[tabla] = `ERROR: ${e.message}`;
+      }
+    };
+
+    // Migrar en orden (respetar foreign keys)
+    await migrar(`empresa_${eid}_categorias`,          'categorias');
+    await migrar(`empresa_${eid}_productos`,            'productos');
+    await migrar(`empresa_${eid}_clientes`,             'clientes');
+    await migrar(`empresa_${eid}_proveedores`,          'proveedores');
+    await migrar(`empresa_${eid}_empleados`,            'empleados');
+    await migrar(`empresa_${eid}_recetas`,              'recetas');
+    await migrar(`empresa_${eid}_ordenes_produccion`,   'ordenes_produccion');
+    await migrar(`empresa_${eid}_comandas`,             'comandas');
+    await migrar(`empresa_${eid}_ventas`,               'ventas');
+    await migrar(`empresa_${eid}_compras`,              'compras');
+    await migrar(`empresa_${eid}_cxp`,                  'cuentas_por_pagar');
+    await migrar(`empresa_${eid}_movimientos`,          'movimientos_inventario');
+    await migrar(`empresa_${eid}_cuentas_contables`,    'cuentas_contables');
+    await migrar(`empresa_${eid}_asientos_contables`,   'asientos_contables');
+    await migrar(`mermas_${eid}`,                       'mermas');
+
+    // Stock por bodega (estructura anidada)
+    try {
+      const stockKV: Record<string, Record<string, number>> =
+        (await kv.get(`stock_bodegas_${eid}`)) || {};
+
+      // Obtener bodegas reales de la empresa para mapear IDs de KV → UUIDs
+      const { data: bodegasReales } = await db.from('bodegas')
+        .select('id, codigo, nombre').eq('empresa_id', eid);
+      const bodegasPorCodigo: Record<string, string> = {};
+      for (const b of (bodegasReales || [])) {
+        if (b.codigo) bodegasPorCodigo[b.codigo] = b.id;
+      }
+
+      // Función para detectar UUID válido
+      const isUUID = (s: string) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+      const filas: any[] = [];
+      for (const [bodegaId, productos] of Object.entries(stockKV)) {
+        // Resolver UUID: si ya es UUID úsalo, si no, busca por código
+        let realUUID = isUUID(bodegaId) ? bodegaId : bodegasPorCodigo[bodegaId];
+        if (!realUUID) continue; // no se puede mapear, saltar
+        for (const [productoNombre, cantidad] of Object.entries(productos as Record<string, number>)) {
+          filas.push({ empresa_id: eid, bodega_id: realUUID, producto_nombre: productoNombre, cantidad });
+        }
+      }
+      if (filas.length > 0) {
+        const { error } = await db.from('stock_bodegas_sql')
+          .upsert(filas, { onConflict: 'bodega_id,producto_nombre' });
+        res['stock_bodegas_sql'] = error ? `ERROR: ${error.message}` : `✅ ${filas.length} registros`;
+      } else {
+        res['stock_bodegas_sql'] = 'vacío en KV (IDs de bodega no mapeables a UUID)';
+      }
+    } catch (e: any) {
+      res['stock_bodegas_sql'] = `ERROR: ${e.message}`;
+    }
+
+    // Presupuestos (una key por año)
+    for (const anio of [2023, 2024, 2025, 2026]) {
+      try {
+        const items = await kv.get(`empresa_${eid}_presupuesto_${anio}`);
+        if (items && (items as any[]).length > 0) {
+          await db.from('presupuestos').upsert(
+            { empresa_id: eid, anio, items },
+            { onConflict: 'empresa_id,anio' }
+          );
+          res[`presupuesto_${anio}`] = `✅ migrado`;
+        }
+      } catch { /* ignorar */ }
+    }
+
+    // ── Facturación: configuración ────────────────────────────────────────
+    try {
+      let configKV: any = null;
+      for (const kvKey of [
+        `empresa_${eid}_facturacion_config`,
+        `empresa_${eid}_facturacion`,
+        `facturacion_config_${eid}`,
+      ]) {
+        configKV = await kv.get(kvKey);
+        if (configKV) break;
+      }
+      if (configKV) {
+        // Verificar si ya existe en SQL
+        const { data: existe } = await db.from('configuracion_facturacion')
+          .select('empresa_id').eq('empresa_id', eid).maybeSingle();
+        if (!existe) {
+          await db.from('configuracion_facturacion').insert({
+            empresa_id: eid,
+            ruc: configKV.ruc || null,
+            razon_social: configKV.razon_social || null,
+            nombre_comercial: configKV.nombre_comercial || null,
+            direccion_matriz: configKV.direccion_matriz || null,
+            direccion_establecimiento: configKV.direccion_establecimiento || null,
+            telefono: configKV.telefono || null,
+            email: configKV.email || null,
+            obligado_contabilidad: configKV.obligado_contabilidad || false,
+            regimen_rimpe: configKV.regimen_rimpe || false,
+            ambiente: configKV.ambiente || 'pruebas',
+            secuencial_actual: configKV.secuencial_actual || 0,
+            codigo_establecimiento: configKV.codigo_establecimiento || '001',
+            codigo_punto_emision: configKV.punto_emision || configKV.codigo_punto_emision || '001',
+            tiene_certificado: configKV.tiene_certificado || configKV.firma_electronica_activa || false,
+            metadata: configKV,
+            updated_at: new Date().toISOString(),
+          });
+          res['configuracion_facturacion'] = '✅ migrado desde KV';
+        } else {
+          res['configuracion_facturacion'] = 'ya existía en SQL';
+        }
+      } else {
+        res['configuracion_facturacion'] = 'vacío en KV';
+      }
+    } catch (e: any) {
+      res['configuracion_facturacion'] = `ERROR: ${e.message}`;
+    }
+
+    // ── Facturación: certificado ──────────────────────────────────────────
+    try {
+      let certKV: any = null;
+      for (const kvKey of [
+        `empresa_${eid}_facturacion_cert`,
+        `empresa_${eid}_cert`,
+        `certificado_${eid}`,
+      ]) {
+        certKV = await kv.get(kvKey);
+        if (certKV) break;
+      }
+      if (certKV) {
+        const { data: existe } = await db.from('certificados_facturacion')
+          .select('empresa_id').eq('empresa_id', eid).maybeSingle();
+        if (!existe) {
+          await db.from('certificados_facturacion').insert({
+            empresa_id: eid,
+            nombre: certKV.nombre || 'certificado.p12',
+            p12_base64: certKV.p12_base64 || null,
+            password: certKV.password || null,
+            valido_desde: certKV.info?.valido_desde || certKV.valido_desde || null,
+            valido_hasta: certKV.info?.valido_hasta || certKV.valido_hasta || null,
+            titular: certKV.info?.titular || certKV.titular || null,
+            metadata: certKV,
+            updated_at: new Date().toISOString(),
+          });
+          res['certificados_facturacion'] = '✅ migrado desde KV';
+        } else {
+          res['certificados_facturacion'] = 'ya existía en SQL';
+        }
+      } else {
+        res['certificados_facturacion'] = 'vacío en KV';
+      }
+    } catch (e: any) {
+      res['certificados_facturacion'] = `ERROR: ${e.message}`;
+    }
+
+    // ── Facturación: facturas emitidas ────────────────────────────────────
+    try {
+      // Buscar facturas individuales por prefijo
+      const prefixEntries = await kv.getByPrefixWithKeys(`empresa_${eid}_factura_`);
+      // También probar objeto/array en clave única
+      let singleObj: any[] = [];
+      const singleKV = await kv.get(`empresa_${eid}_facturas`);
+      if (singleKV && typeof singleKV === 'object' && !Array.isArray(singleKV)) {
+        singleObj = Object.entries(singleKV).map(([k, v]: [string, any]) => [k, v] as [string, any]);
+      } else if (Array.isArray(singleKV)) {
+        singleObj = (singleKV as any[]).map((f: any) => [f.numero_factura || crypto.randomUUID(), f]);
+      }
+      const allEntries: [string, any][] = [...prefixEntries, ...singleObj];
+
+      if (allEntries.length > 0) {
+        const filas = allEntries.map(([facturaKey, factura]: [string, any]) => {
+          const key = String(facturaKey).replace(`empresa_${eid}_factura_`, '');
+          return {
+            empresa_id: eid,
+            factura_key: key,
+            numero_factura: factura.numero_factura || key,
+            clave_acceso: factura.clave_acceso || null,
+            ambiente: factura.ambiente || 'pruebas',
+            estado: factura.estado || factura.estado_autorizacion || 'PENDIENTE',
+            estado_autorizacion: factura.estado_autorizacion || factura.estado || 'PENDIENTE',
+            fecha_autorizacion: factura.fecha_autorizacion || null,
+            numero_autorizacion: factura.numero_autorizacion || null,
+            mensajes_sri: factura.mensajes_sri || [],
+            razon_social: factura.razon_social || null,
+            ruc: factura.ruc || null,
+            cliente_identificacion: factura.cliente_identificacion || null,
+            cliente_tipo_identificacion: factura.cliente_tipo_identificacion || null,
+            cliente_razon_social: factura.cliente_razon_social || null,
+            cliente_email: factura.cliente_email || null,
+            subtotal_iva: factura.subtotal_iva ?? factura.subtotal ?? 0,
+            subtotal_0: factura.subtotal_0 ?? 0,
+            total_descuento: factura.total_descuento ?? factura.descuento ?? 0,
+            iva: factura.iva ?? 0,
+            total: factura.total ?? 0,
+            items: factura.items || [],
+            formas_pago: factura.formas_pago || [],
+            datos_completos: factura,
+            fecha_emision: factura.fecha_emision || null,
+            hora_emision: factura.hora_emision || null,
+            created_at: factura.created_at || factura.creado_en || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+        });
+        const { error } = await db.from('facturas')
+          .upsert(filas, { onConflict: 'empresa_id,factura_key' });
+        res['facturas'] = error ? `ERROR: ${error.message}` : `✅ ${filas.length} facturas`;
+      } else {
+        res['facturas'] = 'vacío en KV';
+      }
+    } catch (e: any) {
+      res['facturas'] = `ERROR: ${e.message}`;
+    }
+  }
+
+  resumen.fin = new Date().toISOString();
+  return c.json({ success: true, resumen });
 });
 
 // =====================================================

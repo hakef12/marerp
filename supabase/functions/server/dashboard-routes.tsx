@@ -3,13 +3,18 @@
 // KPIs: ventas, ticket promedio, food cost, cocina, inventario
 // =====================================================
 
+import { createClient } from "npm:@supabase/supabase-js";
 import {
   obtenerProductos,
   obtenerVentas,
   obtenerComandas,
   obtenerRecetas,
 } from "./kv-helpers.tsx";
-import { get as kvGet } from "./kv_store.tsx";
+
+const getDB = () => createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
 
 export function setupDashboardRoutes(app: any, authMiddleware: any) {
 
@@ -33,10 +38,12 @@ export function setupDashboardRoutes(app: any, authMiddleware: any) {
       const activas = ventas.filter((v: any) => !v.anulada);
 
       // ── Ventas por período ───────────────────────────────────
-      const ventasHoy   = activas.filter((v: any) => v.fecha >= fechaHoy);
-      const ventasSemana = activas.filter((v: any) => v.fecha >= inicioSemana.toISOString());
-      const ventasMes    = activas.filter((v: any) => v.fecha >= inicioMes);
-      const ventas30     = activas.filter((v: any) => v.fecha >= hace30);
+      // Soporte dual: campo 'fecha' (KV legacy) o 'created_at' (SQL)
+      const getFecha = (v: any): string => v.fecha || v.created_at || '';
+      const ventasHoy   = activas.filter((v: any) => getFecha(v) >= fechaHoy);
+      const ventasSemana = activas.filter((v: any) => getFecha(v) >= inicioSemana.toISOString());
+      const ventasMes    = activas.filter((v: any) => getFecha(v) >= inicioMes);
+      const ventas30     = activas.filter((v: any) => getFecha(v) >= hace30);
 
       const montoHoy   = ventasHoy.reduce((s: number, v: any) => s + (v.total || 0), 0);
       const montoSemana = ventasSemana.reduce((s: number, v: any) => s + (v.total || 0), 0);
@@ -47,7 +54,7 @@ export function setupDashboardRoutes(app: any, authMiddleware: any) {
       const ventasPorHora: { hora: number; cantidad: number; monto: number }[] = [];
       for (let h = 0; h < 24; h++) ventasPorHora.push({ hora: h, cantidad: 0, monto: 0 });
       for (const v of ventasHoy) {
-        const h = new Date(v.fecha).getHours();
+        const h = new Date(getFecha(v)).getHours();
         ventasPorHora[h].cantidad++;
         ventasPorHora[h].monto += v.total || 0;
       }
@@ -57,7 +64,7 @@ export function setupDashboardRoutes(app: any, authMiddleware: any) {
       for (let i = 6; i >= 0; i--) {
         const d = new Date(hoy); d.setDate(hoy.getDate() - i);
         const dateStr = d.toISOString().split('T')[0];
-        const dvs = activas.filter((v: any) => v.fecha.startsWith(dateStr));
+        const dvs = activas.filter((v: any) => getFecha(v).startsWith(dateStr));
         ventasPorDia.push({ fecha: dateStr, cantidad: dvs.length, monto: dvs.reduce((s: number, v: any) => s + (v.total || 0), 0) });
       }
 
@@ -104,27 +111,31 @@ export function setupDashboardRoutes(app: any, authMiddleware: any) {
       const comandasListas        = comandas.filter((c: any) => c.estado === 'lista');
 
       // Tiempo promedio de cocina (comandas completadas hoy)
-      const comandasHoy = comandas.filter((c: any) => c.created_at >= fechaHoy && c.completado_at);
+      const comandasHoy = comandas.filter((c: any) => c.created_at >= fechaHoy && c.fecha_completado);
       const tiempoPromedioMin = comandasHoy.length > 0
         ? comandasHoy.reduce((s: number, c: any) => {
-            const diff = new Date(c.completado_at).getTime() - new Date(c.created_at).getTime();
+            const diff = new Date(c.fecha_completado).getTime() - new Date(c.created_at).getTime();
             return s + diff / 60000;
           }, 0) / comandasHoy.length
         : 0;
 
-      // ── Estado de caja ───────────────────────────────────────
-      let estadoCaja = { abierta: false, cajero: null as string | null, monto_real: 0 };
+      // ── Estado de caja (SQL: turnos_caja con estado='abierto') ─
+      let estadoCaja = { abierta: false, cajero: null as string | null, monto_real: 0, cajas_abiertas: 0 };
       try {
-        const sesion = await kvGet(`empresa_${auth.empresaId}_caja_actual`);
-        if (sesion && sesion.estado === 'abierta') {
-          const apertura = sesion.monto_apertura || 0;
-          const ingresos = (sesion.movimientos || [])
-            .filter((m: any) => m.tipo === 'venta' || m.tipo === 'ingreso_manual')
-            .reduce((s: number, m: any) => s + (m.monto || 0), 0);
-          const egresos = (sesion.movimientos || [])
-            .filter((m: any) => m.tipo === 'gasto' || m.tipo === 'retiro')
-            .reduce((s: number, m: any) => s + (m.monto || 0), 0);
-          estadoCaja = { abierta: true, cajero: sesion.cajero_nombre, monto_real: apertura + ingresos - egresos };
+        const { data: sesionesAbiertas } = await getDB().from('turnos_caja')
+          .select('cajero_nombre, monto_inicial, ventas_total')
+          .eq('empresa_id', auth.empresaId).eq('estado', 'abierto');
+        if (sesionesAbiertas && sesionesAbiertas.length > 0) {
+          let montoTotal = 0;
+          for (const sesion of sesionesAbiertas) {
+            montoTotal += (sesion.monto_inicial || 0) + (sesion.ventas_total || 0);
+          }
+          estadoCaja = {
+            abierta: true,
+            cajero: sesionesAbiertas[0].cajero_nombre || null,
+            monto_real: montoTotal,
+            cajas_abiertas: sesionesAbiertas.length,
+          };
         }
       } catch { /* silencioso */ }
 

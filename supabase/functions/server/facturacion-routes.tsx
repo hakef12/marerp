@@ -11,9 +11,182 @@
 
 // @ts-ignore
 import forge from "npm:node-forge@1.3.1";
-// Usar las funciones PostgreSQL (get/set con string key) — NO usar getByKey/setKey que usan Deno.openKv()
-import { get as getByKey, set as setKey, getByPrefixWithKeys } from './kv_store.tsx';
+// @ts-ignore — xmldom: namespace-aware XML parser for correct C14N (canonical XML)
+import { DOMParser as XmlDOMParser } from "npm:@xmldom/xmldom@0.9.5";
+import { createClient } from "npm:@supabase/supabase-js";
 import { registrarAsientoAutomatico } from './kv-helpers.tsx';
+import * as kv from './kv_store.tsx';
+
+// ── SQL helpers para facturación ──────────────────────────────────────────────
+const getDB = () => createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
+
+async function getConfig(empresaId: string): Promise<any | null> {
+  const { data } = await getDB().from('configuracion_facturacion')
+    .select('*').eq('empresa_id', empresaId).maybeSingle();
+  if (data) {
+    return { ...data, ...(data.metadata || {}), punto_emision: data.codigo_punto_emision };
+  }
+  // Fallback KV — intentar claves comunes del sistema anterior
+  for (const kvKey of [
+    `empresa_${empresaId}_facturacion_config`,
+    `empresa_${empresaId}_facturacion`,
+    `facturacion_config_${empresaId}`,
+  ]) {
+    const kvData = await kv.get(kvKey);
+    if (kvData) return kvData;
+  }
+  return null;
+}
+
+async function setConfig(empresaId: string, config: any): Promise<void> {
+  const { punto_emision, firma_electronica_activa, firma_electronica_nombre,
+          firma_electronica_validez, ...rest } = config;
+  await getDB().from('configuracion_facturacion').upsert({
+    empresa_id: empresaId,
+    ruc: rest.ruc || null,
+    razon_social: rest.razon_social || null,
+    nombre_comercial: rest.nombre_comercial || null,
+    direccion_matriz: rest.direccion_matriz || null,
+    direccion_establecimiento: rest.direccion_establecimiento || null,
+    telefono: rest.telefono || null,
+    email: rest.email || null,
+    obligado_contabilidad: rest.obligado_contabilidad || false,
+    regimen_rimpe: rest.regimen_rimpe || false,
+    contribuyente_especial: rest.contribuyente_especial || null,
+    agente_retencion: rest.agente_retencion || null,
+    ambiente: rest.ambiente || 'pruebas',
+    secuencial_actual: rest.secuencial_actual || 0,
+    codigo_establecimiento: rest.codigo_establecimiento || '001',
+    codigo_punto_emision: punto_emision || rest.codigo_punto_emision || '001',
+    tiene_certificado: rest.tiene_certificado || firma_electronica_activa || false,
+    metadata: { firma_electronica_activa, firma_electronica_nombre, firma_electronica_validez,
+                ...Object.fromEntries(Object.entries(rest).filter(([k]) =>
+                  !['ruc','razon_social','nombre_comercial','direccion_matriz','direccion_establecimiento',
+                    'telefono','email','obligado_contabilidad','regimen_rimpe','contribuyente_especial',
+                    'agente_retencion','ambiente','secuencial_actual','codigo_establecimiento',
+                    'codigo_punto_emision','tiene_certificado'].includes(k))) },
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'empresa_id' });
+}
+
+async function getCert(empresaId: string): Promise<any | null> {
+  const { data } = await getDB().from('certificados_facturacion')
+    .select('*').eq('empresa_id', empresaId).maybeSingle();
+  if (data) {
+    const meta = data.metadata || {};
+    return {
+      p12_base64: data.p12_base64,
+      password: data.password,
+      nombre: data.nombre,
+      pkcs8_base64: meta.pkcs8_base64 || null,
+      rawCertDer_base64: meta.rawCertDer_base64 || null,
+      subido_en: meta.subido_en || data.updated_at,
+      info: {
+        titular: data.titular,
+        emisor: meta.emisor || null,
+        valido_desde: data.valido_desde,
+        valido_hasta: data.valido_hasta,
+        vigente: data.valido_hasta ? new Date(data.valido_hasta) > new Date() : true,
+      },
+    };
+  }
+  // Fallback KV
+  for (const kvKey of [
+    `empresa_${empresaId}_facturacion_cert`,
+    `empresa_${empresaId}_cert`,
+    `certificado_${empresaId}`,
+  ]) {
+    const kvData = await kv.get(kvKey);
+    if (kvData) return kvData;
+  }
+  return null;
+}
+
+async function setCert(empresaId: string, cert: any): Promise<void> {
+  await getDB().from('certificados_facturacion').upsert({
+    empresa_id: empresaId,
+    nombre: cert.nombre || 'certificado.p12',
+    p12_base64: cert.p12_base64,
+    password: cert.password,
+    valido_desde: cert.info?.valido_desde || null,
+    valido_hasta: cert.info?.valido_hasta || null,
+    titular: cert.info?.titular || null,
+    metadata: {
+      pkcs8_base64: cert.pkcs8_base64 || null,
+      rawCertDer_base64: cert.rawCertDer_base64 || null,
+      emisor: cert.info?.emisor || null,
+      subido_en: cert.subido_en || new Date().toISOString(),
+    },
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'empresa_id' });
+}
+
+async function getFactura(empresaId: string, facturaKey: string): Promise<any | null> {
+  const { data } = await getDB().from('facturas')
+    .select('datos_completos').eq('empresa_id', empresaId).eq('factura_key', facturaKey).maybeSingle();
+  if (!data) return null;
+  return data.datos_completos || null;
+}
+
+async function setFactura(empresaId: string, facturaKey: string, factura: any): Promise<void> {
+  await getDB().from('facturas').upsert({
+    empresa_id: empresaId,
+    factura_key: facturaKey,
+    numero_factura: factura.numero_factura || facturaKey,
+    clave_acceso: factura.clave_acceso || null,
+    ambiente: factura.ambiente || 'pruebas',
+    estado: factura.estado || 'PENDIENTE',
+    estado_autorizacion: factura.estado_autorizacion || 'PENDIENTE',
+    fecha_autorizacion: factura.fecha_autorizacion || null,
+    numero_autorizacion: factura.numero_autorizacion || null,
+    mensajes_sri: factura.mensajes_sri || [],
+    razon_social: factura.razon_social || null,
+    ruc: factura.ruc || null,
+    cliente_identificacion: factura.cliente_identificacion || null,
+    cliente_tipo_identificacion: factura.cliente_tipo_identificacion || null,
+    cliente_razon_social: factura.cliente_razon_social || null,
+    cliente_email: factura.cliente_email || null,
+    subtotal_iva: factura.subtotal_iva ?? factura.subtotal ?? 0,
+    subtotal_0: factura.subtotal_0 ?? 0,
+    subtotal_no_objeto: factura.subtotal_no_objeto ?? 0,
+    total_descuento: factura.total_descuento ?? factura.descuento ?? 0,
+    iva: factura.iva ?? 0,
+    total: factura.total ?? 0,
+    items: factura.items || [],
+    formas_pago: factura.formas_pago || [],
+    datos_completos: factura,
+    fecha_emision: factura.fecha_emision || null,
+    hora_emision: factura.hora_emision || null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'empresa_id,factura_key' });
+}
+
+async function listFacturas(empresaId: string): Promise<Array<[string, any]>> {
+  const { data } = await getDB().from('facturas')
+    .select('factura_key, datos_completos')
+    .eq('empresa_id', empresaId)
+    .order('created_at', { ascending: false });
+  if (data && data.length > 0) {
+    return (data as any[]).map(r => [r.factura_key || r.id, r.datos_completos || r]);
+  }
+  // Fallback KV — buscar facturas por prefijo (sistema anterior)
+  try {
+    const prefixEntries = await kv.getByPrefixWithKeys(`empresa_${empresaId}_factura_`);
+    if (prefixEntries.length > 0) return prefixEntries;
+    // También probar formato objeto en una sola clave
+    const obj = await kv.get(`empresa_${empresaId}_facturas`);
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      return Object.entries(obj) as [string, any][];
+    }
+    if (Array.isArray(obj) && obj.length > 0) {
+      return obj.map((f: any) => [f.numero_factura || f.id || crypto.randomUUID(), f]);
+    }
+  } catch { /* silencioso */ }
+  return [];
+}
 
 // ============================================================
 // XML HELPERS
@@ -267,50 +440,135 @@ function buildSRIXML(f: any): string {
 // ============================================================
 
 /**
- * Minimal Canonical XML 1.0 serializer for the specific structures
- * produced by our XAdES-BES builder.
+ * C14N attribute value normalization (RFC 3076 §2.3):
+ * Tab→&#9;  LF→&#10;  CR→&#13;  &→&amp;  "→&quot;  <→&lt;
+ */
+function c14nAttrValue(v: string): string {
+  return v
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;')
+    .replace(/\t/g, '&#9;')
+    .replace(/\n/g, '&#10;')
+    .replace(/\r/g, '&#13;');
+}
+
+/**
+ * C14N text node normalization (RFC 3076 §2.3):
+ * &→&amp;  <→&lt;  >→&gt;  CR→&#13;
+ */
+function c14nText(t: string): string {
+  return t
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\r/g, '&#13;');
+}
+
+/**
+ * Recursively serialize an xmldom Element node in Canonical XML 1.0 form.
  *
- * Full C14N (RFC 3076) is complex; this handles the cases SRI validates:
- *   1. Remove XML declaration (C14N §2.4)
- *   2. Expand empty elements: <foo/> → <foo></foo>
- *   3. Attribute order: namespace decls (sorted) then regular attrs (sorted)
- *   4. Normalize attribute values (replace &apos; → &quot; etc.)
+ * ancestorNS: Map of prefix → uri for all namespace declarations already
+ *   rendered by ancestor elements (so we don't re-emit them on children).
+ *
+ * Inclusive C14N rules (RFC 3076 §2.3):
+ *   • All namespace declarations in scope for this element are output on its
+ *     start tag, EXCEPT those that are already present with the same value
+ *     in an ancestor element's start tag.
+ *   • Namespace declarations are sorted lexicographically by prefix name
+ *     (xmlns < xmlns:ds < xmlns:xades …).
+ *   • Regular attributes are sorted lexicographically by expanded name.
+ *   • Empty elements are output as <tag></tag> (not self-closing).
+ *   • Text nodes: special chars normalized; comments/PIs omitted.
+ */
+function c14nElement(el: any, ancestorNS: Map<string, string>): string {
+  let result = '<' + el.tagName;
+
+  // Collect explicitly-declared namespaces and regular attributes on this element
+  const thisNSDecls = new Map<string, string>(); // prefix → uri (declared here)
+  const regularAttrs: [string, string][] = [];
+
+  const attrs = el.attributes;
+  for (let i = 0; i < (attrs?.length ?? 0); i++) {
+    const attr = attrs[i];
+    const name: string = attr.name ?? attr.nodeName ?? '';
+    const value: string = attr.value ?? attr.nodeValue ?? '';
+    if (name === 'xmlns') {
+      thisNSDecls.set('xmlns', value);
+    } else if (name.startsWith('xmlns:')) {
+      thisNSDecls.set(name, value);
+    } else {
+      regularAttrs.push([name, value]);
+    }
+  }
+
+  // Namespace scope for this element's children
+  const currentScope = new Map([...ancestorNS, ...thisNSDecls]);
+
+  // Which namespace declarations to emit on THIS element?
+  // Emit if: declared here AND (not in ancestor, or different value from ancestor)
+  const nsToOutput: [string, string][] = [];
+  for (const [prefix, uri] of thisNSDecls) {
+    if (ancestorNS.get(prefix) !== uri) {
+      nsToOutput.push([prefix, uri]);
+    }
+  }
+
+  // Sort: namespace decls lexicographically by prefix (xmlns < xmlns:ds < …)
+  nsToOutput.sort((a, b) => a[0].localeCompare(b[0]));
+
+  // Sort regular attributes lexicographically by attribute name
+  // (for un-prefixed attrs, expanded name = local name — sufficient for SRI's attrs)
+  regularAttrs.sort((a, b) => a[0].localeCompare(b[0]));
+
+  for (const [k, v] of nsToOutput)      result += ` ${k}="${c14nAttrValue(v)}"`;
+  for (const [name, value] of regularAttrs) result += ` ${name}="${c14nAttrValue(value)}"`;
+
+  result += '>';
+
+  // Process child nodes
+  const childNodes = el.childNodes;
+  for (let i = 0; i < (childNodes?.length ?? 0); i++) {
+    const child = childNodes[i];
+    const nodeType: number = child.nodeType ?? 0;
+    if (nodeType === 1) {           // ELEMENT_NODE
+      result += c14nElement(child, currentScope);
+    } else if (nodeType === 3) {    // TEXT_NODE
+      result += c14nText(child.nodeValue ?? child.data ?? '');
+    }
+    // Comments (8), PIs (7) are excluded by C14N
+  }
+
+  result += '</' + el.tagName + '>';
+  return result;
+}
+
+/**
+ * Canonical XML 1.0 (inclusive, RFC 3076) using @xmldom/xmldom for parsing.
+ *
+ * Produces deterministic canonical form of an XML string:
+ *   • XML declaration removed
+ *   • Self-closing elements expanded to <tag></tag>
+ *   • Namespace declarations sorted before regular attributes
+ *   • All attribute groups sorted lexicographically
+ *   • Text content special-chars normalized
+ *   • Comments and PIs omitted
  */
 function c14n(xml: string): string {
-  // 1. Remove XML declaration
-  let s = xml.replace(/^<\?xml[^?]*\?>\s*/, '');
+  // Remove XML declaration (C14N §2.4)
+  const xmlNoDecl = xml.replace(/^<\?xml[^?]*\?>\s*/, '');
 
-  // 2. Expand self-closing elements, preserving attributes
-  //    Matches <tag  [attrs] /> — avoids greedy capture of inter-element content
-  s = s.replace(/<([\w:]+)((?:\s+[^>]*?)?)\s*\/>/g, (_, tag: string, attrs: string) => {
-    return `<${tag}${attrs}></${tag}>`;
-  });
-
-  // 3. Canonicalize each opening tag: sort attrs lexicographically,
-  //    namespace declarations first (xmlns: < xmlns < regular)
-  s = s.replace(/<([\w:]+)((?:\s+(?:[\w:]+)="[^"]*")*)\s*>/g, (_match: string, tag: string, attrBlock: string) => {
-    if (!attrBlock.trim()) return `<${tag}>`;
-
-    // Parse attrs: key="value" pairs
-    const attrRe = /([\w:]+)="([^"]*)"/g;
-    const nsDecls: [string, string][] = [];
-    const regularAttrs: [string, string][] = [];
-    let m: RegExpExecArray | null;
-    while ((m = attrRe.exec(attrBlock)) !== null) {
-      const k = m[1], v = m[2];
-      if (k === 'xmlns' || k.startsWith('xmlns:')) nsDecls.push([k, v]);
-      else regularAttrs.push([k, v]);
-    }
-    nsDecls.sort((a, b) => a[0].localeCompare(b[0]));
-    regularAttrs.sort((a, b) => a[0].localeCompare(b[0]));
-
-    const allAttrs = [...nsDecls, ...regularAttrs]
-      .map(([k, v]) => `${k}="${v}"`)
-      .join(' ');
-    return `<${tag} ${allAttrs}>`;
-  });
-
-  return s;
+  try {
+    // Parse with a proper namespace-aware XML DOM parser
+    const doc = new XmlDOMParser().parseFromString(xmlNoDecl, 'text/xml');
+    const root = doc?.documentElement;
+    if (!root) throw new Error('no documentElement');
+    return c14nElement(root, new Map());
+  } catch (e: any) {
+    // Should not happen for well-formed XML; log and return stripped form
+    console.error('[C14N] parse error, returning stripped XML:', e?.message);
+    return xmlNoDecl;
+  }
 }
 
 /** SHA-1 digest (node-forge) of a UTF-8 string, returned as base64 */
@@ -361,28 +619,217 @@ function sha1b64(text: string): string {
  *     }
  *   → bag.asn1.value[1].value[0].value = raw cert DER bytes (binary string)
  */
-function extractRawCertDersFromForgeP12(p12: any): string[] {
+/**
+ * Extracts raw cert DER bytes by manually decrypting pkcs7-encryptedData bags
+ * in the raw P12 ASN.1. Does NOT use bag.asn1 (which is null in forge 1.3.1
+ * for bags from encrypted SafeContents).
+ *
+ * Handles PKCS#12 PBE algorithms used by Ecuador CAs (Security Data, BCE, ANF):
+ *   - pbeWithSHAAnd3-KeyTripleDES-CBC (1.2.840.113549.1.12.1.3)  ← most common
+ *   - pbeWithSHAAnd128BitRC2-CBC      (1.2.840.113549.1.12.1.5)
+ *   - pbeWithSHAAnd40BitRC2-CBC       (1.2.840.113549.1.12.1.6)
+ */
+function extractRawCertDersFromForgeP12(p12: any, p12DerStr?: string, password?: string): string[] {
+  const CERT_BAG_OID       = '1.2.840.113549.1.12.10.1.3';
+  const PKCS7_ENCRYPTED    = '1.2.840.113549.1.7.6';
+  const PBE_SHA1_3DES      = '1.2.840.113549.1.12.1.3';
+  const PBE_SHA1_RC2_128   = '1.2.840.113549.1.12.1.5';
+  const PBE_SHA1_RC2_40    = '1.2.840.113549.1.12.1.6';
+
   const results: string[] = [];
+
+  // ── Helper: extract cert DER from a parsed SafeContents SEQUENCE ──────────
+  const extractFromSafeContents = (sc: any) => {
+    for (const safeBag of (Array.isArray(sc?.value) ? sc.value : [])) {
+      try {
+        if (!Array.isArray(safeBag?.value) || safeBag.value.length < 2) continue;
+        if (safeBag.value[0]?.type !== 6) continue;
+        let bagOid = ''; try { bagOid = forge.asn1.derToOid(safeBag.value[0].value); } catch { continue; }
+        if (bagOid !== CERT_BAG_OID) continue;
+
+        // bagValue = safeBag.value[1]  →  [0] EXPLICIT  →  CertBag SEQUENCE
+        const bagValCtx = safeBag.value[1];
+
+        // Resolve certBagAsn1: may be pre-parsed (Array value) or still DER bytes (string value)
+        let certBagAsn1: any = null;
+        if (Array.isArray(bagValCtx?.value) && bagValCtx.value.length > 0) {
+          const child = bagValCtx.value[0];
+          if (Array.isArray(child?.value)) {
+            // Already a parsed ASN.1 SEQUENCE (Approach B path via forge.asn1.fromDer)
+            certBagAsn1 = child;
+          } else if (typeof child?.value === 'string' && child.value.length > 10) {
+            // child.value holds DER bytes — re-parse (Approach A path)
+            try { certBagAsn1 = forge.asn1.fromDer(child.value); } catch { continue; }
+          }
+        } else if (typeof bagValCtx?.value === 'string' && bagValCtx.value.length > 10) {
+          try { certBagAsn1 = forge.asn1.fromDer(bagValCtx.value); } catch { continue; }
+        }
+        if (!certBagAsn1 || !Array.isArray(certBagAsn1.value) || certBagAsn1.value.length < 2) continue;
+
+        // certValue = certBagAsn1.value[1]  →  [0] EXPLICIT  →  OCTET STRING (cert DER bytes)
+        const certValCtx = certBagAsn1.value[1];
+        let certDer: string | null = null;
+        if (Array.isArray(certValCtx?.value) && certValCtx.value.length > 0) {
+          const v = certValCtx.value[0]?.value;
+          if (typeof v === 'string' && v.length > 64) certDer = v;
+        } else if (typeof certValCtx?.value === 'string' && certValCtx.value.length > 64) {
+          certDer = certValCtx.value;
+        }
+        if (!certDer) continue;
+
+        // Validate it's a real X.509 cert
+        try { forge.pki.certificateFromAsn1(forge.asn1.fromDer(certDer)); results.push(certDer); }
+        catch { /* not a valid cert */ }
+      } catch (_) { /* skip */ }
+    }
+  };
+
+  // ── Approach A: bag.asn1 (works if forge sets it — some versions do) ──────
   try {
     for (const sc of (p12.safeContents || [])) {
       for (const bag of (sc.safeBags || [])) {
         if (!bag.asn1) continue;
         try {
-          // bag.asn1 = CertBag SEQUENCE (for certBag type bags)
-          // value[1] = [0] context-tagged node (certValue)
-          // value[1].value[0] = OCTET STRING with raw cert DER
-          const certBag = bag.asn1;
-          if (!Array.isArray(certBag?.value) || certBag.value.length < 2) continue;
-          const certValue = certBag.value[1];
-          if (!Array.isArray(certValue?.value) || certValue.value.length < 1) continue;
-          const certOctet = certValue.value[0];
-          if (typeof certOctet?.value === 'string' && certOctet.value.length > 64) {
-            results.push(certOctet.value); // original bytes — NOT re-encoded
-          }
-        } catch (_) { /* skip malformed bag */ }
+          // bag.asn1 = SafeBag → value[1].value[0].value = CertBag DER
+          const certBagDerStr = bag.asn1.value?.[1]?.value?.[0]?.value;
+          if (typeof certBagDerStr !== 'string' || certBagDerStr.length < 10) continue;
+          const certBagParsed = forge.asn1.fromDer(certBagDerStr);
+          const certDer = certBagParsed.value?.[1]?.value?.[0]?.value;
+          if (typeof certDer !== 'string' || certDer.length < 64) continue;
+          try { forge.pki.certificateFromAsn1(forge.asn1.fromDer(certDer)); results.push(certDer); } catch { /* skip */ }
+        } catch (_) { /* skip */ }
       }
     }
   } catch (_) { /* ignore */ }
+
+  if (results.length > 0) return results;
+
+  // ── Approach B: manual decryption from raw P12 ASN.1 bytes ───────────────
+  if (!p12DerStr || !password) return results;
+  try {
+    const pfx = forge.asn1.fromDer(p12DerStr);
+    const authSafeOctet = pfx.value?.[1]?.value?.[1]?.value?.[0];
+    if (typeof authSafeOctet?.value !== 'string') {
+      console.warn('[CertDer-B] No se pudo leer AuthenticatedSafe OCTET STRING del PFX');
+      return results;
+    }
+    const authSafe = forge.asn1.fromDer(authSafeOctet.value);
+
+    // forge.pkcs12.generateKey (and forge.pbe.getCipher which calls it internally)
+    // already handle the UTF-16 BE + null-terminator encoding (RFC 7292 §B.1).
+    // Do NOT pre-encode here — passing plain password is correct.
+
+    const ciList = Array.isArray(authSafe?.value) ? authSafe.value : [];
+    console.log(`[CertDer-B] AuthenticatedSafe tiene ${ciList.length} ContentInfos`);
+
+    for (const ci of ciList) {
+      try {
+        if (!Array.isArray(ci?.value) || ci.value.length < 2) continue;
+        if (ci.value[0]?.type !== 6) continue;
+        const ciOid = forge.asn1.derToOid(ci.value[0].value);
+        console.log(`[CertDer-B] ContentInfo OID: ${ciOid}`);
+        if (ciOid !== PKCS7_ENCRYPTED) continue;
+
+        // EncryptedData → EncryptedContentInfo
+        const encData = ci.value[1]?.value?.[0];
+        if (!Array.isArray(encData?.value) || encData.value.length < 2) {
+          console.warn('[CertDer-B] EncryptedData estructura inválida');
+          continue;
+        }
+        const eci = encData.value[1];
+        if (!Array.isArray(eci?.value) || eci.value.length < 2) {
+          console.warn('[CertDer-B] EncryptedContentInfo estructura inválida, len=', eci?.value?.length);
+          continue;
+        }
+
+        // AlgorithmIdentifier (PBE)
+        const algId = eci.value[1];
+        let pbeOid = '';
+        try { pbeOid = forge.asn1.derToOid(algId.value[0].value); } catch (e: any) {
+          console.warn('[CertDer-B] No se pudo leer pbeOid:', e.message); continue;
+        }
+        const pbeParams = algId.value[1];
+        console.log(`[CertDer-B] pbeOid=${pbeOid} pbeParams exists=${!!pbeParams}`);
+
+        // Encrypted content bytes
+        const encCtx = eci.value[2];
+        let encContent = '';
+        if (Array.isArray(encCtx?.value) && encCtx.value.length > 0) encContent = encCtx.value[0]?.value || '';
+        else if (typeof encCtx?.value === 'string') encContent = encCtx.value;
+        console.log(`[CertDer-B] encContent length=${encContent.length}`);
+        if (!encContent) { console.warn('[CertDer-B] encContent vacío'); continue; }
+
+        // ── Attempt 1: forge.pbe.getCipher (handles all forge PBE algorithms) ──
+        let decrypted: string | null = null;
+        const forgePbe = (forge as any).pbe;
+        if (forgePbe && typeof forgePbe.getCipher === 'function') {
+          try {
+            // forge.pbe.getCipher(oid, params, password) — pass plain password; forge encodes UTF-16 internally
+            const cipher = forgePbe.getCipher(pbeOid, pbeParams, password);
+            if (cipher) {
+              cipher.update(forge.util.createBuffer(encContent));
+              cipher.finish();
+              decrypted = cipher.output.getBytes();
+              console.log(`[CertDer-B] forge.pbe.getCipher OK, decrypted len=${decrypted.length}`);
+            }
+          } catch (pbeErr: any) {
+            console.warn('[CertDer-B] forge.pbe.getCipher error:', pbeErr.message);
+          }
+        }
+
+        // ── Attempt 2: manual PKCS#12 KDF + cipher (3DES / RC2) ─────────────
+        if (!decrypted && pbeParams) {
+          try {
+            const salt = pbeParams.value?.[0]?.value;
+            if (typeof salt !== 'string') throw new Error('salt not a string');
+            const iterBytes: string = pbeParams.value?.[1]?.value || '\x00\x01';
+            let iter = 0;
+            for (let i = 0; i < iterBytes.length; i++) iter = (iter << 8) | iterBytes.charCodeAt(i);
+            if (iter < 1) iter = 2048;
+            console.log(`[CertDer-B] salt len=${salt.length} iter=${iter}`);
+
+            const gk = (n: number) => forge.pkcs12.generateKey(password, salt, 1, iter, n, forge.md.sha1.create());
+            const giv = (n: number) => forge.pkcs12.generateKey(password, salt, 2, iter, n, forge.md.sha1.create());
+
+            let cipher: any = null;
+            if (pbeOid === PBE_SHA1_3DES) {
+              cipher = (forge.des as any).createDecryptionCipher(gk(24));
+              cipher.start(giv(8));
+            } else if (pbeOid === PBE_SHA1_RC2_128) {
+              cipher = (forge.rc2 as any).createDecryptionCipher(gk(16), 128);
+              cipher.start(giv(8));
+            } else if (pbeOid === PBE_SHA1_RC2_40) {
+              cipher = (forge.rc2 as any).createDecryptionCipher(gk(5), 40);
+              cipher.start(giv(8));
+            } else {
+              console.warn(`[CertDer-B] Algoritmo PBE no soportado manualmente: ${pbeOid}`);
+            }
+            if (cipher) {
+              cipher.update(forge.util.createBuffer(encContent));
+              cipher.finish();
+              decrypted = cipher.output.getBytes();
+              console.log(`[CertDer-B] Descifrado manual OK, decrypted len=${decrypted.length}`);
+            }
+          } catch (manErr: any) {
+            console.warn('[CertDer-B] Descifrado manual error:', manErr.message);
+          }
+        }
+
+        if (!decrypted) { console.warn('[CertDer-B] No se pudo descifrar'); continue; }
+
+        // Parse decrypted SafeContents and extract cert DERs
+        try {
+          const sc = forge.asn1.fromDer(decrypted);
+          const prevLen = results.length;
+          extractFromSafeContents(sc);
+          console.log(`[CertDer-B] extractFromSafeContents encontró ${results.length - prevLen} certs`);
+        } catch (scErr: any) {
+          console.warn('[CertDer-B] Error parseando SafeContents descifrado:', scErr.message);
+        }
+      } catch (ciErr: any) { console.warn('[CertDer-B] Error en ContentInfo:', ciErr.message); }
+    }
+  } catch (topErr: any) { console.warn('[CertDer-B] Error general:', topErr.message); }
+
   return results;
 }
 
@@ -454,7 +901,11 @@ async function firmarXMLXAdES(xmlSinFirmar: string, certData: any): Promise<stri
 
   if (certData.pkcs8_base64 && certData.rawCertDer_base64) {
     // ── Fast path: WebCrypto (< 100 ms) ──────────────────────────────────────
-    console.log('⚡ Firma rápida vía WebCrypto (PKCS#8 pre-extraído)');
+    const certDerBytes = forge.util.decode64(certData.rawCertDer_base64);
+    const certDerLen   = certDerBytes.length;
+    const certDerMd    = forge.md.sha1.create(); certDerMd.update(certDerBytes);
+    const certDerSha1  = forge.util.encode64(certDerMd.digest().getBytes());
+    console.log(`⚡ Fast path — certDer len=${certDerLen} sha1=${certDerSha1} (subido_en=${certData.subido_en || 'desconocido'})`);
     try {
       const pkcs8Bytes = Uint8Array.from(
         forge.util.decode64(certData.pkcs8_base64), (c: string) => c.charCodeAt(0)
@@ -464,7 +915,7 @@ async function firmarXMLXAdES(xmlSinFirmar: string, certData: any): Promise<stri
         { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-1' },
         false, ['sign']
       );
-      certDer = forge.util.decode64(certData.rawCertDer_base64);
+      certDer = certDerBytes;
       certificate = forge.pki.certificateFromAsn1(forge.asn1.fromDer(certDer));
     } catch (fastErr: any) {
       console.warn('⚠️ Fast path falló, usando P12 completo:', fastErr.message);
@@ -499,19 +950,31 @@ async function firmarXMLXAdES(xmlSinFirmar: string, certData: any): Promise<stri
 
     // Method 1: unencrypted bags
     let rawDersSlow = extractRawCertDersFromP12(p12Asn1);
-    // Method 2: encrypted bags (BCE, Security Data, ANF AC format)
+    // Method 2: encrypted bags — pass raw P12 bytes + password for manual decrypt fallback
     if (rawDersSlow.length === 0) {
-      rawDersSlow = extractRawCertDersFromForgeP12(p12);
+      rawDersSlow = extractRawCertDersFromForgeP12(p12, p12Der, certData.password);
       if (rawDersSlow.length > 0) {
         console.log('✅ [Firma] Raw DER extraído desde bags cifrados — slow path');
       } else {
         console.warn('⚠️ [Firma] Usando re-serialización del certificado — riesgo FIRMA INVALIDA');
       }
     }
+    // Strategy 1: non-CA cert from extracted DERs (matches signing cert by basicConstraints)
     certDer = rawDersSlow.find(der => {
+      try {
+        const c = forge.pki.certificateFromAsn1(forge.asn1.fromDer(der));
+        const bc = c.getExtension('basicConstraints') as any;
+        return !bc || !bc.cA;
+      }
+      catch { return false; }
+    })
+    // Strategy 2: serial number match
+    ?? rawDersSlow.find(der => {
       try { return forge.pki.certificateFromAsn1(forge.asn1.fromDer(der)).serialNumber === certificate.serialNumber; }
       catch { return false; }
-    }) ?? forge.asn1.toDer(forge.pki.certificateToAsn1(certificate)).getBytes();
+    })
+    // Last resort: re-serialization (risk: FIRMA INVALIDA)
+    ?? forge.asn1.toDer(forge.pki.certificateToAsn1(certificate)).getBytes();
   }
 
   // ── Certificate metadata ───────────────────────────────────────────────────
@@ -535,10 +998,16 @@ async function firmarXMLXAdES(xmlSinFirmar: string, certData: any): Promise<stri
   const exponentB64 = forge.util.encode64(bytesOf(pubKey.e.toByteArray()));
 
   // 7. Unique IDs
+  // SRI's FirmaXML (MITyCLibXADES) uses:
+  //   sigId   = "Signature" + generated-id
+  //   spId    = sigId + "-SignedProperties"
+  //   certKiId = "Certificate1"  ← FIXED suffix "1", NOT a timestamp (from FirmaXML.class)
+  //   refId   = "Reference-ID-" + generated-id
   const ts = Date.now();
   const sigId        = `Signature${ts}`;
   const spId         = `Signature${ts}-SignedProperties`;
-  const certKiId     = `Certificate${ts}`;
+  const certKiId     = `Certificate1`;           // SRI always uses "Certificate1" (fixed literal)
+  const refId        = `Reference-ID-${ts}`;   // Id for the comprobante ds:Reference
   const signingTime  = new Date().toISOString().substring(0, 19) + 'Z';
 
   // ── 8. Build elements ────────────────────────────────────────────────────
@@ -590,7 +1059,7 @@ async function firmarXMLXAdES(xmlSinFirmar: string, certData: any): Promise<stri
     `</xades:Cert></xades:SigningCertificate>` +
     `</xades:SignedSignatureProperties>` +
     `<xades:SignedDataObjectProperties>` +
-    `<xades:DataObjectFormat ObjectReference="#comprobante">` +
+    `<xades:DataObjectFormat ObjectReference="#${refId}">` +
     `<xades:Description>contenido comprobante</xades:Description>` +
     `<xades:MimeType>text/xml</xades:MimeType>` +
     `</xades:DataObjectFormat>` +
@@ -602,22 +1071,29 @@ async function firmarXMLXAdES(xmlSinFirmar: string, certData: any): Promise<stri
   // Reference 1: <factura id="comprobante"> — URI="#comprobante".
   // xmlSinFirmar has no <ds:Signature> yet; enveloped-signature transform = no-op.
   // <factura> is the root element, so no ancestor namespaces to inherit.
-  const docDigest      = sha1b64(c14n(xmlSinFirmar));
-
-  // Reference 2: KeyInfo — xmlns:ds declared on the element = matches SRI's C14N
-  const keyInfoDigest  = sha1b64(c14n(keyInfoXml));
-
-  // Reference 3: SignedProperties — xmlns:ds + xmlns:xades declared = matches SRI's C14N
-  const spDigest       = sha1b64(c14n(signedProps));
+  const c14nDoc     = c14n(xmlSinFirmar);
+  const c14nKI      = c14n(keyInfoXml);
+  const c14nSP      = c14n(signedProps);
+  const docDigest      = sha1b64(c14nDoc);
+  const keyInfoDigest  = sha1b64(c14nKI);
+  const spDigest       = sha1b64(c14nSP);
+  console.log(`[C14N] docDigest=${docDigest} (primeros 80: ${c14nDoc.substring(0,80)})`);
+  console.log(`[C14N] keyInfoDigest=${keyInfoDigest} (primeros 80: ${c14nKI.substring(0,80)})`);
+  console.log(`[C14N] spDigest=${spDigest} (primeros 120: ${c14nSP.substring(0,120)})`);
 
   // ── 10. Build SignedInfo ──────────────────────────────────────────────────
+  // Reference order confirmed from SRI FirmaXML.class (MITyCLibXADES) bytecode:
+  //   method call order: addDocument() → addKeyInfo() → appendObject(XAdES)
+  //   maps to Reference order:
+  //     1. Comprobante (document, URI="#comprobante")
+  //     2. KeyInfo/Certificate (URI="#Certificate1")
+  //     3. SignedProperties (Type="...#SignedProperties", URI="#...SignedProperties")
   // xmlns:ds declared here — SRI's C14N for RSA verification re-emits it.
-  // URI="#comprobante" — SRI requires a direct reference to the id="comprobante" node.
   const signedInfo =
     `<ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">` +
     `<ds:CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"></ds:CanonicalizationMethod>` +
     `<ds:SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"></ds:SignatureMethod>` +
-    `<ds:Reference Id="comprobante" URI="#comprobante">` +
+    `<ds:Reference Id="${refId}" URI="#comprobante">` +
     `<ds:Transforms>` +
     `<ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"></ds:Transform>` +
     `<ds:Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"></ds:Transform>` +
@@ -659,6 +1135,18 @@ async function firmarXMLXAdES(xmlSinFirmar: string, certData: any): Promise<stri
     sigValue = forge.util.encode64(forgePK.sign(sigMd));
   }
 
+  // ── Self-verify: confirm key matches cert before sending to SRI ──────────
+  try {
+    const verifyMd = forge.md.sha1.create();
+    verifyMd.update(forge.util.encodeUtf8(c14nSignedInfo));
+    const certPub = (forge.pki.certificateFromAsn1(forge.asn1.fromDer(certDer)) as any).publicKey;
+    const sigBytes = forge.util.decode64(sigValue);
+    const selfOk = certPub.verify(verifyMd.digest().bytes(), sigBytes);
+    console.log(`[Firma] Self-verify (clave↔cert): ${selfOk ? '✅ OK' : '❌ FALLO — clave no corresponde al cert'}`);
+  } catch (ve: any) {
+    console.warn('[Firma] Self-verify error:', ve.message);
+  }
+
   // ── 12. Assemble ds:Signature block ──────────────────────────────────────
   // In the assembled XML the inner elements have redundant namespace declarations,
   // but that is valid XML and does not affect verification (xmlns is idempotent).
@@ -694,7 +1182,7 @@ function utf8ToBase64(str: string): string {
   return btoa(binary);
 }
 
-async function enviarXMLAlSRI(xml: string, ambiente: string, timeoutMs = 10000): Promise<{ recibida: boolean; devuelta: boolean; errores: string[]; rawResponse?: string }> {
+async function enviarXMLAlSRI(xml: string, ambiente: string, timeoutMs = 10000): Promise<{ recibida: boolean; devuelta: boolean; claveYaRegistrada?: boolean; errores: string[]; rawResponse?: string }> {
   const sriUrl = ambiente === 'produccion'
     ? 'https://cel.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline'
     : 'https://celcer.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline';
@@ -728,10 +1216,18 @@ async function enviarXMLAlSRI(xml: string, ambiente: string, timeoutMs = 10000):
     const body = await resp.text();
     console.log('[SRI Recepcion] HTTP', resp.status, '| resp:', body.substring(0, 600));
 
-    const recibida = body.includes('RECIBIDA');
-    const devuelta = body.includes('DEVUELTA');
+    // "CLAVE ACCESO REGISTRADA" = el comprobante YA existe en SRI de un envío anterior.
+    // SRI lo devuelve como DEVUELTA, pero NO es un rechazo nuevo — el doc fue procesado antes.
+    // En este caso se debe ir directo al servicio de Autorización para ver el estado real.
+    const claveYaRegistrada =
+      body.includes('CLAVE ACCESO REGISTRADA') ||
+      body.includes('CLAVE DE ACCESO REGISTRADA');
+
+    const recibida = body.includes('RECIBIDA') || claveYaRegistrada;
+    // Sólo es DEVUELTA "real" si NO es el caso de clave ya registrada
+    const devuelta = body.includes('DEVUELTA') && !claveYaRegistrada;
     const errores = (devuelta || !recibida) ? parsearMensajesSRI(body) : [];
-    return { recibida, devuelta, errores, rawResponse: body.substring(0, 800) };
+    return { recibida, devuelta, claveYaRegistrada, errores, rawResponse: body.substring(0, 800) };
   } catch (err: any) {
     clearTimeout(timer);
     const detail = [err.name, err.message, err.cause?.message || String(err.cause || '')].filter(Boolean).join(' — ');
@@ -745,7 +1241,7 @@ async function enviarXMLAlSRI(xml: string, ambiente: string, timeoutMs = 10000):
 // ============================================================
 
 async function consultarAutorizacionSRI(claveAcceso: string, ambiente: string, timeoutMs = 12000): Promise<{
-  autorizado: boolean; numeroAutorizacion: string; fechaAutorizacion: string; mensajes: string[];
+  autorizado: boolean; numeroAutorizacion: string; fechaAutorizacion: string; mensajes: string[]; estadoSRI: string;
 }> {
   const sriUrl = ambiente === 'produccion'
     ? 'https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline'
@@ -792,16 +1288,16 @@ async function consultarAutorizacionSRI(claveAcceso: string, ambiente: string, t
     const mensajes = parsearMensajesSRI(body);
 
     if (!autorizado && estadoSRI) {
-      // Log the real SRI status to help diagnose rejections
-      console.warn(`[SRI Autorizacion] Estado SRI: "${estadoSRI}" — NO marcado como autorizado`);
+      // Log the real SRI status and mensajes to help diagnose rejections
+      console.warn(`[SRI Autorizacion] Estado SRI: "${estadoSRI}" — mensajes: ${JSON.stringify(mensajes)}`);
     }
 
-    return { autorizado, numeroAutorizacion, fechaAutorizacion, mensajes };
+    return { autorizado, numeroAutorizacion, fechaAutorizacion, mensajes, estadoSRI };
   } catch (err: any) {
     clearTimeout(timer);
     const detail = [err.name, err.message, err.cause?.message || String(err.cause || '')].filter(Boolean).join(' — ');
     console.error('[SRI Autorizacion] Error:', detail);
-    return { autorizado: false, numeroAutorizacion: '', fechaAutorizacion: '', mensajes: [`Error SRI autorizacion: ${detail}`] };
+    return { autorizado: false, numeroAutorizacion: '', fechaAutorizacion: '', mensajes: [`Error SRI autorizacion: ${detail}`], estadoSRI: '' };
   }
 }
 
@@ -853,9 +1349,9 @@ export async function handleUploadCertificado(req: Request, empresaId: string) {
       let rawDers = extractRawCertDersFromP12(p12Asn1);
 
       // Method 2: use forge's already-decrypted bag.asn1 (handles pkcs7-encryptedData bags
-      // used by BCE, Security Data, ANF AC — the standard Ecuador CA P12 format)
+      // used by BCE, Security Data, ANF AC — pass raw P12 bytes + password for manual decrypt fallback
       if (rawDers.length === 0) {
-        rawDers = extractRawCertDersFromForgeP12(p12);
+        rawDers = extractRawCertDersFromForgeP12(p12, p12Der, password);
         if (rawDers.length > 0) {
           console.log('✅ [Certificado] Raw DER extraído desde bags cifrados (pkcs7-encryptedData) — método forge');
         } else {
@@ -875,15 +1371,31 @@ export async function handleUploadCertificado(req: Request, empresaId: string) {
         }) || certs[0];
         const cert = endEntity.cert!;
 
-        // Match raw DER to the end-entity cert by serial number
-        const matchedDer = rawDers.find(der => {
+        // Strategy 1: find non-CA cert directly from extracted DERs (most reliable)
+        const endEntityDer = rawDers.find(der => {
+          try {
+            const c = forge.pki.certificateFromAsn1(forge.asn1.fromDer(der));
+            const bc = c.getExtension('basicConstraints') as any;
+            return !bc || !bc.cA;
+          }
+          catch { return false; }
+        });
+        // Strategy 2: match by serial number from p12.getBags (fallback)
+        const matchedBySerial = endEntityDer ? null : rawDers.find(der => {
           try { return forge.pki.certificateFromAsn1(forge.asn1.fromDer(der)).serialNumber === cert.serialNumber; }
           catch { return false; }
         });
-        // Only fall back to re-serialization if BOTH extraction methods failed
-        rawCertDer_base64 = matchedDer
-          ? forge.util.encode64(matchedDer)
-          : forge.util.encode64(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes());
+
+        if (endEntityDer) {
+          console.log('[Certificado] DER: end-entity cert encontrado por basicConstraints ✓');
+          rawCertDer_base64 = forge.util.encode64(endEntityDer);
+        } else if (matchedBySerial) {
+          console.log('[Certificado] DER: end-entity cert encontrado por serialNumber ✓');
+          rawCertDer_base64 = forge.util.encode64(matchedBySerial);
+        } else {
+          console.warn('[Certificado] DER: FALLBACK re-serialización — basicConstraints y serialNumber fallaron');
+          rawCertDer_base64 = forge.util.encode64(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes());
+        }
 
         const cn = cert.subject.attributes.find((a: any) => a.shortName === 'CN');
         const cnIssuer = cert.issuer.attributes.find((a: any) => a.shortName === 'CN');
@@ -909,23 +1421,23 @@ export async function handleUploadCertificado(req: Request, empresaId: string) {
       );
     }
 
-    await setKey(`empresa:${empresaId}:facturacion:certificado`, {
+    await setCert(empresaId, {
       p12_base64,
       password,
-      pkcs8_base64,          // pre-extracted for fast signing (avoids PBKDF2 on each invoice)
-      rawCertDer_base64,     // original DER without re-serialization (avoids FIRMA INVALIDA)
+      pkcs8_base64,
+      rawCertDer_base64,
       nombre: nombre || 'certificado.p12',
       info: certInfo,
       subido_en: new Date().toISOString(),
     });
 
     // Mark firma as active in config
-    const config = await getByKey(`empresa:${empresaId}:facturacion:config`);
+    const config = await getConfig(empresaId);
     if (config) {
       config.firma_electronica_activa = true;
       config.firma_electronica_nombre = nombre || 'certificado.p12';
       config.firma_electronica_validez = certInfo.valido_hasta || '';
-      await setKey(`empresa:${empresaId}:facturacion:config`, config);
+      await setConfig(empresaId, config);
     }
 
     console.log('✅ Certificado P12 cargado para empresa:', empresaId, certInfo);
@@ -944,7 +1456,7 @@ export async function handleUploadCertificado(req: Request, empresaId: string) {
 
 export async function handleGetCertificadoInfo(req: Request, empresaId: string) {
   try {
-    const cert = await getByKey(`empresa:${empresaId}:facturacion:certificado`);
+    const cert = await getCert(empresaId);
     if (!cert) {
       return new Response(JSON.stringify({ certificado: null }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -966,7 +1478,7 @@ export async function handleGetCertificadoInfo(req: Request, empresaId: string) 
 
 export async function handleGetConfiguracionFacturacion(req: Request, empresaId: string) {
   try {
-    const config = await getByKey(`empresa:${empresaId}:facturacion:config`);
+    const config = await getConfig(empresaId);
     return new Response(
       JSON.stringify({
         configuracion: config || {
@@ -1002,7 +1514,7 @@ export async function handleSaveConfiguracionFacturacion(req: Request, empresaId
       return new Response(JSON.stringify({ error: `RUC debe tener 13 dígitos (recibido: ${ruc.length})` }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
     config.ruc = ruc;
-    await setKey(`empresa:${empresaId}:facturacion:config`, config);
+    await setConfig(empresaId, config);
     console.log('✅ Config facturación guardada:', empresaId);
     return new Response(JSON.stringify({ success: true, mensaje: 'Configuración guardada' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error: any) {
@@ -1018,7 +1530,7 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
   try {
     const ventaData = await req.json();
 
-    const config = await getByKey(`empresa:${empresaId}:facturacion:config`);
+    const config = await getConfig(empresaId);
     if (!config || !config.ruc || !config.razon_social) {
       return new Response(
         JSON.stringify({ error: 'Configure el RUC y razón social antes de generar facturas', requiere_configuracion: true }),
@@ -1133,7 +1645,7 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
     let xmlParaEnviar = xmlSinFirmar;
 
     // ── Sign with XAdES-BES (if certificate loaded) ──────────
-    const certData = await getByKey(`empresa:${empresaId}:facturacion:certificado`);
+    const certData = await getCert(empresaId);
     const tieneCertificado = !!(certData?.p12_base64 && certData?.password);
 
     if (tieneCertificado) {
@@ -1152,23 +1664,29 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
 
     // ── Save before SRI call (preserve on network error) ────
     const facturaId = `FAC-${Date.now()}`;
-    await setKey(`empresa:${empresaId}:factura:${facturaId}`, factura);
+    await setFactura(empresaId, facturaId, factura);
     config.secuencial_actual += 1;
-    await setKey(`empresa:${empresaId}:facturacion:config`, config);
+    await setConfig(empresaId, config);
 
     // ── SRI Reception (fast path — no blocking authorization wait) ──────────
     // Short 10s timeout prevents Edge Function from timing out (60s limit).
     // Authorization is fetched separately via "Reintentar" in Consulta de Facturas.
     const ambienteStr = config.ambiente === 'produccion' ? 'produccion' : 'pruebas';
-    const { recibida, devuelta, errores } = await enviarXMLAlSRI(xmlParaEnviar, ambienteStr, 10000);
+    const { recibida, devuelta, claveYaRegistrada: claveReg, errores, rawResponse: rawRec } = await enviarXMLAlSRI(xmlParaEnviar, ambienteStr, 10000);
+    console.log(`[GenerarFactura] SRI recepcion → recibida=${recibida} devuelta=${devuelta} claveYaRegistrada=${claveReg} errores=${JSON.stringify(errores)}`);
 
-    if (devuelta) {
+    if (claveReg) {
+      // Clave ya registrada — el documento existe en SRI pero no fue autorizado antes
+      factura.estado = 'PENDIENTE';
+      factura.mensajes_sri = ['⚠️ Clave de acceso ya registrada en SRI — consultando autorización...'];
+    } else if (devuelta) {
       // SRI received but rejected the XML (invalid signature, format error, etc.)
       factura.estado = 'NO_AUTORIZADO';
       factura.estado_autorizacion = 'NO_AUTORIZADO';
       factura.mensajes_sri = errores.length > 0
         ? errores
-        : ['XML devuelto por el SRI. Verifique la firma electrónica y el formato del comprobante.'];
+        : ['❌ XML devuelto por SRI (DEVUELTA). Verifique la firma electrónica y el formato.'];
+      if (rawRec) factura.debug_sri_response = rawRec.substring(0, 500);
       console.log('❌ SRI rechazó el comprobante:', errores);
     } else if (recibida) {
       // RECIBIDA — don't block waiting for authorization; user retries from Consulta de Facturas
@@ -1189,7 +1707,7 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
       console.warn('⚠️ SRI sin respuesta:', motivo);
     }
 
-    await setKey(`empresa:${empresaId}:factura:${facturaId}`, factura);
+    await setFactura(empresaId, facturaId, factura);
     console.log('📄 Factura guardada:', facturaId, factura.estado);
 
     // ── Asiento contable automático de la factura ─────────────
@@ -1243,11 +1761,10 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
 
 export async function handleGetFacturas(req: Request, empresaId: string) {
   try {
-    const prefix = `empresa:${empresaId}:factura:`;
-    const entries = await getByPrefixWithKeys(prefix);
+    const entries = await listFacturas(empresaId);
 
     const facturas = entries.map(([key, value]: [string, any]) => {
-      const id = key.replace(prefix, '');
+      const id = key;
       const estado = value.estado || value.estado_autorizacion || 'PENDIENTE';
       return {
         ...value,
@@ -1281,52 +1798,97 @@ export async function handleGetFacturas(req: Request, empresaId: string) {
 // ============================================================
 
 async function autorizarCore(empresaId: string, facturaId: string): Promise<{ factura: any; error?: string; status?: number }> {
-  const factura = await getByKey(`empresa:${empresaId}:factura:${facturaId}`);
+  const factura = await getFactura(empresaId, facturaId);
   if (!factura) return { factura: null, error: 'Factura no encontrada', status: 404 };
 
-  const config = await getByKey(`empresa:${empresaId}:facturacion:config`);
+  const config = await getConfig(empresaId);
   if (!config) return { factura: null, error: 'Configuración de facturación no encontrada', status: 400 };
 
   const ambienteStr = config.ambiente === 'produccion' ? 'produccion' : 'pruebas';
 
-  // Rebuild XML if missing
-  let xml = factura.xml_firmado || factura.xml_sin_firmar || buildSRIXML(factura);
+  // ALWAYS re-sign on retry so the latest signing code is used.
+  // (Previous xml_firmado may have been generated by a broken/older signing version.)
+  const certData = await getCert(empresaId);
+  let xml = factura.xml_sin_firmar || buildSRIXML(factura);
 
-  // Try to re-sign if we have the cert
-  const certData = await getByKey(`empresa:${empresaId}:facturacion:certificado`);
-  if (certData?.p12_base64 && certData?.password && !factura.firmado_digitalmente) {
+  if (certData?.p12_base64 && certData?.password) {
     try {
-      const xmlBase = factura.xml_sin_firmar || buildSRIXML(factura);
-      xml = await firmarXMLXAdES(xmlBase, certData);
+      xml = await firmarXMLXAdES(xml, certData);
       factura.xml_firmado = xml;
       factura.firmado_digitalmente = true;
+      console.log('[autorizarCore] Re-firmado con código actual ✓');
     } catch (e: any) {
-      console.warn('Re-sign failed:', e.message);
+      console.warn('[autorizarCore] Re-sign falló, usando XML previo:', e.message);
+      xml = factura.xml_firmado || xml;
     }
+  } else {
+    xml = factura.xml_firmado || xml;
   }
 
   // Reception: 12s timeout; authorization: 12s timeout; total SRI budget ~25s
-  const { recibida, devuelta, errores } = await enviarXMLAlSRI(xml, ambienteStr, 12000);
+  const { recibida, devuelta, claveYaRegistrada, errores, rawResponse } = await enviarXMLAlSRI(xml, ambienteStr, 12000);
+  console.log(`[autorizarCore] SRI recepcion → recibida=${recibida} devuelta=${devuelta} claveYaRegistrada=${claveYaRegistrada} errores=${JSON.stringify(errores)}`);
 
-  if (devuelta && errores.length > 0) {
-    factura.estado = 'NO_AUTORIZADO';
-    factura.estado_autorizacion = 'NO_AUTORIZADO';
-    factura.mensajes_sri = errores;
-  } else if (recibida) {
-    // Short wait then query authorization
+  // Helper: consultar autorización y actualizar factura
+  const procesarAutorizacion = async (contexto: string) => {
     await new Promise(r => setTimeout(r, 1500));
     const auth = await consultarAutorizacionSRI(factura.clave_acceso, ambienteStr, 12000);
+    console.log(`[autorizarCore][${contexto}] auth → estadoSRI=${auth.estadoSRI} autorizado=${auth.autorizado} mensajes=${JSON.stringify(auth.mensajes)}`);
     if (auth.autorizado) {
       factura.estado = 'AUTORIZADO';
       factura.estado_autorizacion = 'AUTORIZADO';
       factura.numero_autorizacion = auth.numeroAutorizacion || factura.clave_acceso;
       factura.fecha_autorizacion = auth.fechaAutorizacion || new Date().toISOString();
       factura.mensajes_sri = auth.mensajes.length ? auth.mensajes : ['✅ AUTORIZADO por SRI'];
+    } else if (auth.estadoSRI === 'NO AUTORIZADO') {
+      console.warn(`[autorizarCore][${contexto}] NO AUTORIZADO definitivo. Mensajes:`, auth.mensajes);
+      factura.estado = 'NO_AUTORIZADO';
+      factura.estado_autorizacion = 'NO_AUTORIZADO';
+      // Filtrar mensaje "CLAVE ACCESO REGISTRADA" si hay otros mensajes más útiles
+      const mensajesUtiles = auth.mensajes.filter(m => !m.includes('CLAVE ACCESO REGISTRADA') && !m.includes('CLAVE DE ACCESO REGISTRADA'));
+      factura.mensajes_sri = mensajesUtiles.length > 0
+        ? mensajesUtiles
+        : auth.mensajes.length > 0
+        ? auth.mensajes
+        : ['❌ NO AUTORIZADO por SRI — verifique la firma electrónica del certificado'];
     } else {
+      console.log(`[autorizarCore][${contexto}] Pendiente. estadoSRI:`, auth.estadoSRI, 'mensajes:', auth.mensajes);
       factura.estado = 'PENDIENTE';
       factura.estado_autorizacion = 'PENDIENTE';
-      factura.mensajes_sri = auth.mensajes.length ? auth.mensajes : ['RECIBIDA — autorización pendiente. Reintente en unos segundos.'];
+      factura.mensajes_sri = auth.mensajes.length
+        ? auth.mensajes
+        : ['RECIBIDA — autorización pendiente. Reintente en unos segundos.'];
     }
+  };
+
+  if (claveYaRegistrada) {
+    // El comprobante ya existe en SRI de un envío anterior.
+    // No podemos re-enviarlo. Consultamos directamente el estado de autorización.
+    console.log('[autorizarCore] Clave ya registrada en SRI — consultando autorización directamente...');
+    factura.mensajes_sri = ['⏳ Comprobante ya registrado en SRI, consultando estado...'];
+    await procesarAutorizacion('claveRegistrada');
+
+    // Si SRI dice NO AUTORIZADO y no hay razón específica, agregar explicación
+    if (factura.estado === 'NO_AUTORIZADO') {
+      const tieneRazonEspecifica = (factura.mensajes_sri || []).some(
+        (m: string) => m.includes('FIRMA') || m.includes('RUC') || m.includes('SECUENCIAL') || m.includes('FECHA')
+      );
+      if (!tieneRazonEspecifica) {
+        factura.mensajes_sri = [
+          '❌ Comprobante rechazado por el SRI (firma electrónica inválida en el envío original)',
+          '💡 Este número de factura quedó bloqueado en SRI. Registre una nueva factura para esta venta.',
+        ];
+      }
+    }
+  } else if (devuelta) {
+    factura.estado = 'NO_AUTORIZADO';
+    factura.estado_autorizacion = 'NO_AUTORIZADO';
+    factura.mensajes_sri = errores.length > 0
+      ? errores
+      : ['❌ XML devuelto por SRI (DEVUELTA). Verifique la firma electrónica.'];
+    if (rawResponse) factura.debug_sri_response = rawResponse.substring(0, 500);
+  } else if (recibida) {
+    await procesarAutorizacion('recibida');
   } else if (!recibida && !devuelta) {
     // If we already have a clave_acceso, try querying authorization directly
     // (maybe SRI already received and authorized it from a previous send attempt)
@@ -1338,7 +1900,13 @@ async function autorizarCore(empresaId: string, facturaId: string): Promise<{ fa
       factura.numero_autorizacion = auth.numeroAutorizacion || factura.clave_acceso;
       factura.fecha_autorizacion = auth.fechaAutorizacion || new Date().toISOString();
       factura.mensajes_sri = auth.mensajes.length ? auth.mensajes : ['✅ AUTORIZADO por SRI'];
+    } else if (auth.estadoSRI === 'NO AUTORIZADO') {
+      console.warn('[autorizarCore] NO AUTORIZADO (consulta directa). Mensajes SRI:', auth.mensajes);
+      factura.estado = 'NO_AUTORIZADO';
+      factura.estado_autorizacion = 'NO_AUTORIZADO';
+      factura.mensajes_sri = auth.mensajes.length ? auth.mensajes : ['❌ NO AUTORIZADO por SRI'];
     } else {
+      // Could not reach SRI or pending state
       factura.estado = 'PENDIENTE';
       factura.estado_autorizacion = 'PENDIENTE';
       factura.mensajes_sri = errores.length > 0
@@ -1347,7 +1915,7 @@ async function autorizarCore(empresaId: string, facturaId: string): Promise<{ fa
     }
   }
 
-  await setKey(`empresa:${empresaId}:factura:${facturaId}`, factura);
+  await setFactura(empresaId, facturaId, factura);
   return { factura };
 }
 
@@ -1371,18 +1939,16 @@ export async function handleReintentarAutorizacion(req: Request, empresaId: stri
     const { factura_id } = await req.json();
     if (!factura_id) return new Response(JSON.stringify({ error: 'factura_id requerido' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
 
-    const check = await getByKey(`empresa:${empresaId}:factura:${factura_id}`);
+    const check = await getFactura(empresaId, factura_id);
     if (!check) return new Response(JSON.stringify({ error: 'Factura no encontrada' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
 
     check.reintentos = (check.reintentos || 0) + 1;
-    if (check.reintentos > 5) {
-      check.estado = 'ERROR';
-      check.estado_autorizacion = 'ERROR';
-      check.mensajes_sri = ['Máximo de reintentos alcanzado.'];
-      await setKey(`empresa:${empresaId}:factura:${factura_id}`, check);
-      return new Response(JSON.stringify({ success: false, error: 'Máximo de reintentos alcanzado', factura: check }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    // Reset estado if stuck in ERROR so autorizarCore can re-attempt
+    if (check.estado === 'ERROR') {
+      check.estado = 'PENDIENTE';
+      check.estado_autorizacion = 'PENDIENTE';
     }
-    await setKey(`empresa:${empresaId}:factura:${factura_id}`, check);
+    await setFactura(empresaId, factura_id, check);
 
     const result = await autorizarCore(empresaId, factura_id);
     if (result.error) return new Response(JSON.stringify({ error: result.error }), { status: result.status || 400, headers: { 'Content-Type': 'application/json' } });
@@ -1404,10 +1970,10 @@ export async function handleEnviarEmailFactura(req: Request, empresaId: string) 
       return new Response(JSON.stringify({ error: 'Email inválido' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
     if (emailData.factura_id) {
-      const f = await getByKey(`empresa:${empresaId}:factura:${emailData.factura_id}`);
+      const f = await getFactura(empresaId, emailData.factura_id);
       if (f) {
         f.email_enviado = true; f.email_enviado_en = new Date().toISOString(); f.email_destinatario = emailData.destinatario;
-        await setKey(`empresa:${empresaId}:factura:${emailData.factura_id}`, f);
+        await setFactura(empresaId, emailData.factura_id, f);
       }
     }
     return new Response(JSON.stringify({ success: true, mensaje: `Email enviado a ${emailData.destinatario}` }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -1419,12 +1985,12 @@ export async function handleEnviarEmailFactura(req: Request, empresaId: string) 
 export async function handleReenviarEmailFactura(req: Request, empresaId: string) {
   try {
     const { factura_id } = await req.json();
-    const f = await getByKey(`empresa:${empresaId}:factura:${factura_id}`);
+    const f = await getFactura(empresaId, factura_id);
     if (!f) return new Response(JSON.stringify({ error: 'Factura no encontrada' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
     if (!f.cliente_email) return new Response(JSON.stringify({ error: 'Cliente sin email' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
 
     f.email_enviado = true; f.email_enviado_en = new Date().toISOString(); f.email_destinatario = f.cliente_email;
-    await setKey(`empresa:${empresaId}:factura:${factura_id}`, f);
+    await setFactura(empresaId, factura_id, f);
 
     return new Response(JSON.stringify({ success: true, mensaje: `Email reenviado a ${f.cliente_email}` }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error: any) {
@@ -1502,8 +2068,8 @@ export async function handleTestSRI(req: Request, empresaId: string) {
   };
 
   // 4. Config info (no sensitive data)
-  const config = await getByKey(`empresa:${empresaId}:facturacion:config`);
-  const cert = await getByKey(`empresa:${empresaId}:facturacion:certificado`);
+  const config = await getConfig(empresaId);
+  const cert = await getCert(empresaId);
   results.configuracion = {
     tiene_config: !!config,
     ruc_configurado: !!(config?.ruc),
