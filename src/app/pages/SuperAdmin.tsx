@@ -217,6 +217,51 @@ export default function SuperAdmin() {
   const [loading, setLoading] = useState(true);
   const [empresaSeleccionada, setEmpresaSeleccionada] = useState<Empresa | null>(null);
   const [projectId, setProjectId] = useState('');
+  const [reparando, setReparando] = useState<string | null>(null);
+  const [resultadoReparacion, setResultadoReparacion] = useState<any>(null);
+
+  const callAdmin = async (pid: string, endpoint: string, method = 'GET') => {
+    const { publicAnonKey } = await import('/utils/supabase/info');
+    const res = await fetch(`https://${pid}.supabase.co/functions/v1/server${endpoint}`, {
+      method,
+      headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token! },
+    });
+    return res.json();
+  };
+
+  const ejecutarDiagnostico = async () => {
+    setReparando('diagnostico');
+    setResultadoReparacion(null);
+    try {
+      const data = await callAdmin(projectId, '/admin/diagnostico-completo');
+      setResultadoReparacion({ tipo: 'diagnostico', data });
+    } catch (e: any) {
+      toast.error('Error en diagnóstico: ' + e.message);
+    } finally { setReparando(null); }
+  };
+
+  const ejecutarFixPrecios = async () => {
+    setReparando('precios');
+    try {
+      const data = await callAdmin(projectId, '/admin/fix-precios');
+      setResultadoReparacion({ tipo: 'fix-precios', data });
+      toast.success('✅ Precios actualizados desde KV');
+    } catch (e: any) {
+      toast.error('Error: ' + e.message);
+    } finally { setReparando(null); }
+  };
+
+  const ejecutarRestaurar = async () => {
+    if (!confirm('⚠️ Esto borrará los datos actuales de SQL y los restaurará desde KV (backup). ¿Continuar?')) return;
+    setReparando('restaurar');
+    try {
+      const data = await callAdmin(projectId, '/admin/restaurar-desde-kv', 'POST');
+      setResultadoReparacion({ tipo: 'restaurar', data });
+      toast.success('✅ Datos restaurados desde KV');
+    } catch (e: any) {
+      toast.error('Error: ' + e.message);
+    } finally { setReparando(null); }
+  };
 
   useEffect(() => {
     if (user?.rol !== 'super_admin') return;
@@ -490,6 +535,53 @@ export default function SuperAdmin() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Panel de Recuperación de Datos ─────────────────────────────── */}
+      <Card className="bg-red-950/30 border-red-500/40">
+        <CardHeader>
+          <CardTitle className="text-red-400 flex items-center gap-2">
+            🛠️ Herramientas de Recuperación de Datos
+          </CardTitle>
+          <p className="text-gray-400 text-sm">
+            Úsalas si hubo pérdida de datos o errores tras la migración KV→SQL.
+            Los datos originales en KV están intactos y se pueden restaurar.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <Button
+              onClick={ejecutarDiagnostico}
+              disabled={!!reparando || !projectId}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {reparando === 'diagnostico' ? '⏳ Analizando...' : '🔍 Diagnóstico KV vs SQL'}
+            </Button>
+            <Button
+              onClick={ejecutarFixPrecios}
+              disabled={!!reparando || !projectId}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white"
+            >
+              {reparando === 'precios' ? '⏳ Actualizando...' : '💰 Restaurar Precios desde KV'}
+            </Button>
+            <Button
+              onClick={ejecutarRestaurar}
+              disabled={!!reparando || !projectId}
+              className="bg-red-700 hover:bg-red-800 text-white"
+            >
+              {reparando === 'restaurar' ? '⏳ Restaurando...' : '♻️ Restaurar Todos los Datos desde KV'}
+            </Button>
+          </div>
+
+          {resultadoReparacion && (
+            <div className="bg-black/40 rounded-lg p-4 text-xs font-mono text-green-300 max-h-64 overflow-auto">
+              <div className="text-gray-400 mb-2">
+                Resultado — {resultadoReparacion.tipo}:
+              </div>
+              <pre>{JSON.stringify(resultadoReparacion.data, null, 2)}</pre>
             </div>
           )}
         </CardContent>
