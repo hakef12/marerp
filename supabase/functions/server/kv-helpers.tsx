@@ -75,7 +75,7 @@ export async function limpiarTodosLosDatos(empresaId: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function obtenerProductos(empresaId: string) {
-  return sqlConFallback(
+  const productos = await sqlConFallback(
     async () => {
       const db = getDB();
       const { data, error } = await db.from('productos')
@@ -87,6 +87,15 @@ export async function obtenerProductos(empresaId: string) {
     },
     `empresa_${empresaId}_productos`
   );
+  // Normalizar campos de precio para compatibilidad KV ↔ SQL
+  return (productos || []).map((p: any) => ({
+    ...p,
+    precio_venta:   Number(p.precio_venta   || p.precio       || 0),
+    precio:         Number(p.precio         || p.precio_venta || 0),
+    precio_costo:   Number(p.precio_costo   || p.costo_unitario || 0),
+    costo_unitario: Number(p.costo_unitario || p.precio_costo || 0),
+    stock_actual:   Number(p.stock_actual   ?? p.stock ?? 0),
+  }));
 }
 
 export async function guardarProducto(empresaId: string, producto: any) {

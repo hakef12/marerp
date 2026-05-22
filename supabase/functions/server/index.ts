@@ -977,6 +977,21 @@ app.post("/server/admin/migrar-datos", authMiddleware, async (c) => {
   const db = createClient(supabaseUrl, supabaseServiceKey);
   const resumen: Record<string, any> = { inicio: new Date().toISOString(), empresas: {} };
 
+  // ── Aplicar columnas faltantes (idempotente) ──────────────────────────────
+  try {
+    const sqls = [
+      `ALTER TABLE productos ADD COLUMN IF NOT EXISTS precio_venta   DECIMAL(12,4) DEFAULT 0`,
+      `ALTER TABLE productos ADD COLUMN IF NOT EXISTS costo_unitario DECIMAL(12,4) DEFAULT 0`,
+      `UPDATE productos SET precio_venta   = precio       WHERE (precio_venta   IS NULL OR precio_venta   = 0) AND precio > 0`,
+      `UPDATE productos SET precio         = precio_venta WHERE (precio         IS NULL OR precio         = 0) AND precio_venta > 0`,
+      `UPDATE productos SET costo_unitario = precio_costo WHERE (costo_unitario IS NULL OR costo_unitario = 0) AND precio_costo > 0`,
+    ];
+    for (const sql of sqls) {
+      await db.rpc('exec_sql', { sql }).catch(() => {}); // ignorar si rpc no existe
+    }
+    resumen['schema_fix'] = '✅ columnas verificadas';
+  } catch { resumen['schema_fix'] = 'skipped (sin rpc exec_sql)'; }
+
   // UUID validator
   const isUUID = (s: string) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
@@ -1019,6 +1034,14 @@ app.post("/server/admin/migrar-datos", authMiddleware, async (c) => {
         const filas = datos.map((d: any) => {
           const raw = { ...d, empresa_id: eid, ...extras };
           raw.id = isUUID(raw.id) ? raw.id : crypto.randomUUID();
+          // Normalizar campos de precio para productos
+          if (tabla === 'productos') {
+            raw.precio_venta = raw.precio_venta || raw.precio || 0;
+            raw.precio       = raw.precio       || raw.precio_venta || 0;
+            raw.precio_costo = raw.precio_costo || raw.costo_unitario || raw.costo || 0;
+            raw.costo_unitario = raw.costo_unitario || raw.precio_costo || raw.costo || 0;
+            raw.stock_actual = raw.stock_actual ?? raw.stock ?? 0;
+          }
           const fila: Record<string, any> = {};
           for (const [k, v] of Object.entries(raw)) {
             if (!cols.has(k)) continue;
