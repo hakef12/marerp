@@ -929,6 +929,181 @@ app.get("/server/facturacion/certificado/info", authMiddleware, async (c) => {
   }
 });
 
+// ── GET /admin/diagnostico-completo — comparar KV vs SQL ────────────────────
+app.get("/server/admin/diagnostico-completo", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const eid = auth.empresaId;
+    const tablas = ['productos','recetas','ventas','compras','clientes','proveedores','empleados','movimientos_inventario','comandas'];
+    const resultado: Record<string, any> = { empresa_id: eid, kv: {}, sql: {} };
+    for (const t of tablas) {
+      const kvKey = `empresa_${eid}_${t === 'movimientos_inventario' ? 'movimientos' : t}`;
+      const kvData: any[] = (await kv.get(kvKey)) || [];
+      resultado.kv[t] = kvData.length;
+      const { count } = await db.from(t).select('*', { count: 'exact', head: true }).eq('empresa_id', eid);
+      resultado.sql[t] = count || 0;
+    }
+    // Muestra de productos con precio > 0 en KV
+    const prodsKV: any[] = (await kv.get(`empresa_${eid}_productos`)) || [];
+    resultado.productos_kv_con_precio = prodsKV.filter((p: any) => Number(p.precio_venta || p.precio || 0) > 0).length;
+    resultado.productos_kv_sin_precio = prodsKV.filter((p: any) => Number(p.precio_venta || p.precio || 0) === 0).length;
+    // Recetas con precio > 0 en KV
+    const recsKV: any[] = (await kv.get(`empresa_${eid}_recetas`)) || [];
+    resultado.recetas_kv_con_precio  = recsKV.filter((r: any) => Number(r.precio_venta || r.precio || 0) > 0).length;
+    // Compras en KV
+    const comprasKV: any[] = (await kv.get(`empresa_${eid}_compras`)) || [];
+    resultado.compras_kv_total = comprasKV.length;
+    resultado.compras_kv_monto = comprasKV.reduce((s: number, c: any) => s + (Number(c.total) || 0), 0).toFixed(2);
+    return c.json(resultado);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ── POST /admin/restaurar-desde-kv — re-sincroniza TODO desde KV ─────────────
+app.post("/server/admin/restaurar-desde-kv", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  const eid = auth.empresaId;
+  const res: Record<string, any> = {};
+  const isUUID = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+  // ── Productos ──────────────────────────────────────────────────────────────
+  try {
+    const datos: any[] = (await kv.get(`empresa_${eid}_productos`)) || [];
+    if (datos.length > 0) {
+      // Primero limpiar duplicados: borrar y re-insertar
+      await db.from('productos').delete().eq('empresa_id', eid);
+      const filas = datos.map((d: any) => ({
+        id: isUUID(d.id) ? d.id : crypto.randomUUID(),
+        empresa_id: eid,
+        nombre: d.nombre || 'Sin nombre',
+        descripcion: d.descripcion || null,
+        precio: Number(d.precio_venta || d.precio || 0),
+        precio_costo: Number(d.precio_costo || d.costo_unitario || d.costo || 0),
+        stock_actual: Number(d.stock_actual ?? d.stock ?? 0),
+        stock_minimo: Number(d.stock_minimo ?? 0),
+        unidad: d.unidad || 'und',
+        categoria: d.categoria || null,
+        codigo: d.codigo || null,
+        codigo_barras: d.codigo_barras || null,
+        imagen_url: d.imagen_url || null,
+        tiene_iva: d.tiene_iva ?? true,
+        es_compuesto: d.es_compuesto ?? false,
+        tipo: d.tipo || 'producto',
+        activo: d.activo ?? true,
+        metadata: d.metadata || {},
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await db.from('productos').insert(filas);
+      res.productos = error ? `ERROR: ${error.message}` : `✅ ${filas.length} restaurados`;
+    } else { res.productos = 'vacío en KV'; }
+  } catch (e: any) { res.productos = `ERROR: ${e.message}`; }
+
+  // ── Recetas ────────────────────────────────────────────────────────────────
+  try {
+    const datos: any[] = (await kv.get(`empresa_${eid}_recetas`)) || [];
+    if (datos.length > 0) {
+      await db.from('recetas').delete().eq('empresa_id', eid);
+      const filas = datos.map((d: any) => ({
+        id: isUUID(d.id) ? d.id : crypto.randomUUID(),
+        empresa_id: eid,
+        nombre: d.nombre || 'Sin nombre',
+        activo: d.activo ?? true,
+        producto_id: isUUID(d.producto_id) ? d.producto_id : null,
+        rendimiento: Number(d.rendimiento || 1),
+        costo_total: Number(d.costo_total || 0),
+        ingredientes: d.ingredientes || [],
+        categoria: d.categoria || null,
+        tiempo_preparacion: Number(d.tiempo_preparacion || 0),
+        porciones: Number(d.porciones || 1),
+        notas: d.notas || null,
+        metadata: { ...(d.metadata || {}), precio_venta: Number(d.precio_venta || d.precio || 0) },
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await db.from('recetas').insert(filas);
+      res.recetas = error ? `ERROR: ${error.message}` : `✅ ${filas.length} restauradas`;
+    } else { res.recetas = 'vacío en KV'; }
+  } catch (e: any) { res.recetas = `ERROR: ${e.message}`; }
+
+  // ── Compras ────────────────────────────────────────────────────────────────
+  try {
+    const datos: any[] = (await kv.get(`empresa_${eid}_compras`)) || [];
+    if (datos.length > 0) {
+      await db.from('compras').delete().eq('empresa_id', eid);
+      const filas = datos.map((d: any) => ({
+        id: isUUID(d.id) ? d.id : crypto.randomUUID(),
+        empresa_id: eid,
+        numero: d.numero || d.id,
+        proveedor_id: isUUID(d.proveedor_id) ? d.proveedor_id : null,
+        proveedor_nombre: d.proveedor_nombre || d.proveedor || null,
+        subtotal: Number(d.subtotal || 0),
+        iva: Number(d.iva || 0),
+        total: Number(d.total || 0),
+        estado: d.estado || 'pagado',
+        fecha: d.fecha || d.created_at || new Date().toISOString(),
+        items: d.items || [],
+        metadata: d.metadata || {},
+        estado_pago: d.estado_pago || 'pagado',
+        forma_pago: d.forma_pago || null,
+        notas: d.notas || null,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await db.from('compras').insert(filas);
+      res.compras = error ? `ERROR: ${error.message}` : `✅ ${filas.length} restauradas`;
+    } else { res.compras = 'vacío en KV'; }
+  } catch (e: any) { res.compras = `ERROR: ${e.message}`; }
+
+  // ── Clientes ───────────────────────────────────────────────────────────────
+  try {
+    const datos: any[] = (await kv.get(`empresa_${eid}_clientes`)) || [];
+    if (datos.length > 0) {
+      await db.from('clientes').delete().eq('empresa_id', eid);
+      const filas = datos.map((d: any) => ({
+        id: isUUID(d.id) ? d.id : crypto.randomUUID(),
+        empresa_id: eid,
+        nombre: d.nombre || 'Sin nombre',
+        identificacion: d.identificacion || d.ruc || d.cedula || null,
+        tipo_identificacion: d.tipo_identificacion || 'cedula',
+        email: d.email || null,
+        telefono: d.telefono || null,
+        direccion: d.direccion || null,
+        activo: d.activo ?? true,
+        metadata: d.metadata || {},
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await db.from('clientes').insert(filas);
+      res.clientes = error ? `ERROR: ${error.message}` : `✅ ${filas.length} restaurados`;
+    } else { res.clientes = 'vacío en KV'; }
+  } catch (e: any) { res.clientes = `ERROR: ${e.message}`; }
+
+  // ── Proveedores ────────────────────────────────────────────────────────────
+  try {
+    const datos: any[] = (await kv.get(`empresa_${eid}_proveedores`)) || [];
+    if (datos.length > 0) {
+      await db.from('proveedores').delete().eq('empresa_id', eid);
+      const filas = datos.map((d: any) => ({
+        id: isUUID(d.id) ? d.id : crypto.randomUUID(),
+        empresa_id: eid,
+        nombre: d.nombre || 'Sin nombre',
+        ruc: d.ruc || null,
+        contacto: d.contacto || null,
+        email: d.email || null,
+        telefono: d.telefono || null,
+        direccion: d.direccion || null,
+        activo: d.activo ?? true,
+        metadata: d.metadata || {},
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await db.from('proveedores').insert(filas);
+      res.proveedores = error ? `ERROR: ${error.message}` : `✅ ${filas.length} restaurados`;
+    } else { res.proveedores = 'vacío en KV'; }
+  } catch (e: any) { res.proveedores = `ERROR: ${e.message}`; }
+
+  return c.json({ ok: true, empresa_id: eid, resultado: res });
+});
+
 // ── GET /facturacion/diagnostico — ver qué hay en KV y SQL ──────────────────
 app.get("/server/facturacion/diagnostico", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
