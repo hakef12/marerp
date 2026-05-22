@@ -955,31 +955,44 @@ app.get("/server/facturacion/diagnostico", authMiddleware, async (c) => {
   }
 });
 
-// ── GET /admin/fix-precios — corrige precio=0 leyendo KV ────────────────────
+// ── GET /admin/fix-precios — corrige precio=0 en productos y recetas ────────
 app.get("/server/admin/fix-precios", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   const db = createClient(supabaseUrl, supabaseServiceKey);
+  const resultado: Record<string, any> = {};
   try {
-    // Leer productos del KV (fuente de verdad)
+    // ── 1. Productos ──────────────────────────────────────────────────────────
     const productosKV: any[] = (await kv.get(`empresa_${auth.empresaId}_productos`)) || [];
-    if (productosKV.length === 0) {
-      return c.json({ ok: false, mensaje: 'No hay productos en KV para sincronizar' });
-    }
-    let actualizados = 0;
-    let sinPrecio = 0;
+    let prodActualizados = 0, prodSinPrecio = 0;
     for (const p of productosKV) {
+      if (!p.id) continue;
       const precio = Number(p.precio_venta || p.precio || 0);
       const costo  = Number(p.precio_costo || p.costo_unitario || p.costo || 0);
-      if (precio === 0) { sinPrecio++; continue; }
-      if (!p.id) continue;
+      if (precio === 0) { prodSinPrecio++; continue; }
       await db.from('productos')
         .update({ precio, precio_costo: costo, updated_at: new Date().toISOString() })
         .eq('id', p.id).eq('empresa_id', auth.empresaId);
-      actualizados++;
+      prodActualizados++;
     }
-    return c.json({ ok: true, total_kv: productosKV.length, actualizados, sin_precio: sinPrecio });
+    resultado.productos = { total_kv: productosKV.length, actualizados: prodActualizados, sin_precio: prodSinPrecio };
+
+    // ── 2. Recetas ────────────────────────────────────────────────────────────
+    const recetasKV: any[] = (await kv.get(`empresa_${auth.empresaId}_recetas`)) || [];
+    let recActualizadas = 0, recSinPrecio = 0;
+    for (const r of recetasKV) {
+      if (!r.id) continue;
+      const precioVenta = Number(r.precio_venta || r.precio || r.precio_sugerido || 0);
+      if (precioVenta === 0) { recSinPrecio++; continue; }
+      await db.from('recetas')
+        .update({ precio_venta: precioVenta, updated_at: new Date().toISOString() })
+        .eq('id', r.id).eq('empresa_id', auth.empresaId);
+      recActualizadas++;
+    }
+    resultado.recetas = { total_kv: recetasKV.length, actualizadas: recActualizadas, sin_precio: recSinPrecio };
+
+    return c.json({ ok: true, ...resultado });
   } catch (e: any) {
-    return c.json({ ok: false, error: e.message }, 500);
+    return c.json({ ok: false, error: e.message, resultado }, 500);
   }
 });
 

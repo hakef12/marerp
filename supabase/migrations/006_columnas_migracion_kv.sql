@@ -3,6 +3,10 @@
 -- Ejecutar ANTES de re-correr el endpoint /admin/migrar-datos
 -- =====================================================================
 
+-- ── recetas ──────────────────────────────────────────────────────────
+ALTER TABLE recetas ADD COLUMN IF NOT EXISTS precio_venta    DECIMAL(12,4) DEFAULT 0;
+ALTER TABLE recetas ADD COLUMN IF NOT EXISTS precio_sugerido DECIMAL(12,4) DEFAULT 0;
+
 -- ── productos ─────────────────────────────────────────────────────────
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS codigo_barras    TEXT;
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS proveedor_id     UUID;
