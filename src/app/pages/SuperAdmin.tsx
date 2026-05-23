@@ -221,6 +221,7 @@ export default function SuperAdmin() {
   const [resultadoReparacion, setResultadoReparacion] = useState<any>(null);
   const [empresaReparar, setEmpresaReparar] = useState('');
   const [infoKV, setInfoKV] = useState<any>(null);
+  const [inspeccionKV, setInspeccionKV] = useState<any>(null);
 
   const callAdmin = async (pid: string, endpoint: string, method = 'GET') => {
     const { publicAnonKey } = await import('/utils/supabase/info');
@@ -247,6 +248,18 @@ export default function SuperAdmin() {
     } finally { setReparando(null); }
   };
 
+  const ejecutarInspeccion = async (eid: string) => {
+    setReparando('inspeccion-' + eid);
+    setInspeccionKV(null);
+    try {
+      const data = await callAdmin(projectId, `/admin/inspeccionar-kv?empresa_id=${eid}`);
+      setInspeccionKV({ empresa_id: eid, ...data });
+      setResultadoReparacion({ tipo: 'inspeccion', data });
+    } catch (e: any) {
+      toast.error('Error al inspeccionar KV: ' + e.message);
+    } finally { setReparando(null); }
+  };
+
   const ejecutarFixPrecios = async () => {
     const eid = empresaReparar;
     if (!eid) { toast.error('Selecciona una empresa primero'); return; }
@@ -262,12 +275,12 @@ export default function SuperAdmin() {
 
   const ejecutarRestaurar = async (eid: string) => {
     if (!eid) { toast.error('Selecciona una empresa'); return; }
-    if (!confirm(`⚠️ Esto restaurará los datos de la empresa ${eid} desde KV. ¿Continuar?`)) return;
+    if (!confirm(`⚠️ RESTAURACIÓN COMPLETA de empresa ${eid}\n\nEsto restaurará:\n• Productos (con precios)\n• Recetas/Fichas técnicas\n• Ventas históricas\n• Compras\n• Clientes\n• Proveedores (con RUC)\n• Bodegas\n\n¿Continuar?`)) return;
     setReparando('restaurar-' + eid);
     try {
-      const data = await callAdmin(projectId, `/admin/restaurar-desde-kv?empresa_id=${eid}`, 'POST');
+      const data = await callAdmin(projectId, `/admin/restaurar-completo?empresa_id=${eid}`, 'POST');
       setResultadoReparacion({ tipo: 'restaurar', empresa: eid, data });
-      toast.success('✅ Datos restaurados desde KV');
+      toast.success('✅ Restauración completa desde KV');
     } catch (e: any) {
       toast.error('Error: ' + e.message);
     } finally { setReparando(null); }
@@ -557,7 +570,7 @@ export default function SuperAdmin() {
             🛠️ Herramientas de Recuperación de Datos
           </CardTitle>
           <p className="text-gray-400 text-sm">
-            Los datos originales en KV están intactos. Usa estas herramientas para restaurarlos a SQL.
+            Los datos originales en KV están intactos. Restauración completa: productos, recetas, ventas, compras, clientes, proveedores y bodegas.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -573,33 +586,69 @@ export default function SuperAdmin() {
             <span className="text-gray-400 text-xs">Detecta qué empresas tienen datos en KV</span>
           </div>
 
-          {/* Paso 2: Seleccionar empresa y restaurar */}
+          {/* Paso 2: Por empresa */}
           {infoKV && Object.keys(infoKV).length > 0 && (
             <div className="space-y-3 border border-orange-500/30 rounded-lg p-4">
-              <p className="text-orange-300 text-sm font-semibold">Paso 2: Selecciona empresa a restaurar</p>
+              <p className="text-orange-300 text-sm font-semibold">Paso 2: Selecciona empresa</p>
               <div className="space-y-2">
                 {Object.entries(infoKV).map(([eid, datos]: [string, any]) => {
                   const total = (datos.productos || 0) + (datos.ventas || 0) + (datos.recetas || 0);
                   if (total === 0) return null;
                   const empresaInfo = empresas.find(e => e.id === eid);
                   return (
-                    <div key={eid} className="flex items-center justify-between bg-white/5 rounded-lg p-3">
-                      <div>
-                        <div className="text-white font-medium text-sm">
-                          {empresaInfo?.nombre || 'Empresa'} — <span className="text-gray-400 text-xs">{eid.substring(0,8)}...</span>
+                    <div key={eid} className="flex flex-col gap-2 bg-white/5 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-white font-medium text-sm">
+                            {empresaInfo?.nombre || 'Empresa'} — <span className="text-gray-400 text-xs">{eid.substring(0,8)}...</span>
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">
+                            {datos.productos} productos · {datos.recetas} recetas · {datos.ventas} ventas · {datos.compras} compras
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          {datos.productos} productos · {datos.recetas} recetas · {datos.ventas} ventas · {datos.compras} compras
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={() => ejecutarInspeccion(eid)}
+                            disabled={!!reparando}
+                            className="bg-yellow-700 hover:bg-yellow-800 text-white text-xs"
+                            size="sm"
+                          >
+                            {reparando === 'inspeccion-' + eid ? '⏳...' : '🔬 Inspeccionar'}
+                          </Button>
+                          <Button
+                            onClick={() => ejecutarRestaurar(eid)}
+                            disabled={!!reparando}
+                            className="bg-green-700 hover:bg-green-800 text-white text-xs"
+                            size="sm"
+                          >
+                            {reparando === 'restaurar-' + eid ? '⏳ Restaurando...' : '♻️ Restaurar TODO'}
+                          </Button>
                         </div>
                       </div>
-                      <Button
-                        onClick={() => ejecutarRestaurar(eid)}
-                        disabled={!!reparando}
-                        className="bg-green-700 hover:bg-green-800 text-white text-xs"
-                        size="sm"
-                      >
-                        {reparando === 'restaurar-' + eid ? '⏳ Restaurando...' : '♻️ Restaurar'}
-                      </Button>
+                      {/* Panel de inspección si aplica */}
+                      {inspeccionKV?.empresa_id === eid && (
+                        <div className="mt-2 space-y-1 text-xs">
+                          <p className="text-yellow-400 font-semibold">Campos detectados en KV:</p>
+                          {['productos','recetas','ventas','compras','proveedores','bodegas'].map(tabla => {
+                            const info = inspeccionKV[tabla];
+                            if (!info || info.total === 0) return null;
+                            return (
+                              <div key={tabla} className="bg-black/30 rounded px-2 py-1">
+                                <span className="text-gray-300">{tabla} ({info.total}):</span>{' '}
+                                <span className="text-green-400">{info.campos_muestra?.join(', ') || '—'}</span>
+                                {info.muestra?.[0] && (
+                                  <div className="text-gray-500 mt-0.5">
+                                    precio: <span className={info.muestra[0].precio || info.muestra[0].precio_venta ? 'text-green-400' : 'text-red-400'}>
+                                      {info.muestra[0].precio_venta ?? info.muestra[0].precio ?? '(vacío)'}
+                                    </span>
+                                    {tabla === 'proveedores' && <> | ruc: <span className={info.muestra[0].ruc ? 'text-green-400' : 'text-red-400'}>{info.muestra[0].ruc ?? '(vacío)'}</span></>}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -609,9 +658,21 @@ export default function SuperAdmin() {
 
           {/* Resultado */}
           {resultadoReparacion && (
-            <div className="bg-black/40 rounded-lg p-4 text-xs font-mono text-green-300 max-h-72 overflow-auto">
-              <div className="text-gray-400 mb-2">Resultado — {resultadoReparacion.tipo}{resultadoReparacion.empresa ? ` (${resultadoReparacion.empresa.substring(0,8)}...)` : ''}:</div>
-              <pre>{JSON.stringify(resultadoReparacion.data, null, 2)}</pre>
+            <div className="bg-black/40 rounded-lg p-4 text-xs font-mono text-green-300 max-h-96 overflow-auto">
+              <div className="text-gray-400 mb-2">
+                Resultado — {resultadoReparacion.tipo}
+                {resultadoReparacion.empresa ? ` (${resultadoReparacion.empresa.substring(0,8)}...)` : ''}:
+              </div>
+              {resultadoReparacion.tipo === 'restaurar' && resultadoReparacion.data?.resultado && (
+                <div className="space-y-1 mb-3">
+                  {Object.entries(resultadoReparacion.data.resultado).map(([tabla, estado]: [string, any]) => (
+                    <div key={tabla} className={`flex justify-between ${String(estado).startsWith('✅') ? 'text-green-400' : String(estado).startsWith('⚠️') ? 'text-yellow-400' : 'text-red-400'}`}>
+                      <span>{tabla}:</span><span>{String(estado)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <pre className="text-gray-400 text-[10px]">{JSON.stringify(resultadoReparacion.data, null, 2)}</pre>
             </div>
           )}
         </CardContent>
