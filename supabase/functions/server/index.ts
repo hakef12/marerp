@@ -1242,7 +1242,7 @@ app.post("/server/admin/restaurar-completo", authMiddleware, async (c) => {
           precio_costo: Number(d.precio_compra ?? d.precio_costo ?? d.costo_unitario ?? d.costo ?? meta.precio_compra ?? meta.precio_costo ?? 0),
           stock_actual: Number(d.stock_actual ?? d.stock ?? meta.stock_actual ?? 0),
           stock_minimo: Number(d.stock_minimo ?? d.stock_min ?? meta.stock_minimo ?? 0),
-          stock_maximo: Number(d.stock_maximo ?? d.stock_max ?? meta.stock_maximo ?? 0),
+          // stock_maximo NO existe en SQL — guardar solo en metadata
           // unidad_medida en KV (no "unidad")
           unidad: d.unidad_medida || d.unidad || meta.unidad_medida || meta.unidad || 'und',
           // categoria_id en KV (no "categoria")
@@ -1318,13 +1318,13 @@ app.post("/server/admin/restaurar-completo", authMiddleware, async (c) => {
           categoria: d.categoria || meta.categoria || null,
           tiempo_preparacion: Number(d.tiempo_preparacion || 0),
           porciones: Number(d.porciones || 1),
-          dificultad: d.dificultad || meta.dificultad || null,
+          // dificultad NO existe en SQL — guardar solo en metadata
           notas: d.instrucciones || d.notas || meta.notas || null,
           metadata: {
             ...meta,
             precio_venta: precioEfectivo,
             precio_sugerido: precioVenta,
-            dificultad: d.dificultad,
+            dificultad: d.dificultad,           // guardado en metadata
             instrucciones: d.instrucciones,
           },
           updated_at: d.updated_at || new Date().toISOString(),
@@ -1447,14 +1447,20 @@ app.post("/server/admin/restaurar-completo", authMiddleware, async (c) => {
           estado: d.estado || 'completada',
           items: d.items || d.productos || [],
           notas: d.notas || null,
-          cajero_id: isUUID(d.cajero_id) ? d.cajero_id : null,
-          mesa_id: isUUID(d.mesa_id) ? d.mesa_id : null,
-          fecha: d.fecha || d.created_at || new Date().toISOString(),
+          cajero_id: d.cajero_id || d.usuario_id || null,
+          // mesa_id NO existe en ventas SQL — usa campo "mesa" TEXT
+          mesa: d.mesa || null,
+          // tipo_servicio, bodega_id, numero_orden, anulada sí existen (desde migración 006)
+          tipo_servicio: d.tipo_servicio || null,
+          bodega_id: d.bodega_id || null,
+          anulada: d.anulada ?? false,
+          // fecha NO existe como columna — mapear a created_at para que el dashboard filtre bien
+          created_at: d.fecha || d.created_at || new Date().toISOString(),
           metadata: {
             ...meta,
             numero_ticket: d.numero_ticket,
             tipo_servicio: d.tipo_servicio,
-            bodega_id: d.bodega_id,
+            bodega_id_original: d.bodega_id,
             usuario_id: d.usuario_id,
             migrado_desde_kv: true,
           },
@@ -1507,24 +1513,17 @@ app.post("/server/admin/restaurar-completo", authMiddleware, async (c) => {
         const meta = d.metadata || {};
         const newId = isUUID(d.id) ? d.id : crypto.randomUUID();
         if (d.id) idMap[d.id] = newId;
+        // Solo insertar campos que existen en la tabla bodegas SQL
+        // La tabla usa: id, empresa_id, nombre, tipo, codigo, activa, direccion
         return {
           id: newId,
           empresa_id: eid,
           nombre: d.nombre || 'Bodega Principal',
-          descripcion: d.descripcion || d.direccion || meta.descripcion || null,
-          // activa en KV (no activo)
-          activo: d.activo ?? d.activa ?? true,
-          es_principal: d.es_principal ?? (d.tipo === 'principal') ?? true,
-          metadata: {
-            ...meta,
-            id_original: d.id,
-            tipo: d.tipo,
-            codigo: d.codigo,
-            responsable: d.responsable,
-            direccion: d.direccion,
-            migrado_desde_kv: true,
-          },
-          updated_at: d.updated_at || new Date().toISOString(),
+          // KV usa "activa" — SQL también usa "activa" (no "activo")
+          activa: d.activa ?? d.activo ?? true,
+          tipo: d.tipo || 'principal',
+          codigo: d.codigo || '001',
+          direccion: d.direccion || null,
         };
       });
       const { error } = await db.from('bodegas').insert(filas);
