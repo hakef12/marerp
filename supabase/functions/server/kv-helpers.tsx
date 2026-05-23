@@ -88,13 +88,23 @@ export async function obtenerProductos(empresaId: string) {
     `empresa_${empresaId}_productos`
   );
   // Normalizar campos de precio para compatibilidad KV ↔ SQL
+  // KV usa: precio_venta, precio_compra, unidad_medida, categoria_id
+  // SQL usa: precio, precio_costo, unidad, categoria
   return (productos || []).map((p: any) => ({
     ...p,
     precio_venta:   Number(p.precio_venta   || p.precio       || 0),
     precio:         Number(p.precio         || p.precio_venta || 0),
-    precio_costo:   Number(p.precio_costo   || p.costo_unitario || 0),
-    costo_unitario: Number(p.costo_unitario || p.precio_costo || 0),
+    // precio_compra es el campo KV equivalente a precio_costo/costo_unitario
+    precio_costo:   Number(p.precio_costo   || p.precio_compra || p.costo_unitario || 0),
+    costo_unitario: Number(p.costo_unitario || p.precio_costo  || p.precio_compra  || 0),
+    precio_compra:  Number(p.precio_compra  || p.precio_costo  || p.costo_unitario || 0),
     stock_actual:   Number(p.stock_actual   ?? p.stock ?? 0),
+    // Normalizar unidad
+    unidad:         p.unidad || p.unidad_medida || 'und',
+    unidad_medida:  p.unidad_medida || p.unidad || 'und',
+    // Normalizar categoria
+    categoria:      p.categoria || p.categoria_id || null,
+    categoria_id:   p.categoria_id || p.categoria || null,
   }));
 }
 
