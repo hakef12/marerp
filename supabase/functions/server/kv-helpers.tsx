@@ -302,7 +302,7 @@ export async function eliminarCliente(empresaId: string, clienteId: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function obtenerProveedores(empresaId: string) {
-  return sqlConFallback(
+  const proveedores = await sqlConFallback(
     async () => {
       const db = getDB();
       const { data, error } = await db.from('proveedores')
@@ -312,6 +312,14 @@ export async function obtenerProveedores(empresaId: string) {
     },
     `empresa_${empresaId}_proveedores`
   );
+  // Normalizar ruc/ruc_nit — SQL usa "ruc" pero la UI muestra "ruc_nit"
+  return (proveedores || []).map((p: any) => ({
+    ...p,
+    ruc_nit: p.ruc_nit || p.ruc || p.metadata?.ruc_nit || null,
+    ruc: p.ruc || p.ruc_nit || p.metadata?.ruc_nit || null,
+    dias_credito: Number(p.dias_credito ?? p.metadata?.dias_credito ?? 0),
+    limite_credito: Number(p.limite_credito ?? p.metadata?.limite_credito ?? 0),
+  }));
 }
 
 export async function guardarProveedor(empresaId: string, proveedor: any) {
@@ -339,7 +347,12 @@ export async function obtenerBodegas(empresaId: string) {
   const { data, error } = await db.from('bodegas')
     .select('*').eq('empresa_id', empresaId).order('nombre');
   if (error) throw error;
-  return data || [];
+  // Normalizar activo/activa — SQL usa "activo" pero el frontend filtra por "activa"
+  return (data || []).map((b: any) => ({
+    ...b,
+    activa: b.activa ?? b.activo ?? true,   // para BodegaContext.filter(b => b.activa)
+    activo: b.activo ?? b.activa ?? true,   // para otros usos
+  }));
 }
 
 export async function guardarBodega(empresaId: string, bodega: any) {
@@ -595,7 +608,7 @@ export async function guardarPresupuesto(empresaId: string, anio: number, items:
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function obtenerCompras(empresaId: string) {
-  return sqlConFallback(
+  const compras = await sqlConFallback(
     async () => {
       const db = getDB();
       const { data, error } = await db.from('compras')
@@ -606,6 +619,22 @@ export async function obtenerCompras(empresaId: string) {
     },
     `empresa_${empresaId}_compras`
   );
+  // Normalizar campos KV ↔ SQL
+  // SQL usa: total, numero, notas, forma_pago
+  // KV usaba: total_compra, numero_factura, observaciones, tipo_pago
+  // La UI del frontend lee: total_compra, numero_factura, observaciones, tipo_pago
+  return (compras || []).map((c: any) => ({
+    ...c,
+    total_compra: Number(c.total_compra ?? c.total ?? c.metadata?.total_compra ?? 0),
+    total: Number(c.total ?? c.total_compra ?? 0),
+    numero_factura: c.numero_factura || c.numero || c.metadata?.numero_factura || null,
+    numero: c.numero || c.numero_factura || null,
+    observaciones: c.observaciones || c.notas || c.metadata?.observaciones || null,
+    notas: c.notas || c.observaciones || null,
+    tipo_pago: c.tipo_pago || c.forma_pago || c.metadata?.tipo_pago || 'contado',
+    forma_pago: c.forma_pago || c.tipo_pago || 'contado',
+    saldo_pendiente: Number(c.saldo_pendiente ?? c.metadata?.saldo_pendiente ?? 0),
+  }));
 }
 
 export async function guardarCompra(empresaId: string, compra: any) {
