@@ -12,8 +12,8 @@ import {
   CheckCircle, XCircle, Clock, Printer,
 } from 'lucide-react';
 import { Pagination, PaginationContent, PaginationItem, PaginationPrevious, PaginationNext, PaginationLink } from '../components/ui/pagination';
+import { projectId } from '/utils/supabase/info';
 
-const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || 'ymxurlkqsxbmmkqsuoql';
 const BASE = `https://${projectId}.supabase.co/functions/v1/server`;
 
 // ── Helper badge de estado ───────────────────────────────────────────────────

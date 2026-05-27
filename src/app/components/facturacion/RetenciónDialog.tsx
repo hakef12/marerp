@@ -8,8 +8,8 @@ import { Badge } from '../ui/badge';
 import { FileCheck, Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
+import { projectId } from '/utils/supabase/info';
 
-const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || 'ymxurlkqsxbmmkqsuoql';
 const BASE = `https://${projectId}.supabase.co/functions/v1/server`;
 
 // ── Catálogo de tipos de retención ──────────────────────────────────────────
