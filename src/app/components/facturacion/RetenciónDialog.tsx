@@ -36,11 +36,14 @@ interface RetenciónDialogProps {
   compra: {
     id: string;
     numero_factura?: string;
+    numero?: string;
     fecha?: string;
+    created_at?: string;
     subtotal?: number;
     iva?: number;
     total_iva?: number;
     total_compra?: number;
+    total?: number;
     proveedor?: {
       nombre?: string;
       ruc?: string;
@@ -58,14 +61,30 @@ export function RetenciónDialog({ open, onOpenChange, compra, onSuccess }: Rete
   const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
 
   // ── Datos proveedor (de la compra) ──────────────────────────────────────
-  const provNombre = compra.proveedor?.nombre || compra.metadata?.proveedor_nombre || '';
-  const provRUC    = compra.proveedor?.ruc || compra.metadata?.proveedor_ruc || compra.proveedor?.identificacion || '';
-  const provTipo   = compra.proveedor?.tipo_identificacion || '04';
+  const provNombre = compra.proveedor?.nombre
+    || compra.metadata?.proveedor_nombre
+    || compra.metadata?.info_sri?.razonSocialEmisor
+    || '';
+  const provRUC = compra.proveedor?.ruc
+    || compra.proveedor?.identificacion
+    || compra.metadata?.proveedor_ruc
+    || compra.metadata?.info_sri?.rucEmisor
+    || '';
+  const provTipo = compra.proveedor?.tipo_identificacion || '04';
 
-  // ── Base imponible IR = subtotal (sin IVA) ──────────────────────────────
-  const baseIR  = Number(compra.subtotal || (compra.total_compra || 0) / 1.15 || 0);
+  // ── Base imponible IR = total sin impuestos (subtotal) ──────────────────
+  const baseIR = Number(
+    compra.metadata?.total_sin_impuestos
+    || compra.subtotal
+    || (compra.total_compra ? compra.total_compra / 1.15 : 0)
+  );
   // ── Base IVA = iva pagado en la compra ──────────────────────────────────
-  const baseIVA = Number(compra.iva || compra.total_iva || compra.metadata?.iva || 0);
+  const baseIVA = Number(
+    compra.metadata?.total_iva
+    || compra.iva
+    || compra.total_iva
+    || 0
+  );
 
   // ── Estado del formulario ────────────────────────────────────────────────
   const [tipoIR,        setTipoIR]        = useState('');
@@ -80,11 +99,17 @@ export function RetenciónDialog({ open, onOpenChange, compra, onSuccess }: Rete
 
   const [loading, setLoading] = useState(false);
 
-  // Recalcular al cambiar compra
+  // Recalcular al cambiar compra o al abrir
   useEffect(() => {
     setBaseIRVal(baseIR.toFixed(2));
     setBaseIVAVal(baseIVA.toFixed(2));
-  }, [compra.id]);
+    setTipoIR('');
+    setCodigoIR('');
+    setPorcentajeIR('');
+    setTipoIVA('');
+    setCodigoIVA('');
+    setPorcentajeIVA('');
+  }, [compra.id, open]);
 
   // Sincronizar preset IR
   const handleTipoIRChange = (val: string) => {
@@ -177,8 +202,8 @@ export function RetenciónDialog({ open, onOpenChange, compra, onSuccess }: Rete
           proveedor_tipo_id:         provTipo,
           proveedor_razon_social:    provNombre,
           doc_sustento_tipo:         '01',
-          doc_sustento_numero:       compra.numero_factura || '',
-          doc_sustento_fecha:        compra.fecha || '',
+          doc_sustento_numero:       compra.numero_factura || compra.numero || '',
+          doc_sustento_fecha:        compra.fecha || compra.created_at?.split('T')[0] || '',
           impuestos,
         }),
       });
@@ -236,7 +261,11 @@ export function RetenciónDialog({ open, onOpenChange, compra, onSuccess }: Rete
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">N° Factura:</span>
-              <span className="font-mono text-gray-700">{compra.numero_factura || '—'}</span>
+              <span className="font-mono text-gray-700">{compra.numero_factura || compra.numero || '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Fecha:</span>
+              <span className="text-gray-700">{compra.fecha ? new Date(compra.fecha).toLocaleDateString('es-EC') : compra.created_at ? new Date(compra.created_at).toLocaleDateString('es-EC') : '—'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Subtotal (sin IVA):</span>
@@ -245,6 +274,10 @@ export function RetenciónDialog({ open, onOpenChange, compra, onSuccess }: Rete
             <div className="flex justify-between">
               <span className="text-gray-500">IVA pagado:</span>
               <span className="text-gray-900">${baseIVA.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-medium">
+              <span className="text-gray-500">Total compra:</span>
+              <span className="text-[#F97316]">${Number(compra.total_compra || compra.total || 0).toFixed(2)}</span>
             </div>
           </div>
 
