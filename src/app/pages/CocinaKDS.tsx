@@ -46,7 +46,7 @@ export default function CocinaKDS({
       {/* PENDIENTES */}
       <div className="flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-bold flex items-center gap-2">
+          <h3 className="text-gray-900 font-bold flex items-center gap-2">
             <Bell className="w-5 h-5 text-orange-400" />
             Pendientes
             <Badge className="bg-orange-500/20 text-orange-400">{stats.pendientes}</Badge>
@@ -55,8 +55,8 @@ export default function CocinaKDS({
         <ScrollArea className="flex-1 h-[calc(100vh-400px)]">
           <div className="space-y-3 pr-4">
             {stats.pendientes === 0 ? (
-              <Card className="bg-[#0A1A2F]/60 border-[#00E5FF]/20">
-                <CardContent className="p-6 text-center text-gray-400">
+              <Card className="bg-white border-[#F97316]/20">
+                <CardContent className="p-6 text-center text-gray-600">
                   <Clock className="w-12 h-12 mx-auto mb-2 opacity-30" />
                   Sin comandas pendientes
                 </CardContent>
@@ -71,7 +71,7 @@ export default function CocinaKDS({
                 return (
                   <Card 
                     key={comanda.id} 
-                    className={`bg-[#0A1A2F]/80 border-2 transition-all ${
+                    className={`bg-white border-2 transition-all ${
                       esUrgente 
                         ? 'border-red-500/50 shadow-lg shadow-red-500/20' 
                         : 'border-orange-500/30'
@@ -80,7 +80,7 @@ export default function CocinaKDS({
                     <CardHeader className="pb-3 bg-gradient-to-r from-orange-500/10 to-transparent">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <CardTitle className="text-white text-xl font-bold flex items-center gap-2">
+                          <CardTitle className="text-gray-900 text-xl font-bold flex items-center gap-2">
                             {comanda.mesa ? `Mesa ${comanda.mesa}` : comanda.numero_orden || 'Sin Mesa'}
                             {esUrgente && (
                               <Badge className="bg-red-500 text-white">
@@ -89,7 +89,7 @@ export default function CocinaKDS({
                             )}
                           </CardTitle>
                           {comanda.cliente && (
-                            <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
+                            <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
                               <Users className="w-3 h-3" />
                               {comanda.cliente}
                             </p>
@@ -102,7 +102,7 @@ export default function CocinaKDS({
                           <div className={`text-2xl font-black ${getTimeColor(tiempoTranscurrido)}`}>
                             {formatTime(tiempoTranscurrido)}
                           </div>
-                          <p className="text-xs text-gray-500">Esperando</p>
+                          <p className="text-xs text-gray-600">Esperando</p>
                         </div>
                       </div>
                     </CardHeader>
@@ -110,11 +110,11 @@ export default function CocinaKDS({
                       {/* Items */}
                       <div className="space-y-2">
                         {comanda.items?.map((item: any, i: number) => (
-                          <div key={i} className="bg-white/5 rounded-lg p-3">
+                          <div key={i} className="bg-gray-50 rounded-lg p-3">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
-                                <p className="text-white font-bold">
-                                  <span className="text-[#00E5FF] text-lg mr-2">{item.cantidad}x</span>
+                                <p className="text-gray-900 font-bold">
+                                  <span className="text-[#F97316] text-lg mr-2">{item.cantidad}x</span>
                                   {item.nombre}
                                 </p>
                                 {item.notas && (
@@ -138,9 +138,9 @@ export default function CocinaKDS({
                       )}
 
                       {/* Items totales */}
-                      <div className="flex items-center justify-between text-sm pt-2 border-t border-white/5">
-                        <span className="text-gray-400">Items totales:</span>
-                        <span className="text-white font-bold">
+                      <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-100">
+                        <span className="text-gray-600">Items totales:</span>
+                        <span className="text-gray-900 font-bold">
                           {comanda.items?.reduce((sum: number, item: any) => sum + (item.cantidad || 0), 0) || 0}
                         </span>
                       </div>
@@ -148,7 +148,7 @@ export default function CocinaKDS({
                       {/* Botón */}
                       <Button
                         onClick={() => cambiarEstado(comanda.id, 'en_preparacion')}
-                        className="w-full mt-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold"
+                        className="w-full mt-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-gray-900 font-bold"
                       >
                         <Flame className="w-4 h-4 mr-2" />
                         Iniciar Preparación
@@ -165,7 +165,7 @@ export default function CocinaKDS({
       {/* EN PREPARACIÓN */}
       <div className="flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-bold flex items-center gap-2">
+          <h3 className="text-gray-900 font-bold flex items-center gap-2">
             <Flame className="w-5 h-5 text-blue-400" />
             En Preparación
             <Badge className="bg-blue-500/20 text-blue-400">{stats.enPreparacion}</Badge>
@@ -174,8 +174,8 @@ export default function CocinaKDS({
         <ScrollArea className="flex-1 h-[calc(100vh-400px)]">
           <div className="space-y-3 pr-4">
             {stats.enPreparacion === 0 ? (
-              <Card className="bg-[#0A1A2F]/60 border-[#00E5FF]/20">
-                <CardContent className="p-6 text-center text-gray-400">
+              <Card className="bg-white border-[#F97316]/20">
+                <CardContent className="p-6 text-center text-gray-600">
                   <Flame className="w-12 h-12 mx-auto mb-2 opacity-30" />
                   Sin comandas en preparación
                 </CardContent>
@@ -189,16 +189,16 @@ export default function CocinaKDS({
                 return (
                   <Card 
                     key={comanda.id} 
-                    className="bg-[#0A1A2F]/80 border-blue-500/30 border-2 shadow-lg shadow-blue-500/10"
+                    className="bg-white border-blue-500/30 border-2 shadow-lg shadow-blue-500/10"
                   >
                     <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-transparent">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <CardTitle className="text-white text-xl font-bold">
+                          <CardTitle className="text-gray-900 text-xl font-bold">
                             {comanda.mesa ? `Mesa ${comanda.mesa}` : comanda.numero_orden || 'Sin Mesa'}
                           </CardTitle>
                           {comanda.cliente && (
-                            <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
+                            <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
                               <Users className="w-3 h-3" />
                               {comanda.cliente}
                             </p>
@@ -211,7 +211,7 @@ export default function CocinaKDS({
                           <div className={`text-2xl font-black ${getTimeColor(tiempoTranscurrido)}`}>
                             {formatTime(tiempoTranscurrido)}
                           </div>
-                          <p className="text-xs text-gray-500">Cocinando</p>
+                          <p className="text-xs text-gray-600">Cocinando</p>
                         </div>
                       </div>
                     </CardHeader>
@@ -219,11 +219,11 @@ export default function CocinaKDS({
                       {/* Items */}
                       <div className="space-y-2">
                         {comanda.items?.map((item: any, i: number) => (
-                          <div key={i} className="bg-white/5 rounded-lg p-3">
+                          <div key={i} className="bg-gray-50 rounded-lg p-3">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
-                                <p className="text-white font-bold">
-                                  <span className="text-[#00E5FF] text-lg mr-2">{item.cantidad}x</span>
+                                <p className="text-gray-900 font-bold">
+                                  <span className="text-[#F97316] text-lg mr-2">{item.cantidad}x</span>
                                   {item.nombre}
                                 </p>
                                 {item.notas && (
@@ -249,7 +249,7 @@ export default function CocinaKDS({
                       {/* Botón */}
                       <Button
                         onClick={() => cambiarEstado(comanda.id, 'lista')}
-                        className="w-full mt-3 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-bold"
+                        className="w-full mt-3 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-gray-900 font-bold"
                       >
                         <CheckCircle className="w-4 h-4 mr-2" />
                         Marcar como Lista
@@ -266,7 +266,7 @@ export default function CocinaKDS({
       {/* LISTAS */}
       <div className="flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-bold flex items-center gap-2">
+          <h3 className="text-gray-900 font-bold flex items-center gap-2">
             <CheckCircle className="w-5 h-5 text-green-400" />
             Listas para Servir
             <Badge className="bg-green-500/20 text-green-400">{stats.listas}</Badge>
@@ -275,8 +275,8 @@ export default function CocinaKDS({
         <ScrollArea className="flex-1 h-[calc(100vh-400px)]">
           <div className="space-y-3 pr-4">
             {stats.listas === 0 ? (
-              <Card className="bg-[#0A1A2F]/60 border-[#00E5FF]/20">
-                <CardContent className="p-6 text-center text-gray-400">
+              <Card className="bg-white border-[#F97316]/20">
+                <CardContent className="p-6 text-center text-gray-600">
                   <CheckCircle className="w-12 h-12 mx-auto mb-2 opacity-30" />
                   Sin comandas listas
                 </CardContent>
@@ -297,19 +297,19 @@ export default function CocinaKDS({
                 return (
                   <Card 
                     key={comanda.id} 
-                    className="bg-[#0A1A2F]/80 border-green-500/30 border-2 shadow-lg shadow-green-500/10"
+                    className="bg-white border-green-500/30 border-2 shadow-lg shadow-green-500/10"
                   >
                     <CardHeader className="pb-3 bg-gradient-to-r from-green-500/10 to-transparent">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <CardTitle className="text-white text-xl font-bold flex items-center gap-2">
+                          <CardTitle className="text-gray-900 text-xl font-bold flex items-center gap-2">
                             {comanda.mesa ? `Mesa ${comanda.mesa}` : comanda.numero_orden || 'Sin Mesa'}
-                            <Badge className="bg-green-500 text-white">
+                            <Badge className="bg-green-500 text-gray-900">
                               ✓ LISTA
                             </Badge>
                           </CardTitle>
                           {comanda.cliente && (
-                            <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
+                            <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
                               <Users className="w-3 h-3" />
                               {comanda.cliente}
                             </p>
@@ -319,7 +319,7 @@ export default function CocinaKDS({
                           <div className="text-2xl font-black text-green-400">
                             {formatTime(tiempoTotal)}
                           </div>
-                          <p className="text-xs text-gray-500">Tiempo total</p>
+                          <p className="text-xs text-gray-600">Tiempo total</p>
                         </div>
                       </div>
                     </CardHeader>
@@ -328,7 +328,7 @@ export default function CocinaKDS({
                       <div className="space-y-2">
                         {comanda.items?.map((item: any, i: number) => (
                           <div key={i} className="bg-green-500/5 rounded-lg p-3 border border-green-500/20">
-                            <p className="text-white font-bold">
+                            <p className="text-gray-900 font-bold">
                               <span className="text-green-400 text-lg mr-2">✓ {item.cantidad}x</span>
                               {item.nombre}
                             </p>

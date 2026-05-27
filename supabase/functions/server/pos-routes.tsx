@@ -9,6 +9,7 @@ import {
   obtenerVentas,
   guardarVenta,
   guardarMovimiento,
+  registrarAsientoAutomatico,
 } from "./kv-helpers.tsx";
 
 const ROLES_ADMIN = ['gerente', 'admin', 'super_admin'];
@@ -118,6 +119,44 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
         }
       }
 
+      // ── Asiento contable de la venta ─────────────────────────────
+      try {
+        const totalVenta    = Number(venta.total || venta.monto_total || 0);
+        const ivaVenta      = Number(venta.iva   || venta.total_iva   || 0);
+        const subtotalVenta = parseFloat((totalVenta - ivaVenta).toFixed(2));
+        const fechaVenta    = (venta.fecha || new Date().toISOString()).split('T')[0];
+        const refVenta      = venta.numero_ticket || venta.id;
+
+        if (totalVenta > 0) {
+          // Cuenta de ingreso según método de pago
+          // 1.1.01 = Caja (efectivo / tarjeta registrada en caja)
+          const cuentaDebito = '1.1.01';
+
+          const asientoItems: any[] = [];
+          asientoItems.push({ codigo: cuentaDebito, debito: parseFloat(totalVenta.toFixed(2)), descripcion: `Cobro venta ${refVenta}` });
+
+          if (ivaVenta > 0 && subtotalVenta > 0) {
+            // Venta con IVA: separar ingreso e impuesto
+            asientoItems.push({ codigo: '4.1.01', credito: parseFloat(subtotalVenta.toFixed(2)), descripcion: 'Ingreso por ventas' });
+            asientoItems.push({ codigo: '2.1.03', credito: parseFloat(ivaVenta.toFixed(2)),      descripcion: 'IVA en ventas por pagar' });
+          } else {
+            // Venta sin IVA o 0%
+            asientoItems.push({ codigo: '4.1.02', credito: parseFloat(totalVenta.toFixed(2)), descripcion: 'Ingreso por ventas (tarifa 0%)' });
+          }
+
+          await registrarAsientoAutomatico(auth.empresaId, {
+            tipo:        'venta_pos',
+            descripcion: `Venta ${refVenta}`,
+            referencia:  String(venta.id),
+            fecha:       fechaVenta,
+            items:       asientoItems,
+          });
+        }
+      } catch (asientoErr: any) {
+        // El asiento falla silenciosamente para no bloquear la venta
+        console.error('[POS] Error asiento venta:', asientoErr?.message);
+      }
+
       // NOTA: El registro en caja lo hace el frontend directamente vía POST /caja/movimiento
       // para garantizar visibilidad y evitar problemas de KV dentro de la misma invocación.
 
@@ -205,18 +244,39 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
   app.get("/server/pos/ventas", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
-      const fechaInicio = c.req.query('fecha_inicio');
-      const fechaFin = c.req.query('fecha_fin');
-      const incluirAnuladas = c.req.query('incluir_anuladas') === 'true';
+      const db = getDB();
+      const {
+        fecha_inicio, fecha_fin,
+        incluir_anuladas,
+        page = '1', limit = '50',
+      } = c.req.query() as any;
 
-      let ventas = await obtenerVentas(auth.empresaId);
+      const pageNum  = Math.max(1, parseInt(page)  || 1);
+      const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 50));
+      const from = (pageNum - 1) * limitNum;
+      const to   = from + limitNum - 1;
 
-      if (!incluirAnuladas) ventas = ventas.filter((v: any) => !v.anulada);
-      if (fechaInicio) ventas = ventas.filter((v: any) => v.fecha >= fechaInicio);
-      if (fechaFin) ventas = ventas.filter((v: any) => v.fecha <= fechaFin);
+      let q = db.from('ventas')
+        .select('*', { count: 'exact' })
+        .eq('empresa_id', auth.empresaId)
+        .order('fecha', { ascending: false })
+        .order('created_at', { ascending: false })
+        .range(from, to);
 
-      ventas.sort((a: any, b: any) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-      return c.json({ ventas });
+      if (incluir_anuladas !== 'true') q = q.eq('anulada', false);
+      if (fecha_inicio) q = q.gte('fecha', fecha_inicio);
+      if (fecha_fin)    q = q.lte('fecha', fecha_fin);
+
+      const { data, error, count } = await q;
+      if (error) throw error;
+
+      return c.json({
+        ventas: data || [],
+        total:  count || 0,
+        page:   pageNum,
+        limit:  limitNum,
+        pages:  Math.ceil((count || 0) / limitNum),
+      });
     } catch (error: any) {
       return c.json({ error: 'Error al obtener ventas', details: error.message }, 500);
     }

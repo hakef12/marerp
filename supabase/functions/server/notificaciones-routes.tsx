@@ -17,7 +17,9 @@ const getDB = () => createClient(
 // ─────────────────────────────────────────────────────────────────
 
 app.get('/', async (c) => {
-  const empresaId: string = (c as any).get('empresaId');
+  const auth = (c as any).get('auth');
+  const empresaId: string = auth?.empresaId;
+  if (!empresaId) return c.json({ notificaciones: [] });
   const notifs: any[] = [];
 
   // ── 1. Stock bajo ──────────────────────────────────────────────
@@ -44,7 +46,9 @@ app.get('/', async (c) => {
     const comandas = await obtenerComandas(empresaId);
     const ahora = Date.now();
     for (const com of comandas) {
-      if (com.estado === 'completada' || com.estado === 'cancelada') continue;
+      // Solo alertar por comandas activas que aún requieren acción
+      const ESTADOS_INACTIVOS = ['completada', 'cancelada', 'lista', 'entregada'];
+      if (ESTADOS_INACTIVOS.includes(com.estado)) continue;
       const creada = new Date(com.created_at ?? com.fecha ?? 0).getTime();
       const minutos = Math.floor((ahora - creada) / 60000);
       if (minutos >= 20) {

@@ -107,7 +107,7 @@ export function ProveedorModal({ open, onClose, onSuccess, proveedor, token }: P
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-white border-[#F97316]/30 text-gray-900 max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{proveedor ? 'Editar Proveedor' : 'Nuevo Proveedor'}</DialogTitle>
           <DialogDescription>
@@ -122,7 +122,7 @@ export function ProveedorModal({ open, onClose, onSuccess, proveedor, token }: P
               <Input
                 value={formData.ruc_nit}
                 onChange={(e) => setFormData({ ...formData, ruc_nit: e.target.value })}
-                className="bg-white/5 border-[#00E5FF]/20 text-white"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 placeholder="Ej: 1234567890001"
                 required
               />
@@ -134,7 +134,7 @@ export function ProveedorModal({ open, onClose, onSuccess, proveedor, token }: P
             <Input
               value={formData.nombre}
               onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-              className="bg-white/5 border-[#00E5FF]/20 text-white"
+              className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               placeholder="Ej: Distribuidora ABC S.A."
               required
             />
@@ -147,7 +147,7 @@ export function ProveedorModal({ open, onClose, onSuccess, proveedor, token }: P
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="bg-white/5 border-[#00E5FF]/20 text-white"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 placeholder="proveedor@ejemplo.com"
               />
             </div>
@@ -157,7 +157,7 @@ export function ProveedorModal({ open, onClose, onSuccess, proveedor, token }: P
               <Input
                 value={formData.telefono}
                 onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
-                className="bg-white/5 border-[#00E5FF]/20 text-white"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 placeholder="+593 99 999 9999"
               />
             </div>
@@ -168,7 +168,7 @@ export function ProveedorModal({ open, onClose, onSuccess, proveedor, token }: P
             <Textarea
               value={formData.direccion}
               onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
-              className="bg-white/5 border-[#00E5FF]/20 text-white"
+              className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               placeholder="Dirección completa del proveedor"
               rows={2}
             />
@@ -179,7 +179,7 @@ export function ProveedorModal({ open, onClose, onSuccess, proveedor, token }: P
             <Input
               value={formData.contacto}
               onChange={(e) => setFormData({ ...formData, contacto: e.target.value })}
-              className="bg-white/5 border-[#00E5FF]/20 text-white"
+              className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               placeholder="Nombre del contacto"
             />
           </div>
@@ -191,7 +191,7 @@ export function ProveedorModal({ open, onClose, onSuccess, proveedor, token }: P
                 type="number"
                 value={formData.dias_credito}
                 onChange={(e) => setFormData({ ...formData, dias_credito: parseInt(e.target.value) || 0 })}
-                className="bg-white/5 border-[#00E5FF]/20 text-white"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 placeholder="0"
               />
             </div>
@@ -203,7 +203,7 @@ export function ProveedorModal({ open, onClose, onSuccess, proveedor, token }: P
                 step="0.01"
                 value={formData.limite_credito}
                 onChange={(e) => setFormData({ ...formData, limite_credito: parseFloat(e.target.value) || 0 })}
-                className="bg-white/5 border-[#00E5FF]/20 text-white"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 placeholder="0.00"
               />
             </div>
@@ -224,7 +224,7 @@ export function ProveedorModal({ open, onClose, onSuccess, proveedor, token }: P
             <Button 
               type="submit" 
               disabled={isSubmitting}
-              className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]"
+              className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316]"
             >
               {isSubmitting ? 'Guardando...' : proveedor ? 'Actualizar' : 'Crear Proveedor'}
             </Button>

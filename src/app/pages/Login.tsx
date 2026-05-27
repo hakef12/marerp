@@ -11,7 +11,6 @@ import { Lock, Mail, User, Building, Hash } from 'lucide-react';
 import { DatabaseSetupAlert } from '../components/DatabaseSetupAlert';
 import { CreateSuperAdmin } from '../components/CreateSuperAdmin';
 import { PlanSelector } from '../components/PlanSelector';
-import { MARLogo } from '../components/MARLogo';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 export default function Login() {
@@ -224,43 +223,59 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A1A2F] via-[#0F2640] to-[#1a3a52] flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-white flex items-center justify-center p-4 relative overflow-hidden">
       {/* Animated background elements */}
       <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[#00E5FF] rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[#7B61FF] rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[#F97316] rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[#FB923C] rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
       </div>
 
-      <Card className="w-full max-w-md bg-[#0A1A2F]/80 backdrop-blur-xl border-[#00E5FF]/30 shadow-2xl shadow-[#00E5FF]/10 relative z-10">
-        <CardHeader className="text-center space-y-4">
-          <div className="flex justify-center">
-            <div className="relative">
-              <MARLogo className="w-20 h-20" gradientId="loginMarGradient" />
+      <Card className="w-full max-w-md bg-white border-[#F97316]/30 shadow-2xl shadow-[#F97316]/10 relative z-10">
+        <CardHeader className="text-center space-y-3 pb-2">
+          {/* Marca: M.A.R outline + COCINA LOCAL */}
+          <div className="flex flex-col items-center gap-0 leading-none">
+            <span
+              className="font-black tracking-[0.25em] text-xl"
+              style={{
+                color: 'transparent',
+                WebkitTextStroke: '1.5px #F97316',
+                fontFamily: "'Arial Black', Arial, sans-serif",
+              }}
+            >
+              M.A.R
+            </span>
+            <div className="flex items-baseline gap-0 leading-none">
+              <span
+                className="font-black text-4xl tracking-tight"
+                style={{ color: '#F97316', fontFamily: "'Arial Black', Arial, sans-serif" }}
+              >
+                COCINA
+              </span>
+              <span
+                className="font-black text-4xl tracking-tight"
+                style={{ color: '#1a1a1a', fontFamily: "'Arial Black', Arial, sans-serif" }}
+              >
+                LOCAL
+              </span>
             </div>
           </div>
-          <CardTitle className="text-4xl font-bold text-white tracking-wider">
-            M.A.R
-          </CardTitle>
-          <CardDescription className="text-gray-400 text-base">
-            Modular Administration Resource
+          <CardDescription className="text-gray-600 text-sm pt-1">
+            Sistema de gestión para tu negocio
           </CardDescription>
-          <p className="text-gray-500 text-sm">
-            Sistema ERP completo para PYMEs
-          </p>
         </CardHeader>
 
         <CardContent>
           <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 bg-white/5 border border-[#00E5FF]/20">
+            <TabsList className="grid w-full grid-cols-2 bg-gray-50 border border-[#F97316]/20">
               <TabsTrigger 
                 value="login"
-                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#1e64a7] data-[state=active]:to-[#00E5FF] data-[state=active]:text-white"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#C2410C] data-[state=active]:to-[#F97316] data-[state=active]:text-white"
               >
                 Iniciar Sesión
               </TabsTrigger>
               <TabsTrigger 
                 value="signup"
-                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#1e64a7] data-[state=active]:to-[#00E5FF] data-[state=active]:text-white"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#C2410C] data-[state=active]:to-[#F97316] data-[state=active]:text-white"
               >
                 Registrarse
               </TabsTrigger>
@@ -269,9 +284,9 @@ export default function Login() {
             <TabsContent value="login">
               <form onSubmit={handleLogin} className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-gray-300">Email</Label>
+                  <Label htmlFor="email" className="text-gray-600">Email</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                     <Input
                       id="email"
                       type="email"
@@ -279,15 +294,15 @@ export default function Login() {
                       value={loginData.email}
                       onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
                       required
-                      className="pl-10 bg-white/5 border-[#00E5FF]/20 text-white placeholder:text-gray-500 focus:border-[#00E5FF]"
+                      className="pl-10 bg-gray-50 border-[#F97316]/20 text-gray-900 placeholder:text-gray-400 focus:border-[#F97316]"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password" className="text-gray-300">Contraseña</Label>
+                  <Label htmlFor="password" className="text-gray-600">Contraseña</Label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                     <Input
                       id="password"
                       type="password"
@@ -295,7 +310,7 @@ export default function Login() {
                       value={loginData.password}
                       onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
                       required
-                      className="pl-10 bg-white/5 border-[#00E5FF]/20 text-white placeholder:text-gray-500 focus:border-[#00E5FF]"
+                      className="pl-10 bg-gray-50 border-[#F97316]/20 text-gray-900 placeholder:text-gray-400 focus:border-[#F97316]"
                     />
                   </div>
                 </div>
@@ -303,7 +318,7 @@ export default function Login() {
                 <Button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:shadow-lg hover:shadow-[#00E5FF]/30 transition-all duration-200"
+                  className="w-full bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:shadow-lg hover:shadow-[#F97316]/30 transition-all duration-200"
                 >
                   {isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
                 </Button>
@@ -312,89 +327,89 @@ export default function Login() {
 
             <TabsContent value="signup">
               <form onSubmit={handleSignup} className="space-y-4 mt-4">
-                <div className="space-y-4 border-b border-[#00E5FF]/20 pb-4">
-                  <p className="text-sm text-gray-400">Datos de la Empresa</p>
+                <div className="space-y-4 border-b border-[#F97316]/20 pb-4">
+                  <p className="text-sm text-gray-600">Datos de la Empresa</p>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="empresa_nombre" className="text-gray-300">Nombre de la Empresa</Label>
+                    <Label htmlFor="empresa_nombre" className="text-gray-600">Nombre de la Empresa</Label>
                     <div className="relative">
-                      <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                       <Input
                         id="empresa_nombre"
                         value={signupData.empresa_nombre}
                         onChange={(e) => setSignupData({ ...signupData, empresa_nombre: e.target.value })}
                         required
-                        className="pl-10 bg-white/5 border-[#00E5FF]/20 text-white placeholder:text-gray-500"
+                        className="pl-10 bg-gray-50 border-[#F97316]/20 text-gray-900 placeholder:text-gray-400"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="empresa_ruc" className="text-gray-300">RUC/NIT</Label>
+                    <Label htmlFor="empresa_ruc" className="text-gray-600">RUC/NIT</Label>
                     <div className="relative">
-                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                       <Input
                         id="empresa_ruc"
                         value={signupData.empresa_ruc}
                         onChange={(e) => setSignupData({ ...signupData, empresa_ruc: e.target.value })}
                         required
-                        className="pl-10 bg-white/5 border-[#00E5FF]/20 text-white placeholder:text-gray-500"
+                        className="pl-10 bg-gray-50 border-[#F97316]/20 text-gray-900 placeholder:text-gray-400"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="empresa_email" className="text-gray-300">Email Empresa</Label>
+                    <Label htmlFor="empresa_email" className="text-gray-600">Email Empresa</Label>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                       <Input
                         id="empresa_email"
                         type="email"
                         value={signupData.empresa_email}
                         onChange={(e) => setSignupData({ ...signupData, empresa_email: e.target.value })}
                         required
-                        className="pl-10 bg-white/5 border-[#00E5FF]/20 text-white placeholder:text-gray-500"
+                        className="pl-10 bg-gray-50 border-[#F97316]/20 text-gray-900 placeholder:text-gray-400"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <p className="text-sm text-gray-400">Datos del Administrador</p>
+                  <p className="text-sm text-gray-600">Datos del Administrador</p>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="usuario_nombre" className="text-gray-300">Nombre Completo</Label>
+                    <Label htmlFor="usuario_nombre" className="text-gray-600">Nombre Completo</Label>
                     <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                       <Input
                         id="usuario_nombre"
                         value={signupData.usuario_nombre}
                         onChange={(e) => setSignupData({ ...signupData, usuario_nombre: e.target.value })}
                         required
-                        className="pl-10 bg-white/5 border-[#00E5FF]/20 text-white placeholder:text-gray-500"
+                        className="pl-10 bg-gray-50 border-[#F97316]/20 text-gray-900 placeholder:text-gray-400"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="usuario_email" className="text-gray-300">Email</Label>
+                    <Label htmlFor="usuario_email" className="text-gray-600">Email</Label>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                       <Input
                         id="usuario_email"
                         type="email"
                         value={signupData.usuario_email}
                         onChange={(e) => setSignupData({ ...signupData, usuario_email: e.target.value })}
                         required
-                        className="pl-10 bg-white/5 border-[#00E5FF]/20 text-white placeholder:text-gray-500"
+                        className="pl-10 bg-gray-50 border-[#F97316]/20 text-gray-900 placeholder:text-gray-400"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="usuario_password" className="text-gray-300">Contraseña</Label>
+                    <Label htmlFor="usuario_password" className="text-gray-600">Contraseña</Label>
                     <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                       <Input
                         id="usuario_password"
                         type="password"
@@ -402,14 +417,14 @@ export default function Login() {
                         onChange={(e) => setSignupData({ ...signupData, usuario_password: e.target.value })}
                         required
                         minLength={6}
-                        className="pl-10 bg-white/5 border-[#00E5FF]/20 text-white placeholder:text-gray-500"
+                        className="pl-10 bg-gray-50 border-[#F97316]/20 text-gray-900 placeholder:text-gray-400"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <p className="text-sm text-gray-400">Plan de Suscripción</p>
+                  <p className="text-sm text-gray-600">Plan de Suscripción</p>
                   <PlanSelector
                     selectedPlan={signupData.plan_tipo}
                     onSelectPlan={(plan) => {
@@ -423,12 +438,12 @@ export default function Login() {
                 <Button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full bg-gradient-to-r from-[#7B61FF] to-[#00E5FF] hover:shadow-lg hover:shadow-[#7B61FF]/30 transition-all duration-200"
+                  className="w-full bg-gradient-to-r from-[#FB923C] to-[#F97316] hover:shadow-lg hover:shadow-[#FB923C]/30 transition-all duration-200"
                 >
                   {isLoading ? 'Registrando...' : 'Crear Empresa'}
                 </Button>
 
-                <p className="text-xs text-gray-400 text-center">
+                <p className="text-xs text-gray-600 text-center">
                   Incluye 30 días de prueba gratuita
                 </p>
               </form>

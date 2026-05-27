@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import Sidebar from './layout/Sidebar';
 import OnboardingWizard from './onboarding/OnboardingWizard';
-import { MARLogo } from './MARLogo';
 
 export default function AppLayout() {
   const { token } = useAuth();
@@ -45,7 +44,7 @@ export default function AppLayout() {
   if (!token) return null;
 
   return (
-    <div className="flex min-h-screen bg-[#0A1A2F]">
+    <div className="flex min-h-screen bg-white">
 
       {/* ── Overlay (mobile) ─────────────────────────────────────── */}
       {sidebarOpen && (
@@ -67,7 +66,7 @@ export default function AppLayout() {
         {/* Botón cerrar — solo visible en mobile cuando está abierto */}
         <button
           onClick={() => setSidebarOpen(false)}
-          className="md:hidden absolute top-4 right-[-44px] z-10 bg-[#0F2640] border border-white/10 rounded-r-lg p-2 text-gray-400 hover:text-white transition-colors"
+          className="md:hidden absolute top-4 right-[-44px] z-10 bg-white border border-black/10 rounded-r-lg p-2 text-gray-600 hover:text-black transition-colors shadow-sm"
           aria-label="Cerrar menú"
         >
           <X className="w-5 h-5" />
@@ -80,17 +79,23 @@ export default function AppLayout() {
       <main className="flex-1 overflow-auto min-w-0 flex flex-col">
 
         {/* Topbar mobile — solo visible en pantallas pequeñas */}
-        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-[#0A1A2F]/95 border-b border-white/5 sticky top-0 z-30 backdrop-blur-sm">
+        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-black/10 sticky top-0 z-30 shadow-sm">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+            className="p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-all"
             aria-label="Abrir menú"
           >
             <Menu className="w-6 h-6" />
           </button>
-          <div className="flex items-center gap-2">
-            <MARLogo className="w-8 h-8" />
-            <span className="text-white font-bold text-lg tracking-wider">M.A.R</span>
+          <div className="flex items-center gap-1 leading-none">
+            <span
+              className="font-black text-lg tracking-tight"
+              style={{ color: '#F97316', fontFamily: "'Arial Black', Arial, sans-serif" }}
+            >COCINA</span>
+            <span
+              className="font-black text-lg tracking-tight"
+              style={{ color: '#1a1a1a', fontFamily: "'Arial Black', Arial, sans-serif" }}
+            >LOCAL</span>
           </div>
         </div>
 

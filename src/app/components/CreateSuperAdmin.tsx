@@ -88,7 +88,7 @@ export function CreateSuperAdmin() {
               console.log('Abriendo modal de Super Admin');
               setShowForm(true);
             }}
-            className="text-sm text-[#7B61FF] hover:text-[#00E5FF] transition-colors flex items-center gap-2 bg-[#0A1A2F]/80 px-4 py-2 rounded-lg border border-[#7B61FF]/30 hover:border-[#00E5FF]/50 backdrop-blur-xl"
+            className="text-sm text-[#FB923C] hover:text-[#F97316] transition-colors flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-[#FB923C]/30 hover:border-[#F97316]/50"
           >
             <Shield className="w-4 h-4" />
             ¿Crear Super Admin?
@@ -98,16 +98,16 @@ export function CreateSuperAdmin() {
 
       {/* Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-          <Card className="w-full max-w-md bg-[#0A1A2F]/95 backdrop-blur-xl border-[#7B61FF]/50 shadow-2xl shadow-[#7B61FF]/20">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[100]">
+          <Card className="w-full max-w-md bg-white border-[#FB923C]/50 shadow-2xl shadow-[#FB923C]/20">
             <CardHeader>
               <div className="flex items-center gap-3 mb-2">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#7B61FF] to-[#00E5FF] flex items-center justify-center">
-                  <Shield className="w-6 h-6 text-white" />
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#FB923C] to-[#F97316] flex items-center justify-center">
+                  <Shield className="w-6 h-6 text-gray-900" />
                 </div>
                 <div>
-                  <CardTitle className="text-xl text-white">Crear Super Admin</CardTitle>
-                  <CardDescription className="text-gray-400">
+                  <CardTitle className="text-xl text-gray-900">Crear Super Admin</CardTitle>
+                  <CardDescription className="text-gray-600">
                     Solo puede existir uno en el sistema
                   </CardDescription>
                 </div>
@@ -117,40 +117,40 @@ export function CreateSuperAdmin() {
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="superadmin-nombre" className="text-gray-300">Nombre Completo</Label>
+                  <Label htmlFor="superadmin-nombre" className="text-gray-600">Nombre Completo</Label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                     <Input
                       id="superadmin-nombre"
                       value={formData.nombre}
                       onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
                       required
-                      className="pl-10 bg-white/5 border-[#7B61FF]/20 text-white placeholder:text-gray-500"
+                      className="pl-10 bg-gray-50 border-[#FB923C]/20 text-gray-900 placeholder:text-gray-400"
                       placeholder="Super Administrador"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="superadmin-email" className="text-gray-300">Email</Label>
+                  <Label htmlFor="superadmin-email" className="text-gray-600">Email</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                     <Input
                       id="superadmin-email"
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       required
-                      className="pl-10 bg-white/5 border-[#7B61FF]/20 text-white placeholder:text-gray-500"
+                      className="pl-10 bg-gray-50 border-[#FB923C]/20 text-gray-900 placeholder:text-gray-400"
                       placeholder="admin@sistema.com"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="superadmin-password" className="text-gray-300">Contraseña</Label>
+                  <Label htmlFor="superadmin-password" className="text-gray-600">Contraseña</Label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                     <Input
                       id="superadmin-password"
                       type="password"
@@ -158,14 +158,14 @@ export function CreateSuperAdmin() {
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                       required
                       minLength={6}
-                      className="pl-10 bg-white/5 border-[#7B61FF]/20 text-white placeholder:text-gray-500"
+                      className="pl-10 bg-gray-50 border-[#FB923C]/20 text-gray-900 placeholder:text-gray-400"
                       placeholder="••••••••"
                     />
                   </div>
                 </div>
 
-                <div className="bg-[#7B61FF]/10 border border-[#7B61FF]/30 rounded-lg p-3">
-                  <p className="text-xs text-gray-400">
+                <div className="bg-[#FB923C]/10 border border-[#FB923C]/30 rounded-lg p-3">
+                  <p className="text-xs text-gray-600">
                     ⚠️ El Super Admin tendrá acceso completo a todas las empresas y configuraciones del sistema.
                   </p>
                 </div>
@@ -175,14 +175,14 @@ export function CreateSuperAdmin() {
                     type="button"
                     variant="outline"
                     onClick={() => setShowForm(false)}
-                    className="flex-1 border-gray-600 text-gray-400 hover:bg-white/5"
+                    className="flex-1 border-gray-600 text-gray-600 hover:bg-gray-50"
                   >
                     Cancelar
                   </Button>
                   <Button
                     type="submit"
                     disabled={isLoading}
-                    className="flex-1 bg-gradient-to-r from-[#7B61FF] to-[#00E5FF] hover:shadow-lg hover:shadow-[#7B61FF]/30"
+                    className="flex-1 bg-gradient-to-r from-[#FB923C] to-[#F97316] hover:shadow-lg hover:shadow-[#FB923C]/30"
                   >
                     {isLoading ? 'Creando...' : 'Crear Super Admin'}
                   </Button>

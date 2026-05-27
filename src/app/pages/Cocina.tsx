@@ -22,10 +22,6 @@ import {
   Factory,
   FileDown,
   FileSpreadsheet,
-  Timer,
-  Bell,
-  Flame,
-  Users,
   RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -311,30 +307,37 @@ export default function Cocina() {
   };
 
   const stats = useMemo(() => {
-    const pendientes = comandas.filter(c => c.estado === 'pendiente').length;
-    const enPreparacion = comandas.filter(c => c.estado === 'en_preparacion').length;
-    const listas = comandas.filter(c => c.estado === 'lista').length;
-    
-    const urgentes = comandas.filter(c => {
-      const fechaComanda = c.fecha_creacion || c.created_at || c.fecha_recepcion;
+    // Solo comandas activas (el backend ya filtra, pero por si acaso)
+    const activas = comandas.filter(c =>
+      ['pendiente', 'en_preparacion', 'lista'].includes(c.estado)
+    );
+
+    const pendientes    = activas.filter(c => c.estado === 'pendiente').length;
+    const enPreparacion = activas.filter(c => c.estado === 'en_preparacion').length;
+    const listas        = activas.filter(c => c.estado === 'lista').length;
+
+    // Urgentes: activas (excluyendo 'lista') con más de 20 min esperando
+    const urgentes = activas.filter(c => {
+      if (c.estado === 'lista') return false;
+      const fechaComanda = c.created_at || c.fecha_creacion || c.fecha_recepcion;
       if (!fechaComanda) return false;
       const fecha = new Date(fechaComanda);
       if (isNaN(fecha.getTime())) return false;
-      const waitTime = Math.floor((Date.now() - fecha.getTime()) / 60000);
-      return waitTime > 20 && c.estado !== 'lista';
+      return Math.floor((Date.now() - fecha.getTime()) / 60000) > 20;
     }).length;
 
-    const tiemposEspera = comandas
+    // Tiempo promedio de espera solo de pendientes/en_preparacion activas
+    const tiemposEspera = activas
       .filter(c => c.estado !== 'lista')
       .map(c => {
-        const fechaComanda = c.fecha_creacion || c.created_at || c.fecha_recepcion;
+        const fechaComanda = c.created_at || c.fecha_creacion || c.fecha_recepcion;
         if (!fechaComanda) return 0;
         const fecha = new Date(fechaComanda);
         if (isNaN(fecha.getTime())) return 0;
         return Math.floor((Date.now() - fecha.getTime()) / 60000);
       })
       .filter(t => t > 0);
-      
+
     const tiempoPromedio = tiemposEspera.length > 0
       ? tiemposEspera.reduce((sum, t) => sum + t, 0) / tiemposEspera.length
       : 0;
@@ -352,9 +355,9 @@ export default function Cocina() {
   };
 
   const comandasPorEstado = {
-    pendiente: comandas.filter(c => c.estado === 'pendiente'),
+    pendiente:      comandas.filter(c => c.estado === 'pendiente'),
     en_preparacion: comandas.filter(c => c.estado === 'en_preparacion'),
-    lista: comandas.filter(c => c.estado === 'lista'),
+    lista:          comandas.filter(c => c.estado === 'lista'),
   };
 
   const getDificultadBadge = (dificultad?: string) => {
@@ -372,20 +375,20 @@ export default function Cocina() {
   return (
     <div className="p-6 space-y-6">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
-          <ChefHat className="w-8 h-8 text-[#00E5FF]" />
+        <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
+          <ChefHat className="w-8 h-8 text-[#F97316]" />
           Kitchen Display System (KDS)
         </h1>
-        <p className="text-gray-400">Gestión de comandas, recetas y producción en tiempo real</p>
+        <p className="text-gray-600">Gestión de comandas, recetas y producción en tiempo real</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 rounded-xl shadow-lg border border-[#00E5FF]/20 p-4">
+        <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-lg border border-[#F97316]/20 p-4">
           <div className="flex items-center justify-between mb-2">
-            <ChefHat className="w-6 h-6 text-[#00E5FF]" />
+            <ChefHat className="w-6 h-6 text-[#F97316]" />
           </div>
-          <p className="text-sm text-gray-400 font-medium">Órdenes Activas</p>
-          <p className="text-2xl font-black text-white">{stats.pendientes + stats.enPreparacion}</p>
+          <p className="text-sm text-gray-600 font-medium">Órdenes Activas</p>
+          <p className="text-2xl font-black text-gray-900">{stats.pendientes + stats.enPreparacion}</p>
         </div>
 
         <div className="bg-gradient-to-br from-red-900/20 to-red-800/10 rounded-xl shadow-lg border border-red-500/30 p-4">
@@ -396,32 +399,32 @@ export default function Cocina() {
           <p className="text-2xl font-black text-red-400">{stats.urgentes}</p>
         </div>
 
-        <div className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 rounded-xl shadow-lg border border-orange-500/20 p-4">
+        <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-lg border border-orange-500/20 p-4">
           <div className="flex items-center justify-between mb-2">
             <Clock className="w-6 h-6 text-orange-400" />
           </div>
-          <p className="text-sm text-gray-400 font-medium">Pendientes</p>
+          <p className="text-sm text-gray-600 font-medium">Pendientes</p>
           <p className="text-2xl font-black text-orange-400">{stats.pendientes}</p>
         </div>
 
-        <div className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 rounded-xl shadow-lg border border-blue-500/20 p-4">
+        <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-lg border border-blue-500/20 p-4">
           <div className="flex items-center justify-between mb-2">
             <Package className="w-6 h-6 text-blue-400" />
           </div>
-          <p className="text-sm text-gray-400 font-medium">En Preparación</p>
+          <p className="text-sm text-gray-600 font-medium">En Preparación</p>
           <p className="text-2xl font-black text-blue-400">{stats.enPreparacion}</p>
         </div>
 
-        <div className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 rounded-xl shadow-lg border border-[#7B61FF]/20 p-4">
+        <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-lg border border-[#FB923C]/20 p-4">
           <div className="flex items-center justify-between mb-2">
-            <TrendingUp className="w-6 h-6 text-[#7B61FF]" />
+            <TrendingUp className="w-6 h-6 text-[#FB923C]" />
           </div>
-          <p className="text-sm text-gray-400 font-medium">Tiempo Prom.</p>
-          <p className="text-2xl font-black text-[#7B61FF]">{stats.tiempoPromedio.toFixed(0)}m</p>
+          <p className="text-sm text-gray-600 font-medium">Tiempo Prom.</p>
+          <p className="text-2xl font-black text-[#FB923C]">{stats.tiempoPromedio.toFixed(0)}m</p>
         </div>
       </div>
 
-      <div className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 rounded-xl shadow-lg border border-[#00E5FF]/20 p-2 flex gap-2 overflow-x-auto">
+      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-lg border border-[#F97316]/20 p-2 flex gap-2 overflow-x-auto">
         {/* Abrir KDS en pantalla de cocina */}
         <button
           onClick={() => window.open('/kds', '_blank', 'width=1280,height=800,menubar=no,toolbar=no,location=no,status=no')}
@@ -433,7 +436,7 @@ export default function Cocina() {
         <button
           onClick={() => setView('kitchen')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
-            view === 'kitchen' ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            view === 'kitchen' ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20' : 'text-gray-600 hover:text-gray-900 hover:bg-orange-50'
           }`}
         >
           <ChefHat className="w-5 h-5" /> Cocina (KDS)
@@ -441,7 +444,7 @@ export default function Cocina() {
         <button
           onClick={() => setView('recipes')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
-            view === 'recipes' ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            view === 'recipes' ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20' : 'text-gray-600 hover:text-gray-900 hover:bg-orange-50'
           }`}
         >
           <BookOpen className="w-5 h-5" /> Fichas Técnicas
@@ -449,7 +452,7 @@ export default function Cocina() {
         <button
           onClick={() => setView('production')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
-            view === 'production' ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            view === 'production' ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20' : 'text-gray-600 hover:text-gray-900 hover:bg-orange-50'
           }`}
         >
           <Package className="w-5 h-5" /> Producción
@@ -457,7 +460,7 @@ export default function Cocina() {
         <button
           onClick={() => setView('reports')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
-            view === 'reports' ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20' : 'text-gray-400 hover:text-white hover:bg-white/5'
+            view === 'reports' ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20' : 'text-gray-600 hover:text-gray-900 hover:bg-orange-50'
           }`}
         >
           <BarChart3 className="w-5 h-5" /> Reportes
@@ -488,7 +491,7 @@ export default function Cocina() {
                   exportRecetasToPDF(recipes, inventoryProducts);
                   toast.success('Recetas exportadas a PDF');
                 }}
-                className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10"
+                className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10"
               >
                 <FileDown className="w-4 h-4 mr-2" /> Exportar PDF
               </Button>
@@ -520,25 +523,25 @@ export default function Cocina() {
                 } catch { toast.error('Error de conexión'); }
               }}
               variant="outline"
-              className="border-[#7B61FF]/40 text-[#7B61FF] hover:bg-[#7B61FF]/10"
+              className="border-[#FB923C]/40 text-[#FB923C] hover:bg-[#FB923C]/10"
               title="Recalcula el costo por porción de todas las recetas y lo propaga a sus productos"
             >
               <RefreshCw className="w-4 h-4 mr-2" /> Recalcular costos
             </Button>
             <Button
               onClick={() => { setSelectedReceta(null); setShowRecetaModal(true); }}
-              className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:shadow-lg hover:shadow-[#00E5FF]/30"
+              className="bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:shadow-lg hover:shadow-[#F97316]/30"
             >
               <Plus className="w-5 h-5 mr-2" /> Nueva Receta
             </Button>
           </div>
 
           {recipes.length === 0 ? (
-            <Card className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 border-[#00E5FF]/20">
+            <Card className="bg-gradient-to-br from-gray-50 to-gray-100 border-[#F97316]/20">
               <CardContent className="p-12 text-center">
                 <BookOpen className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <h3 className="text-xl font-bold text-gray-400 mb-2">No hay recetas registradas</h3>
-                <Button onClick={() => { setSelectedReceta(null); setShowRecetaModal(true); }} className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] mt-4">
+                <h3 className="text-xl font-bold text-gray-600 mb-2">No hay recetas registradas</h3>
+                <Button onClick={() => { setSelectedReceta(null); setShowRecetaModal(true); }} className="bg-gradient-to-r from-[#C2410C] to-[#F97316] mt-4">
                   <Plus className="w-5 h-5 mr-2" /> Crear Primera Receta
                 </Button>
               </CardContent>
@@ -546,12 +549,12 @@ export default function Cocina() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {recipes.map((recipe, idx) => (
-                <Card key={recipe.id || idx} className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 border-[#00E5FF]/20 hover:border-[#00E5FF]/50 transition-all">
-                  <CardHeader className="bg-gradient-to-br from-[#1e64a7]/20 to-[#00E5FF]/10 border-b border-[#00E5FF]/10">
+                <Card key={recipe.id || idx} className="bg-gradient-to-br from-gray-50 to-gray-100 border-[#F97316]/20 hover:border-[#F97316]/50 transition-all">
+                  <CardHeader className="bg-gradient-to-br from-[#C2410C]/20 to-[#F97316]/10 border-b border-[#F97316]/10">
                     <div className="flex items-start justify-between">
                       <div>
-                        <CardTitle className="text-xl text-white mb-1">{recipe.nombre}</CardTitle>
-                        <p className="text-sm font-medium text-[#00E5FF]">{recipe.categoria || 'Sin categoría'}</p>
+                        <CardTitle className="text-xl text-gray-900 mb-1">{recipe.nombre}</CardTitle>
+                        <p className="text-sm font-medium text-[#F97316]">{recipe.categoria || 'Sin categoría'}</p>
                       </div>
                       <Badge className={getDificultadBadge(recipe.dificultad)} variant="outline">
                         {getDificultadText(recipe.dificultad)}
@@ -559,27 +562,30 @@ export default function Cocina() {
                     </div>
                   </CardHeader>
                   <CardContent className="p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
+                    <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-100">
                       <div>
-                        <p className="text-xs text-gray-400 font-bold uppercase">Costo/Porción</p>
-                        <p className="text-lg font-black text-white">${recipe.costo_por_porcion?.toFixed(2) || '0.00'}</p>
+                        <p className="text-xs text-gray-600 font-bold uppercase">Costo/Porción</p>
+                        <p className="text-lg font-black text-gray-900">${recipe.costo_por_porcion?.toFixed(2) || '0.00'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-400 font-bold uppercase">Precio Venta</p>
-                        <p className="text-lg font-black text-[#00E5FF]">${recipe.precio_sugerido?.toFixed(2) || '0.00'}</p>
+                        <p className="text-xs text-gray-600 font-bold uppercase">Precio Venta</p>
+                        {recipe.precio_sugerido > 0
+                          ? <p className="text-lg font-black text-[#F97316]">${recipe.precio_sugerido.toFixed(2)}</p>
+                          : <button onClick={() => abrirEditorReceta(recipe.id)} className="text-sm text-gray-400 hover:text-[#F97316] transition-colors underline underline-offset-2">Sin precio — editar</button>
+                        }
                       </div>
                       <div>
-                        <p className="text-xs text-gray-400 font-bold uppercase">Porciones</p>
-                        <p className="text-lg font-black text-white">{recipe.porciones}</p>
+                        <p className="text-xs text-gray-600 font-bold uppercase">Porciones</p>
+                        <p className="text-lg font-black text-gray-900">{recipe.porciones}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-400 font-bold uppercase">Tiempo</p>
-                        <p className="text-lg font-black text-white">{recipe.tiempo_preparacion || 0}m</p>
+                        <p className="text-xs text-gray-600 font-bold uppercase">Tiempo</p>
+                        <p className="text-lg font-black text-gray-900">{recipe.tiempo_preparacion || 0}m</p>
                       </div>
                     </div>
                     
-                    <div className="pt-3 border-t border-white/5">
-                      <p className="text-xs text-gray-400 font-bold uppercase mb-2">
+                    <div className="pt-3 border-t border-gray-100">
+                      <p className="text-xs text-gray-600 font-bold uppercase mb-2">
                         Ingredientes ({(recipe.ingredientes || recipe.receta_ingredientes)?.length || 0})
                       </p>
                       <div className="space-y-1 max-h-32 overflow-y-auto">
@@ -595,20 +601,20 @@ export default function Cocina() {
                             'Ingrediente no encontrado';
 
                           return (
-                            <div key={idx} className="text-sm text-gray-300 flex justify-between bg-white/5 p-1 px-2 rounded mb-1">
-                              <span className="font-bold text-white">{nombreTraducido}</span>
-                              <span className="text-[#00E5FF] font-medium">{ing.cantidad} {ing.unidad_medida}</span>
+                            <div key={idx} className="text-sm text-gray-600 flex justify-between bg-gray-50 p-1 px-2 rounded mb-1">
+                              <span className="font-bold text-gray-900">{nombreTraducido}</span>
+                              <span className="text-[#F97316] font-medium">{ing.cantidad} {ing.unidad_medida}</span>
                             </div>
                           );
                         })}
                       </div>
                     </div>
 
-                    <div className="flex gap-2 pt-3 border-t border-white/5">
-                      <Button variant="outline" size="sm" className="flex-1 border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10" onClick={() => { setSelectedReceta(recipe); setShowProducirModal(true); }}>
+                    <div className="flex gap-2 pt-3 border-t border-gray-100">
+                      <Button variant="outline" size="sm" className="flex-1 border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10" onClick={() => { setSelectedReceta(recipe); setShowProducirModal(true); }}>
                         <Factory className="w-4 h-4 mr-1" /> Producir
                       </Button>
-                      <Button variant="outline" size="sm" className="flex-1 border-[#7B61FF]/30 text-[#7B61FF] hover:bg-[#7B61FF]/10" onClick={() => abrirEditorReceta(recipe.id)} disabled={loadingRecetaId === recipe.id}>
+                      <Button variant="outline" size="sm" className="flex-1 border-[#FB923C]/30 text-[#FB923C] hover:bg-[#FB923C]/10" onClick={() => abrirEditorReceta(recipe.id)} disabled={loadingRecetaId === recipe.id}>
                         <Pencil className="w-4 h-4 mr-1" /> {loadingRecetaId === recipe.id ? 'Cargando...' : 'Editar'}
                       </Button>
                       <Button variant="outline" size="sm" className="border-red-500/30 text-red-400 hover:bg-red-500/10" onClick={() => eliminarReceta(recipe.id)}>
@@ -627,7 +633,7 @@ export default function Cocina() {
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10" onClick={() => {
+              <Button variant="outline" size="sm" className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10" onClick={() => {
                 if (productionOrders.length === 0) return toast.error('No hay órdenes para exportar');
                 exportOrdenesProduccionToPDF(productionOrders);
                 toast.success('Órdenes exportadas a PDF');
@@ -642,7 +648,7 @@ export default function Cocina() {
                 <FileSpreadsheet className="w-4 h-4 mr-2" /> Exportar Excel
               </Button>
             </div>
-            <Button onClick={() => { setSelectedReceta(null); setShowProducirModal(true); }} className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+            <Button onClick={() => { setSelectedReceta(null); setShowProducirModal(true); }} className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
               <Plus className="w-5 h-5 mr-2" /> Nueva Orden
             </Button>
           </div>
@@ -661,36 +667,40 @@ export default function Cocina() {
               })];
 
               return (
-                <Card key={order.id || idx} className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 border-[#00E5FF]/20">
+                <Card key={order.id || idx} className="bg-gradient-to-br from-gray-50 to-gray-100 border-[#F97316]/20">
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <h3 className="text-xl font-bold text-white">{recetaNombre}</h3>
+                          <h3 className="text-xl font-bold text-gray-900">{recetaNombre}</h3>
                           <Badge className={`${order.estado === 'planificada' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : order.estado === 'en_proceso' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : order.estado === 'completada' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`} variant="outline">
                             {order.estado === 'planificada' ? 'Planificado' : order.estado === 'en_proceso' ? 'En Progreso' : order.estado === 'completada' ? 'Completado' : 'Cancelado'}
                           </Badge>
-                          <span className="text-sm text-gray-400">{order.numero_orden}</span>
+                          <span className="text-sm text-gray-600">{order.numero_orden}</span>
                         </div>
                         <div className="grid grid-cols-3 gap-4 mt-4">
                           <div>
-                            <p className="text-xs text-gray-400 font-bold uppercase">Porciones</p>
-                            <p className="text-lg font-black text-white">{order.cantidad_porciones}</p>
+                            <p className="text-xs text-gray-600 font-bold uppercase">Porciones</p>
+                            <p className="text-lg font-black text-gray-900">{order.cantidad_porciones}</p>
                           </div>
                           <div>
-                            <p className="text-xs text-gray-400 font-bold uppercase">Fecha</p>
-                            <p className="text-lg font-black text-white">{new Date(order.fecha_programada).toLocaleDateString()}</p>
+                            <p className="text-xs text-gray-600 font-bold uppercase">Fecha</p>
+                            <p className="text-lg font-black text-gray-900">
+                              {(order.fecha_programada || order.created_at)
+                                ? new Date(order.fecha_programada || order.created_at).toLocaleDateString('es-EC')
+                                : '-'}
+                            </p>
                           </div>
                           <div>
-                            <p className="text-xs text-gray-400 font-bold uppercase">Responsable</p>
-                            <p className="text-sm text-gray-300">{order.usuarios?.nombre_completo || 'N/A'}</p>
+                            <p className="text-xs text-gray-600 font-bold uppercase">Responsable</p>
+                            <p className="text-sm text-gray-600">{order.responsable || order.usuario_nombre || order.notas || '-'}</p>
                           </div>
                         </div>
 
                         {/* Ingredient toggle */}
                         <button
                           onClick={setExpanded}
-                          className="mt-4 flex items-center gap-2 text-xs text-[#7B61FF] hover:text-[#9B81FF] transition-colors"
+                          className="mt-4 flex items-center gap-2 text-xs text-[#FB923C] hover:text-[#FB923C] transition-colors"
                         >
                           <BookOpen className="w-3.5 h-3.5" />
                           {expanded ? 'Ocultar ingredientes' : `Ver ingredientes (${ingredientes.length})`}
@@ -698,16 +708,16 @@ export default function Cocina() {
 
                         {/* Expanded ingredients */}
                         {expanded && (
-                          <div className="mt-3 bg-[#0A1A2F]/60 rounded-xl border border-[#7B61FF]/20 overflow-hidden">
+                          <div className="mt-3 bg-white rounded-xl border border-[#FB923C]/20 overflow-hidden">
                             {ingredientes.length === 0 ? (
-                              <p className="text-gray-500 text-sm p-4">Esta receta no tiene ingredientes registrados.</p>
+                              <p className="text-gray-600 text-sm p-4">Esta receta no tiene ingredientes registrados.</p>
                             ) : (
                               <table className="w-full text-sm">
                                 <thead>
-                                  <tr className="bg-[#7B61FF]/20 text-[#7B61FF] text-xs uppercase tracking-wider">
+                                  <tr className="bg-[#FB923C]/20 text-[#FB923C] text-xs uppercase tracking-wider">
                                     <th className="text-left px-4 py-2">Ingrediente</th>
                                     <th className="text-right px-4 py-2">Base ({porciones} uds.)</th>
-                                    <th className="text-right px-4 py-2 text-white font-bold">Para {order.cantidad_porciones} uds.</th>
+                                    <th className="text-right px-4 py-2 text-gray-900 font-bold">Para {order.cantidad_porciones} uds.</th>
                                     <th className="text-left px-3 py-2">Unidad</th>
                                   </tr>
                                 </thead>
@@ -719,11 +729,11 @@ export default function Cocina() {
                                     const cantBase = Number(ing.cantidad) || 0;
                                     const cantEscalada = (cantBase * factor).toFixed(2);
                                     return (
-                                      <tr key={i} className={`border-t border-white/5 ${i % 2 === 0 ? '' : 'bg-white/5'}`}>
-                                        <td className="px-4 py-2 text-white font-medium">{nombre}</td>
-                                        <td className="px-4 py-2 text-gray-400 text-right font-mono">{cantBase}</td>
-                                        <td className="px-4 py-2 text-[#00E5FF] text-right font-mono font-bold">{cantEscalada}</td>
-                                        <td className="px-3 py-2 text-gray-400">{ing.unidad_medida || '-'}</td>
+                                      <tr key={i} className={`border-t border-gray-100 ${i % 2 === 0 ? '' : 'bg-gray-50'}`}>
+                                        <td className="px-4 py-2 text-gray-900 font-medium">{nombre}</td>
+                                        <td className="px-4 py-2 text-gray-600 text-right font-mono">{cantBase}</td>
+                                        <td className="px-4 py-2 text-[#F97316] text-right font-mono font-bold">{cantEscalada}</td>
+                                        <td className="px-3 py-2 text-gray-600">{ing.unidad_medida || '-'}</td>
                                       </tr>
                                     );
                                   })}
@@ -737,7 +747,7 @@ export default function Cocina() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10"
+                          className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10"
                           onClick={() => exportOrdenesProduccionToPDF([order])}
                           title="Descargar PDF de esta orden"
                         >
@@ -759,12 +769,12 @@ export default function Cocina() {
       {view === 'reports' && (
         <div className="space-y-6">
           <div className="flex justify-end">
-            <Button variant="outline" size="sm" onClick={() => exportReporteKDSToPDF(stats, comandas)} className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10">
+            <Button variant="outline" size="sm" onClick={() => exportReporteKDSToPDF(stats, comandas)} className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10">
               <FileDown className="w-4 h-4 mr-2" /> Exportar Reporte
             </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 border-[#00E5FF]/20"><CardContent className="p-6"><p className="text-gray-400 text-sm mb-2">Total Comandas</p><p className="text-3xl font-black text-white">{comandas.length}</p></CardContent></Card>
+            <Card className="bg-gradient-to-br from-gray-50 to-gray-100 border-[#F97316]/20"><CardContent className="p-6"><p className="text-gray-600 text-sm mb-2">Total Comandas</p><p className="text-3xl font-black text-gray-900">{comandas.length}</p></CardContent></Card>
             <Card className="bg-gradient-to-br from-orange-900/20 to-orange-800/10 border-orange-500/30"><CardContent className="p-6"><p className="text-orange-400 text-sm mb-2">Pendientes</p><p className="text-3xl font-black text-orange-400">{stats.pendientes}</p></CardContent></Card>
             <Card className="bg-gradient-to-br from-blue-900/20 to-blue-800/10 border-blue-500/30"><CardContent className="p-6"><p className="text-blue-400 text-sm mb-2">En Preparación</p><p className="text-3xl font-black text-blue-400">{stats.enPreparacion}</p></CardContent></Card>
             <Card className="bg-gradient-to-br from-green-900/20 to-green-800/10 border-green-500/30"><CardContent className="p-6"><p className="text-green-400 text-sm mb-2">Completadas</p><p className="text-3xl font-black text-green-400">{stats.listas}</p></CardContent></Card>

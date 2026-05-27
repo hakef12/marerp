@@ -53,20 +53,29 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
       
       await inicializarDatosDemo(auth.empresaId);
       
-      const comandas = await obtenerComandas(auth.empresaId);
-      const estado = c.req.query('estado');
+      const todas = await obtenerComandas(auth.empresaId);
+      const estado      = c.req.query('estado');
+      const incluirTodas = c.req.query('incluir_todas') === 'true';
 
-      let comandasFiltradas = comandas;
-      
+      // Por defecto el KDS solo muestra comandas activas
+      const ESTADOS_ACTIVOS = ['pendiente', 'en_preparacion', 'lista'];
+      let comandasFiltradas = incluirTodas
+        ? todas
+        : todas.filter((cmd: any) => ESTADOS_ACTIVOS.includes(cmd.estado));
+
       if (estado) {
-        comandasFiltradas = comandas.filter((cmd: any) => cmd.estado === estado);
+        comandasFiltradas = comandasFiltradas.filter((cmd: any) => cmd.estado === estado);
       }
 
-      // Ordenar por fecha (más recientes primero)
+      // Ordenar: pendientes primero, luego en_preparacion, luego lista; dentro de cada estado por antigüedad
+      const orden: Record<string, number> = { pendiente: 0, en_preparacion: 1, lista: 2 };
       comandasFiltradas.sort((a: any, b: any) => {
+        const oa = orden[a.estado] ?? 99;
+        const ob = orden[b.estado] ?? 99;
+        if (oa !== ob) return oa - ob;
         const fechaA = new Date(a.created_at || a.fecha_creacion || 0).getTime();
         const fechaB = new Date(b.created_at || b.fecha_creacion || 0).getTime();
-        return fechaB - fechaA;
+        return fechaA - fechaB; // más antiguas primero dentro del mismo estado
       });
 
       return c.json({ comandas: comandasFiltradas });
@@ -181,7 +190,7 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
         );
         const porciones = parseInt(receta.porciones) || 1;
         const costoPorPorcionDinamico = costoTotalDinamico / porciones;
-        const precioPorPorcion = parseFloat(receta.precio_venta) || parseFloat(producto?.precio) || 0;
+        const precioPorPorcion = parseFloat(receta.precio_sugerido) || parseFloat(receta.precio_venta) || parseFloat(producto?.precio) || 0;
         const margenDinamico = precioPorPorcion > 0
           ? ((precioPorPorcion - costoPorPorcionDinamico) / precioPorPorcion) * 100
           : 0;
@@ -192,6 +201,8 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
           costo_por_porcion: parseFloat(costoPorPorcionDinamico.toFixed(4)),
           costo_total: parseFloat(costoTotalDinamico.toFixed(4)),
           margen_bruto: parseFloat(margenDinamico.toFixed(2)),
+          // Asegurar que precio_sugerido siempre esté presente
+          precio_sugerido: precioPorPorcion,
           producto: producto ? {
             id: producto.id,
             codigo: producto.codigo,

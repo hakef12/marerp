@@ -38,7 +38,6 @@ export default function Proyectos() {
   const { token } = useAuth();
   const [proyectos, setProyectos] = useState<any[]>([]);
   const [clientes, setClientes] = useState<any[]>([]);
-  const [centrosCostos, setCentrosCostos] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingProject, setEditingProject] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -186,7 +185,7 @@ export default function Proyectos() {
       case 'cancelled':
         return 'bg-red-500/20 text-red-400 border-red-500/30';
       default:
-        return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+        return 'bg-gray-500/20 text-gray-600 border-gray-500/30';
     }
   };
 
@@ -205,8 +204,8 @@ export default function Proyectos() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-2">Gestión de Proyectos</h1>
-          <p className="text-gray-400">Administre los proyectos de su empresa</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Gestión de Proyectos</h1>
+          <p className="text-gray-600">Administre los proyectos de su empresa</p>
         </div>
         <div className="flex gap-3">
           <ExportButtons
@@ -216,7 +215,7 @@ export default function Proyectos() {
           />
           <Button 
             onClick={() => setShowModal(true)}
-            className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]"
+            className="bg-gradient-to-r from-[#C2410C] to-[#F97316]"
           >
             <Plus className="w-4 h-4 mr-2" />
             Nuevo Proyecto
@@ -226,19 +225,19 @@ export default function Proyectos() {
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-400">Total Proyectos</CardTitle>
+            <CardTitle className="text-sm text-gray-600">Total Proyectos</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">{kpis.totalProjects}</div>
-            <FolderKanban className="w-5 h-5 text-[#00E5FF] mt-2" />
+            <div className="text-3xl font-bold text-gray-900">{kpis.totalProjects}</div>
+            <FolderKanban className="w-5 h-5 text-[#F97316] mt-2" />
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-blue-500/20 border-2">
+        <Card className="bg-white border-blue-500/20 border-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-400">En Progreso</CardTitle>
+            <CardTitle className="text-sm text-gray-600">En Progreso</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-blue-400">{kpis.activeProjects}</div>
@@ -246,9 +245,9 @@ export default function Proyectos() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-green-500/20 border-2">
+        <Card className="bg-white border-green-500/20 border-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-400">Completados</CardTitle>
+            <CardTitle className="text-sm text-gray-600">Completados</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-400">{kpis.completedProjects}</div>
@@ -256,33 +255,33 @@ export default function Proyectos() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-400">Presupuesto Total</CardTitle>
+            <CardTitle className="text-sm text-gray-600">Presupuesto Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-white">
+            <div className="text-2xl font-bold text-gray-900">
               ${(kpis.totalBudget / 1000).toFixed(1)}K
             </div>
-            <DollarSign className="w-5 h-5 text-[#00E5FF] mt-2" />
+            <DollarSign className="w-5 h-5 text-[#F97316] mt-2" />
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#7B61FF]/20">
+        <Card className="bg-white border-[#FB923C]/20">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-400">Costo Total</CardTitle>
+            <CardTitle className="text-sm text-gray-600">Costo Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-[#7B61FF]">
+            <div className="text-2xl font-bold text-[#FB923C]">
               ${(kpis.totalCost / 1000).toFixed(1)}K
             </div>
-            <TrendingUp className="w-5 h-5 text-[#7B61FF] mt-2" />
+            <TrendingUp className="w-5 h-5 text-[#FB923C] mt-2" />
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-red-500/20 border-2">
+        <Card className="bg-white border-red-500/20 border-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-400">Sobre Presupuesto</CardTitle>
+            <CardTitle className="text-sm text-gray-600">Sobre Presupuesto</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-red-400">{kpis.overBudget}</div>
@@ -292,25 +291,25 @@ export default function Proyectos() {
       </div>
 
       {/* Filtros */}
-      <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+      <Card className="bg-white border-[#F97316]/20">
         <CardContent className="p-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                 <Input
                   placeholder="Buscar proyecto..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="pl-10 bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
             </div>
             <Select value={filterStatus} onValueChange={(value: any) => setFilterStatus(value)}>
-              <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+              <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+              <SelectContent className="bg-white border-[#F97316]/30">
                 <SelectItem value="all">Todos los estados</SelectItem>
                 <SelectItem value="planning">Planificación</SelectItem>
                 <SelectItem value="in_progress">En Progreso</SelectItem>
@@ -326,11 +325,11 @@ export default function Proyectos() {
       {/* Grid de Proyectos */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredProjects.length === 0 ? (
-          <Card className="col-span-full bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="col-span-full bg-white border-[#F97316]/20">
             <CardContent className="p-12 text-center">
               <FolderKanban className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-400 text-lg">No se encontraron proyectos</p>
-              <p className="text-gray-500 text-sm mt-2">Crea tu primer proyecto para comenzar</p>
+              <p className="text-gray-600 text-lg">No se encontraron proyectos</p>
+              <p className="text-gray-600 text-sm mt-2">Crea tu primer proyecto para comenzar</p>
             </CardContent>
           </Card>
         ) : (
@@ -340,17 +339,17 @@ export default function Proyectos() {
             return (
               <Card 
                 key={project.id} 
-                className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20 hover:border-[#7B61FF]/40 transition-all hover:shadow-lg hover:shadow-[#7B61FF]/10"
+                className="bg-white border-[#F97316]/20 hover:border-[#FB923C]/40 transition-all hover:shadow-lg hover:shadow-[#FB923C]/10"
               >
                 <CardContent className="p-6">
                   {/* Header */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <FolderKanban className="w-5 h-5 text-[#00E5FF]" />
-                        <h3 className="text-lg font-bold text-white">{project.name}</h3>
+                        <FolderKanban className="w-5 h-5 text-[#F97316]" />
+                        <h3 className="text-lg font-bold text-gray-900">{project.name}</h3>
                       </div>
-                      <p className="text-xs text-gray-500">{project.code}</p>
+                      <p className="text-xs text-gray-600">{project.code}</p>
                     </div>
                     <Badge className={getStatusColor(project.status)}>
                       {getStatusLabel(project.status)}
@@ -358,7 +357,7 @@ export default function Proyectos() {
                   </div>
 
                   {/* Descripción */}
-                  <p className="text-sm text-gray-400 mb-4 line-clamp-2">
+                  <p className="text-sm text-gray-600 mb-4 line-clamp-2">
                     {project.description || 'Sin descripción'}
                   </p>
 
@@ -366,23 +365,23 @@ export default function Proyectos() {
                   {project.clientName && (
                     <div className="mb-3">
                       <div className="flex items-center gap-2 text-sm">
-                        <Building2 className="w-4 h-4 text-[#00E5FF]" />
-                        <span className="text-gray-400">Cliente:</span>
-                        <span className="text-white font-medium">{project.clientName}</span>
+                        <Building2 className="w-4 h-4 text-[#F97316]" />
+                        <span className="text-gray-600">Cliente:</span>
+                        <span className="text-gray-900 font-medium">{project.clientName}</span>
                       </div>
                     </div>
                   )}
 
                   {/* Presupuesto y Costo */}
                   <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="bg-white/5 rounded-lg p-3">
-                      <p className="text-xs text-gray-400 mb-1">Presupuesto</p>
-                      <p className="text-sm font-bold text-white">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-600 mb-1">Presupuesto</p>
+                      <p className="text-sm font-bold text-gray-900">
                         ${project.budget.toLocaleString('es-ES', { minimumFractionDigits: 2 })}
                       </p>
                     </div>
-                    <div className="bg-white/5 rounded-lg p-3">
-                      <p className="text-xs text-gray-400 mb-1">Costo Actual</p>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-600 mb-1">Costo Actual</p>
                       <p className={`text-sm font-bold ${
                         project.actualCost > project.budget ? 'text-red-400' : 'text-green-400'
                       }`}>
@@ -394,8 +393,8 @@ export default function Proyectos() {
                   {/* Progress Bar */}
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-gray-400">Progreso de Costos</span>
-                      <span className="text-xs font-medium text-white">
+                      <span className="text-xs text-gray-600">Progreso de Costos</span>
+                      <span className="text-xs font-medium text-gray-900">
                         {progress.toFixed(0)}%
                       </span>
                     </div>
@@ -414,27 +413,27 @@ export default function Proyectos() {
                   </div>
 
                   {/* Footer */}
-                  <div className="flex items-center justify-between pt-4 border-t border-[#00E5FF]/10">
+                  <div className="flex items-center justify-between pt-4 border-t border-[#F97316]/10">
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-xs text-gray-400">
-                        <User className="w-3 h-3 text-[#00E5FF]" />
+                      <div className="flex items-center gap-2 text-xs text-gray-600">
+                        <User className="w-3 h-3 text-[#F97316]" />
                         <span>{project.manager}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-gray-400">
-                        <Calendar className="w-3 h-3 text-[#00E5FF]" />
+                      <div className="flex items-center gap-2 text-xs text-gray-600">
+                        <Calendar className="w-3 h-3 text-[#F97316]" />
                         <span>{project.startDate}</span>
                       </div>
                     </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleEdit(project)}
-                        className="p-2 hover:bg-white/10 rounded-lg transition"
+                        className="p-2 hover:bg-gray-100 rounded-lg transition"
                       >
-                        <Edit2 className="w-4 h-4 text-[#00E5FF]" />
+                        <Edit2 className="w-4 h-4 text-[#F97316]" />
                       </button>
                       <button
                         onClick={() => handleDelete(project.id)}
-                        className="p-2 hover:bg-white/10 rounded-lg transition"
+                        className="p-2 hover:bg-gray-100 rounded-lg transition"
                       >
                         <Trash2 className="w-4 h-4 text-red-400" />
                       </button>
@@ -449,7 +448,7 @@ export default function Proyectos() {
 
       {/* Modal */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-white border-[#F97316]/30 text-gray-900 max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl">
               {editingProject ? 'Editar Proyecto' : 'Nuevo Proyecto'}
@@ -464,17 +463,17 @@ export default function Proyectos() {
                   required
                   value={formData.code}
                   onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
 
               <div className="space-y-2">
                 <Label>Estado *</Label>
                 <Select value={formData.status} onValueChange={(value: any) => setFormData({ ...formData, status: value })}>
-                  <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+                  <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                  <SelectContent className="bg-white border-[#F97316]/30">
                     <SelectItem value="planning">Planificación</SelectItem>
                     <SelectItem value="in_progress">En Progreso</SelectItem>
                     <SelectItem value="on_hold">En Espera</SelectItem>
@@ -491,7 +490,7 @@ export default function Proyectos() {
                 required
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="bg-white/5 border-[#00E5FF]/20 text-white"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               />
             </div>
 
@@ -501,7 +500,7 @@ export default function Proyectos() {
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={3}
-                className="bg-white/5 border-[#00E5FF]/20 text-white"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               />
             </div>
 
@@ -509,10 +508,10 @@ export default function Proyectos() {
               <div className="space-y-2">
                 <Label>Cliente</Label>
                 <Select value={formData.clientId} onValueChange={(value) => setFormData({ ...formData, clientId: value })}>
-                  <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+                  <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                     <SelectValue placeholder="Seleccione un cliente" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                  <SelectContent className="bg-white border-[#F97316]/30">
                     {clientes.map((cliente) => (
                       <SelectItem key={cliente.id} value={cliente.id}>
                         {cliente.businessName}
@@ -524,18 +523,12 @@ export default function Proyectos() {
 
               <div className="space-y-2">
                 <Label>Centro de Costos</Label>
-                <Select value={formData.costCenterId} onValueChange={(value) => setFormData({ ...formData, costCenterId: value })}>
-                  <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
-                    <SelectValue placeholder="Seleccione un centro" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
-                    {centrosCostos.map((cc) => (
-                      <SelectItem key={cc.id} value={cc.id}>
-                        {cc.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Input
+                  placeholder="Ej: Área Comercial"
+                  value={formData.costCenterId}
+                  onChange={e => setFormData({ ...formData, costCenterId: e.target.value })}
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
+                />
               </div>
             </div>
 
@@ -547,7 +540,7 @@ export default function Proyectos() {
                   required
                   value={formData.startDate}
                   onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
 
@@ -557,7 +550,7 @@ export default function Proyectos() {
                   type="date"
                   value={formData.endDate}
                   onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
             </div>
@@ -571,7 +564,7 @@ export default function Proyectos() {
                   required
                   value={formData.budget}
                   onChange={(e) => setFormData({ ...formData, budget: parseFloat(e.target.value) })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
 
@@ -582,7 +575,7 @@ export default function Proyectos() {
                   step="0.01"
                   value={formData.actualCost}
                   onChange={(e) => setFormData({ ...formData, actualCost: parseFloat(e.target.value) })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
             </div>
@@ -593,7 +586,7 @@ export default function Proyectos() {
                 required
                 value={formData.manager}
                 onChange={(e) => setFormData({ ...formData, manager: e.target.value })}
-                className="bg-white/5 border-[#00E5FF]/20 text-white"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               />
             </div>
 
@@ -603,7 +596,7 @@ export default function Proyectos() {
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 rows={3}
-                className="bg-white/5 border-[#00E5FF]/20 text-white"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               />
             </div>
 
@@ -618,18 +611,18 @@ export default function Proyectos() {
               <Label htmlFor="active">Proyecto activo</Label>
             </div>
 
-            <div className="flex gap-4 pt-4 border-t border-[#00E5FF]/20">
+            <div className="flex gap-4 pt-4 border-t border-[#F97316]/20">
               <Button
                 type="button"
                 onClick={handleCloseModal}
                 variant="outline"
-                className="flex-1 border-[#00E5FF]/30 text-white"
+                className="flex-1 border-[#F97316]/30 text-gray-900"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
-                className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]"
+                className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316]"
               >
                 {editingProject ? 'Actualizar' : 'Crear'}
               </Button>

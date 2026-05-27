@@ -188,13 +188,13 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#0A1A2F] rounded-xl border border-[#00E5FF]/30 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-[#0A1A2F] border-b border-[#00E5FF]/20 p-6 flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Factory className="w-6 h-6 text-[#00E5FF]" />
+      <div className="bg-white rounded-xl border border-[#F97316]/30 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-[#F97316]/20 p-6 flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <Factory className="w-6 h-6 text-[#F97316]" />
             Ejecutar Producción
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <button onClick={onClose} className="text-gray-600 hover:text-gray-900">
             <X className="w-6 h-6" />
           </button>
         </div>
@@ -203,12 +203,12 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
           {/* Selección de Receta */}
           {!recetaPreseleccionada && (
             <div>
-              <Label className="text-gray-300">Seleccionar Receta *</Label>
+              <Label className="text-gray-600">Seleccionar Receta *</Label>
               <Select
                 value={recetaSeleccionada?.id || ''}
                 onValueChange={handleRecetaChange}
               >
-                <SelectTrigger className="bg-[#1a3a52] border-[#00E5FF]/20 text-white">
+                <SelectTrigger className="bg-gray-100 border-[#F97316]/20 text-gray-900">
                   <SelectValue placeholder="Seleccionar receta para producir" />
                 </SelectTrigger>
                 <SelectContent>
@@ -225,24 +225,24 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
           {recetaSeleccionada && (
             <>
               {/* Información de la receta */}
-              <div className="bg-[#1a3a52]/30 rounded-lg p-4 border border-[#00E5FF]/20">
-                <h3 className="text-lg font-bold text-white mb-3">{recetaSeleccionada.nombre}</h3>
+              <div className="bg-gray-50 rounded-lg p-4 border border-[#F97316]/20">
+                <h3 className="text-lg font-bold text-gray-900 mb-3">{recetaSeleccionada.nombre}</h3>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p className="text-gray-400">Producto que genera:</p>
-                    <p className="text-white font-bold">{recetaSeleccionada.productos?.nombre || 'Producto Asociado'}</p>
+                    <p className="text-gray-600">Producto que genera:</p>
+                    <p className="text-gray-900 font-bold">{recetaSeleccionada.productos?.nombre || 'Producto Asociado'}</p>
                   </div>
                   <div>
-                    <p className="text-gray-400">Porciones por lote:</p>
-                    <p className="text-white font-bold">{recetaSeleccionada.porciones || 1} unidades</p>
+                    <p className="text-gray-600">Porciones por lote:</p>
+                    <p className="text-gray-900 font-bold">{recetaSeleccionada.porciones || 1} unidades</p>
                   </div>
                   <div>
-                    <p className="text-gray-400">Costo Base del Lote:</p>
-                    <p className="text-white font-bold">${costoTotalLoteBase.toFixed(2)}</p>
+                    <p className="text-gray-600">Costo Base del Lote:</p>
+                    <p className="text-gray-900 font-bold">${costoTotalLoteBase.toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-400">Tiempo estimado:</p>
-                    <p className="text-white font-bold">{recetaSeleccionada.tiempo_preparacion || 0} minutos</p>
+                    <p className="text-gray-600">Tiempo estimado:</p>
+                    <p className="text-gray-900 font-bold">{recetaSeleccionada.tiempo_preparacion || 0} minutos</p>
                   </div>
                 </div>
               </div>
@@ -250,9 +250,9 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
               {/* Configuración de producción */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-gray-300">Bodega de Ingredientes (Origen) *</Label>
+                  <Label className="text-gray-600">Bodega de Ingredientes (Origen) *</Label>
                   <Select value={bodegaOrigen} onValueChange={setBodegaOrigen}>
-                    <SelectTrigger className="bg-[#1a3a52] border-[#00E5FF]/20 text-white">
+                    <SelectTrigger className="bg-gray-100 border-[#F97316]/20 text-gray-900">
                       <SelectValue placeholder="Seleccionar bodega" />
                     </SelectTrigger>
                     <SelectContent>
@@ -263,13 +263,13 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-gray-400 mt-1">Se descargarán los ingredientes de aquí</p>
+                  <p className="text-xs text-gray-600 mt-1">Se descargarán los ingredientes de aquí</p>
                 </div>
 
                 <div>
-                  <Label className="text-gray-300">Bodega Producto Terminado (Destino) *</Label>
+                  <Label className="text-gray-600">Bodega Producto Terminado (Destino) *</Label>
                   <Select value={bodegaDestino} onValueChange={setBodegaDestino}>
-                    <SelectTrigger className="bg-[#1a3a52] border-[#00E5FF]/20 text-white">
+                    <SelectTrigger className="bg-gray-100 border-[#F97316]/20 text-gray-900">
                       <SelectValue placeholder="Seleccionar bodega" />
                     </SelectTrigger>
                     <SelectContent>
@@ -280,54 +280,54 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-gray-400 mt-1">Se agregará el producto aquí</p>
+                  <p className="text-xs text-gray-600 mt-1">Se agregará el producto aquí</p>
                 </div>
 
                 <div className="md:col-span-2">
-                  <Label className="text-gray-300">Cantidad de Lotes a Producir *</Label>
+                  <Label className="text-gray-600">Cantidad de Lotes a Producir *</Label>
                   <Input
                     type="number"
                     min="1"
                     value={cantidad}
                     onChange={(e) => setCantidad(parseInt(e.target.value) || 1)}
-                    className="bg-[#1a3a52] border-[#00E5FF]/20 text-white font-bold text-lg"
+                    className="bg-gray-100 border-[#F97316]/20 text-gray-900 font-bold text-lg"
                   />
-                  <p className="text-sm text-[#00E5FF] mt-1 font-medium">
+                  <p className="text-sm text-[#F97316] mt-1 font-medium">
                     = Se producirán {cantidadPorciones} unidades finales.
                   </p>
                 </div>
 
                 <div className="md:col-span-2">
-                  <Label className="text-gray-300">Notas de Producción</Label>
+                  <Label className="text-gray-600">Notas de Producción</Label>
                   <textarea
                     value={notas}
                     onChange={(e) => setNotas(e.target.value)}
                     rows={2}
                     placeholder="Observaciones opcionales..."
-                    className="w-full bg-[#1a3a52] border border-[#00E5FF]/20 rounded-lg p-3 text-white"
+                    className="w-full bg-gray-100 border border-[#F97316]/20 rounded-lg p-3 text-gray-900"
                   />
                 </div>
               </div>
 
               {/* Ingredientes que se consumirán */}
               {ingredientesProcesados.length > 0 && (
-                <div className="border border-[#00E5FF]/20 rounded-lg p-4 bg-[#0A1A2F]/50">
-                  <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+                <div className="border border-[#F97316]/20 rounded-lg p-4 bg-white">
+                  <h3 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
                     <AlertTriangle className="w-5 h-5 text-orange-400" />
                     Materia prima a consumir
                   </h3>
                   
-                  <div className="mb-2 text-xs text-gray-400 flex items-center gap-1">
+                  <div className="mb-2 text-xs text-gray-600 flex items-center gap-1">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                     Ingresa el % de merma por ingrediente para un costeo exacto
                   </div>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-2">
                     {ingredientesProcesados.map((ing: any, index: number) => (
-                      <div key={index} className="bg-[#1a3a52]/50 p-3 rounded-lg border border-[#00E5FF]/10">
+                      <div key={index} className="bg-gray-100 p-3 rounded-lg border border-[#F97316]/10">
                         <div className="flex justify-between items-start mb-2">
                           <div>
-                            <p className="text-white font-medium text-sm">{ing.nombre}</p>
-                            <p className="text-[#00E5FF] font-bold text-sm">
+                            <p className="text-gray-900 font-medium text-sm">{ing.nombre}</p>
+                            <p className="text-[#F97316] font-bold text-sm">
                               {ing.cantidad_necesaria.toFixed(3)} {ing.unidad_medida}
                               {ing.merma_pct > 0 && (
                                 <span className="text-amber-400 text-xs ml-1">
@@ -337,13 +337,13 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className="text-white font-bold text-sm">${ing.costo_total_ingrediente.toFixed(2)}</p>
-                            <p className="text-gray-400 text-xs">${ing.costo_unitario.toFixed(2)}/{ing.unidad_medida}</p>
+                            <p className="text-gray-900 font-bold text-sm">${ing.costo_total_ingrediente.toFixed(2)}</p>
+                            <p className="text-gray-600 text-xs">${ing.costo_unitario.toFixed(2)}/{ing.unidad_medida}</p>
                           </div>
                         </div>
                         {/* Input merma */}
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500 whitespace-nowrap">Merma %:</span>
+                          <span className="text-xs text-gray-600 whitespace-nowrap">Merma %:</span>
                           <input
                             type="number" min="0" max="99" step="0.5"
                             value={mermasPorIngrediente[index] || ''}
@@ -352,10 +352,10 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
                               [index]: Math.min(99, Math.max(0, parseFloat(e.target.value) || 0))
                             }))}
                             placeholder="0"
-                            className="w-20 h-6 text-xs bg-[#0A1A2F] border border-amber-400/30 rounded px-2 text-amber-300 placeholder:text-gray-600 focus:outline-none focus:border-amber-400"
+                            className="w-20 h-6 text-xs bg-white border border-amber-400/30 rounded px-2 text-amber-300 placeholder:text-gray-400 focus:outline-none focus:border-amber-400"
                           />
                           {ing.merma_pct > 0 && (
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-gray-600">
                               (base: {(ing.cantidad_base * cantidad).toFixed(3)} → con merma: {ing.cantidad_necesaria.toFixed(3)})
                             </span>
                           )}
@@ -367,15 +367,15 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
               )}
 
               {/* Resumen de costos A PRUEBA DE NAN */}
-              <div className="bg-gradient-to-br from-[#1e64a7]/20 to-[#00E5FF]/20 rounded-lg p-4 border border-[#00E5FF]/30">
+              <div className="bg-gradient-to-br from-[#C2410C]/20 to-[#F97316]/20 rounded-lg p-4 border border-[#F97316]/30">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-gray-300 text-sm">Costo Total de Producción:</p>
-                    <p className="text-3xl font-bold text-[#00E5FF]">${costoTotalProduccion.toFixed(2)}</p>
+                    <p className="text-gray-600 text-sm">Costo Total de Producción:</p>
+                    <p className="text-3xl font-bold text-[#F97316]">${costoTotalProduccion.toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-300 text-sm">Costo por Unidad Generada:</p>
-                    <p className="text-3xl font-bold text-[#7B61FF]">
+                    <p className="text-gray-600 text-sm">Costo por Unidad Generada:</p>
+                    <p className="text-3xl font-bold text-[#FB923C]">
                       ${costoPorUnidad.toFixed(4)}
                     </p>
                   </div>
@@ -396,12 +396,12 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
           )}
 
           {/* Botones */}
-          <div className="flex gap-3 justify-end pt-4 border-t border-white/10">
+          <div className="flex gap-3 justify-end pt-4 border-t border-gray-100">
             <Button
               type="button"
               onClick={onClose}
               variant="outline"
-              className="border-gray-600 text-gray-300 hover:bg-gray-700"
+              className="border-gray-600 text-gray-600 hover:bg-gray-700"
               disabled={produciendo}
             >
               Cancelar

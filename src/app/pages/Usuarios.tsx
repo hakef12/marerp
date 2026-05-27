@@ -193,8 +193,8 @@ export default function Usuarios() {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-2 border-[#00E5FF]/30 border-t-[#00E5FF] rounded-full animate-spin" />
-          <p className="text-gray-400">Cargando usuarios...</p>
+          <div className="w-10 h-10 border-2 border-[#F97316]/30 border-t-[#F97316] rounded-full animate-spin" />
+          <p className="text-gray-600">Cargando usuarios...</p>
         </div>
       </div>
     );
@@ -206,10 +206,10 @@ export default function Usuarios() {
       {/* ── Header ──────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-1">Gestión de Usuarios</h1>
-          <p className="text-gray-400 text-sm">
-            Usuarios de <span className="text-[#00E5FF]">{user?.empresa?.nombre}</span> •
-            Cuenta gerente: <span className="text-white font-medium">{user?.email}</span>
+          <h1 className="text-3xl font-bold text-gray-900 mb-1">Gestión de Usuarios</h1>
+          <p className="text-gray-600 text-sm">
+            Usuarios de <span className="text-[#F97316]">{user?.empresa?.nombre}</span> •
+            Cuenta gerente: <span className="text-gray-900 font-medium">{user?.email}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -249,7 +249,7 @@ export default function Usuarios() {
           />
           {esAdmin && (
             <Button onClick={abrirCrear}
-              className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90 shadow-lg shadow-[#00E5FF]/20">
+              className="bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90 shadow-lg shadow-[#F97316]/20">
               <Plus className="w-4 h-4 mr-2" />
               Nuevo Usuario
             </Button>
@@ -259,17 +259,17 @@ export default function Usuarios() {
 
       {/* ── Indicador de plan ────────────────────────────────── */}
       {limitesPlan && (
-        <Card className="bg-gradient-to-r from-[#1e64a7]/15 to-[#00E5FF]/10 border-[#00E5FF]/25">
+        <Card className="bg-gradient-to-r from-[#C2410C]/15 to-[#F97316]/10 border-[#F97316]/25">
           <CardContent className="p-5">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
-                <p className="text-white font-semibold text-lg">Plan {limitesPlan.plan.nombre}</p>
-                <p className="text-gray-400 text-sm mt-0.5">
-                  <span className={activos >= (maxUsuarios ?? 9999) ? 'text-red-400 font-semibold' : 'text-[#00E5FF] font-semibold'}>
+                <p className="text-gray-900 font-semibold text-lg">Plan {limitesPlan.plan.nombre}</p>
+                <p className="text-gray-600 text-sm mt-0.5">
+                  <span className={activos >= (maxUsuarios ?? 9999) ? 'text-red-400 font-semibold' : 'text-[#F97316] font-semibold'}>
                     {activos}
                   </span>
                   {' '}de{' '}
-                  <span className="text-white font-semibold">
+                  <span className="text-gray-900 font-semibold">
                     {maxUsuarios === 9999 || maxUsuarios === 999 ? 'ilimitados' : maxUsuarios}
                   </span>
                   {' '}usuarios activos
@@ -283,20 +283,20 @@ export default function Usuarios() {
                 )}
                 {(maxUsuarios !== 9999 && maxUsuarios !== 999) && (
                   <div className="w-40">
-                    <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${
                           limitesPlan.limites_alcanzados?.usuarios
                             ? 'bg-gradient-to-r from-orange-500 to-red-500'
-                            : 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]'
+                            : 'bg-gradient-to-r from-[#C2410C] to-[#F97316]'
                         }`}
                         style={{ width: `${Math.min((activos / maxUsuarios) * 100, 100)}%` }}
                       />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1 text-right">{Math.round((activos / maxUsuarios) * 100)}% usado</p>
+                    <p className="text-xs text-gray-600 mt-1 text-right">{Math.round((activos / maxUsuarios) * 100)}% usado</p>
                   </div>
                 )}
-                <button onClick={cargarDatos} className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
+                <button onClick={cargarDatos} className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors">
                   <RefreshCw className="w-4 h-4" />
                 </button>
               </div>
@@ -307,12 +307,12 @@ export default function Usuarios() {
 
       {/* ── Buscador ─────────────────────────────────────────── */}
       <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
         <Input
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar usuario, email o rol..."
-          className="pl-9 bg-[#0A1A2F]/60 border-[#00E5FF]/20 text-white placeholder:text-gray-600"
+          className="pl-9 bg-white border-[#F97316]/20 text-gray-900 placeholder:text-gray-400"
         />
       </div>
 
@@ -320,7 +320,7 @@ export default function Usuarios() {
       {usuariosFiltrados.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <UserCog className="w-12 h-12 text-gray-600 mb-4" />
-          <p className="text-gray-400 text-lg font-medium">No hay usuarios</p>
+          <p className="text-gray-600 text-lg font-medium">No hay usuarios</p>
           <p className="text-gray-600 text-sm mt-1">
             {busqueda ? 'Ningún usuario coincide con la búsqueda' : 'Crea el primer usuario con el botón de arriba'}
           </p>
@@ -341,10 +341,10 @@ export default function Usuarios() {
       )}
 
       {/* ── Guía de roles ────────────────────────────────────── */}
-      <Card className="bg-[#0A1A2F]/40 border-[#00E5FF]/10">
+      <Card className="bg-white border-[#F97316]/10">
         <CardHeader>
-          <CardTitle className="text-white text-base flex items-center gap-2">
-            <Shield className="w-4 h-4 text-[#00E5FF]" />
+          <CardTitle className="text-gray-900 text-base flex items-center gap-2">
+            <Shield className="w-4 h-4 text-[#F97316]" />
             Roles disponibles y sus módulos
           </CardTitle>
         </CardHeader>
@@ -354,16 +354,16 @@ export default function Usuarios() {
               const info = ROLES_INFO[rol];
               const modulos = MODULOS_POR_ROL[rol] ?? [];
               return (
-                <div key={rol} className="bg-white/5 rounded-lg p-3 border border-white/5">
+                <div key={rol} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
                   <div className="flex items-center gap-2 mb-2">
                     <span className={`px-2 py-0.5 rounded text-xs font-semibold border ${info?.badge}`}>
                       {info?.label}
                     </span>
                   </div>
-                  <p className="text-gray-400 text-xs mb-2">{info?.descripcion}</p>
+                  <p className="text-gray-600 text-xs mb-2">{info?.descripcion}</p>
                   <div className="flex flex-wrap gap-1">
                     {modulos.filter(m => m !== 'dashboard').map(m => (
-                      <span key={m} className="px-1.5 py-0.5 bg-[#00E5FF]/10 text-[#00E5FF] text-[10px] rounded border border-[#00E5FF]/20">
+                      <span key={m} className="px-1.5 py-0.5 bg-[#F97316]/10 text-[#F97316] text-[10px] rounded border border-[#F97316]/20">
                         {MODULO_LABEL[m] ?? m}
                       </span>
                     ))}
@@ -377,18 +377,18 @@ export default function Usuarios() {
 
       {/* ── Modal Crear / Editar ──────────────────────────────── */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-lg bg-[#0A1A2F]/98 border-[#00E5FF]/40 shadow-2xl">
-            <CardHeader className="border-b border-white/5 pb-4">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-lg bg-white border-[#F97316]/40 shadow-2xl">
+            <CardHeader className="border-b border-gray-100 pb-4">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-white text-xl">
+                <CardTitle className="text-gray-900 text-xl">
                   {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
                 </CardTitle>
-                <button onClick={() => setShowModal(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white">
+                <button onClick={() => setShowModal(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-gray-900">
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <p className="text-gray-500 text-sm mt-1">
+              <p className="text-gray-600 text-sm mt-1">
                 {editingUser ? 'Cambia el rol o datos del usuario' : 'Crea un acceso para un miembro del equipo'}
               </p>
             </CardHeader>
@@ -397,25 +397,25 @@ export default function Usuarios() {
 
                 {/* Nombre */}
                 <div>
-                  <Label className="text-gray-300 mb-1.5 block">Nombre Completo *</Label>
+                  <Label className="text-gray-600 mb-1.5 block">Nombre Completo *</Label>
                   <Input
                     value={formData.nombre_completo}
                     onChange={e => setFormData({ ...formData, nombre_completo: e.target.value })}
                     required placeholder="Ej: María García López"
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
 
                 {/* Email */}
                 <div>
-                  <Label className="text-gray-300 mb-1.5 block">Email *</Label>
+                  <Label className="text-gray-600 mb-1.5 block">Email *</Label>
                   <Input
                     type="email"
                     value={formData.email}
                     onChange={e => setFormData({ ...formData, email: e.target.value })}
                     required disabled={!!editingUser}
                     placeholder="usuario@empresa.com"
-                    className="bg-white/5 border-[#00E5FF]/20 text-white disabled:opacity-40"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 disabled:opacity-40"
                   />
                   {!!editingUser && (
                     <p className="text-xs text-gray-600 mt-1">El email no se puede cambiar</p>
@@ -425,7 +425,7 @@ export default function Usuarios() {
                 {/* Password (solo crear) */}
                 {!editingUser && (
                   <div>
-                    <Label className="text-gray-300 mb-1.5 block">Contraseña * (mín. 6 caracteres)</Label>
+                    <Label className="text-gray-600 mb-1.5 block">Contraseña * (mín. 6 caracteres)</Label>
                     <div className="relative">
                       <Input
                         type={showPassword ? 'text' : 'password'}
@@ -433,10 +433,10 @@ export default function Usuarios() {
                         onChange={e => setFormData({ ...formData, password: e.target.value })}
                         required minLength={6}
                         placeholder="Contraseña segura"
-                        className="bg-white/5 border-[#00E5FF]/20 text-white pr-10"
+                        className="bg-gray-50 border-[#F97316]/20 text-gray-900 pr-10"
                       />
                       <button type="button" onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-900">
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
@@ -445,25 +445,25 @@ export default function Usuarios() {
 
                 {/* Cargo */}
                 <div>
-                  <Label className="text-gray-300 mb-1.5 block">Cargo / Puesto</Label>
+                  <Label className="text-gray-600 mb-1.5 block">Cargo / Puesto</Label>
                   <Input
                     value={formData.puesto}
                     onChange={e => setFormData({ ...formData, puesto: e.target.value })}
                     placeholder="Ej: Cajero Principal, Chef de Cocina"
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
 
                 {/* Rol */}
                 <div>
-                  <Label className="text-gray-300 mb-1.5 block">Rol *</Label>
+                  <Label className="text-gray-600 mb-1.5 block">Rol *</Label>
                   <select
                     value={formData.rol}
                     onChange={e => setFormData({ ...formData, rol: e.target.value })}
-                    className="w-full px-3 py-2 bg-white/5 border border-[#00E5FF]/20 rounded-md text-white focus:outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF]/30"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[#F97316]/20 rounded-md text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-1 focus:ring-[#F97316]/30"
                   >
                     {ROLES_ASIGNABLES.map(rol => (
-                      <option key={rol} value={rol} className="bg-[#0A1A2F]">
+                      <option key={rol} value={rol} className="bg-white">
                         {ROLES_INFO[rol]?.label} — {ROLES_INFO[rol]?.descripcion}
                       </option>
                     ))}
@@ -472,15 +472,15 @@ export default function Usuarios() {
 
                 {/* Preview módulos del rol seleccionado */}
                 {formData.rol && (
-                  <div className="bg-[#00E5FF]/5 border border-[#00E5FF]/15 rounded-lg p-3">
-                    <p className="text-[#00E5FF] text-xs font-semibold mb-2">
+                  <div className="bg-[#F97316]/5 border border-[#F97316]/15 rounded-lg p-3">
+                    <p className="text-[#F97316] text-xs font-semibold mb-2">
                       Módulos a los que tendrá acceso:
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {(MODULOS_POR_ROL[formData.rol] ?? []).map(m => {
                         const Icon = MODULO_ICON[m] ?? Settings;
                         return (
-                          <span key={m} className="flex items-center gap-1 px-2 py-0.5 bg-[#00E5FF]/10 border border-[#00E5FF]/20 text-[#00E5FF] text-[11px] rounded-full">
+                          <span key={m} className="flex items-center gap-1 px-2 py-0.5 bg-[#F97316]/10 border border-[#F97316]/20 text-[#F97316] text-[11px] rounded-full">
                             <Icon className="w-3 h-3" />
                             {MODULO_LABEL[m] ?? m}
                           </span>
@@ -492,7 +492,7 @@ export default function Usuarios() {
 
                 {/* Sucursal asignada */}
                 <div>
-                  <Label className="text-gray-300 mb-1.5 block">Sucursal asignada</Label>
+                  <Label className="text-gray-600 mb-1.5 block">Sucursal asignada</Label>
                   <select
                     value={formData.bodega_id}
                     onChange={e => {
@@ -500,11 +500,11 @@ export default function Usuarios() {
                       const b = bodegas.find(x => x.id === id);
                       setFormData(f => ({ ...f, bodega_id: id, bodega_nombre: b?.nombre ?? '' }));
                     }}
-                    className="w-full px-3 py-2 bg-white/5 border border-[#00E5FF]/20 rounded-md text-white focus:outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF]/30"
+                    className="w-full px-3 py-2 bg-gray-50 border border-[#F97316]/20 rounded-md text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-1 focus:ring-[#F97316]/30"
                   >
-                    <option value="" className="bg-[#0A1A2F] text-gray-400">Sin asignar (acceso a todas)</option>
+                    <option value="" className="bg-white text-gray-600">Sin asignar (acceso a todas)</option>
                     {bodegas.map(b => (
-                      <option key={b.id} value={b.id} className="bg-[#0A1A2F]">{b.nombre}</option>
+                      <option key={b.id} value={b.id} className="bg-white">{b.nombre}</option>
                     ))}
                   </select>
                   <p className="text-xs text-gray-600 mt-1">
@@ -517,11 +517,11 @@ export default function Usuarios() {
                 {/* Botones */}
                 <div className="flex gap-3 pt-2">
                   <Button type="button" variant="outline" onClick={() => setShowModal(false)}
-                    className="flex-1 border-gray-600 text-gray-400 hover:text-white">
+                    className="flex-1 border-gray-600 text-gray-600 hover:text-gray-900">
                     Cancelar
                   </Button>
                   <Button type="submit" disabled={submitting}
-                    className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90">
+                    className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90">
                     {submitting
                       ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />Guardando...</>
                       : editingUser ? 'Actualizar Usuario' : 'Crear Usuario'
@@ -551,24 +551,24 @@ function UsuarioCard({
   const modulos = (usuario.modulos_acceso || MODULOS_POR_ROL[usuario.rol] || []).filter(m => m !== 'dashboard');
 
   return (
-    <Card className={`bg-[#0A1A2F]/60 border-[#00E5FF]/15 hover:border-[#00E5FF]/35 transition-all ${!usuario.activo ? 'opacity-55' : ''}`}>
+    <Card className={`bg-white border-[#F97316]/15 hover:border-[#F97316]/35 transition-all ${!usuario.activo ? 'opacity-55' : ''}`}>
       <CardContent className="p-5 space-y-4">
 
         {/* Cabecera */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             {/* Avatar */}
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-lg text-white ${
-              !usuario.activo ? 'bg-gray-600/50' : 'bg-gradient-to-br from-[#1e64a7] to-[#00E5FF]'
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-lg text-gray-900 ${
+              !usuario.activo ? 'bg-gray-600/50' : 'bg-gradient-to-br from-[#C2410C] to-[#F97316]'
             }`}>
               {usuario.nombre_completo.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <p className="text-white font-semibold text-sm truncate">{usuario.nombre_completo}</p>
-                {esYo && <span className="text-[10px] bg-[#00E5FF]/20 text-[#00E5FF] px-1.5 rounded border border-[#00E5FF]/30">Tú</span>}
+                <p className="text-gray-900 font-semibold text-sm truncate">{usuario.nombre_completo}</p>
+                {esYo && <span className="text-[10px] bg-[#F97316]/20 text-[#F97316] px-1.5 rounded border border-[#F97316]/30">Tú</span>}
               </div>
-              <p className="text-gray-500 text-xs truncate">{usuario.puesto || 'Sin cargo'}</p>
+              <p className="text-gray-600 text-xs truncate">{usuario.puesto || 'Sin cargo'}</p>
             </div>
           </div>
 
@@ -576,12 +576,12 @@ function UsuarioCard({
           {esAdmin && !esYo && (
             <div className="flex gap-1 flex-shrink-0">
               <button onClick={onEditar} title="Editar"
-                className="p-1.5 hover:bg-white/10 rounded-lg text-gray-500 hover:text-blue-400 transition-colors">
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600 hover:text-blue-400 transition-colors">
                 <Edit2 className="w-4 h-4" />
               </button>
               <button onClick={onToggle} title={usuario.activo ? 'Desactivar' : 'Reactivar'}
-                className={`p-1.5 hover:bg-white/10 rounded-lg transition-colors ${
-                  usuario.activo ? 'text-gray-500 hover:text-red-400' : 'text-gray-600 hover:text-green-400'
+                className={`p-1.5 hover:bg-gray-100 rounded-lg transition-colors ${
+                  usuario.activo ? 'text-gray-600 hover:text-red-400' : 'text-gray-600 hover:text-green-400'
                 }`}>
                 {usuario.activo ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
               </button>
@@ -590,7 +590,7 @@ function UsuarioCard({
         </div>
 
         {/* Email */}
-        <div className="flex items-center gap-2 text-xs text-gray-500">
+        <div className="flex items-center gap-2 text-xs text-gray-600">
           <Mail className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="truncate">{usuario.email}</span>
         </div>
@@ -624,7 +624,7 @@ function UsuarioCard({
             ) : modulos.map(m => {
               const Icon = MODULO_ICON[m] ?? Settings;
               return (
-                <span key={m} className="flex items-center gap-1 px-1.5 py-0.5 bg-white/5 border border-white/10 text-gray-400 text-[10px] rounded">
+                <span key={m} className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-50 border border-gray-100 text-gray-600 text-[10px] rounded">
                   <Icon className="w-2.5 h-2.5" />
                   {MODULO_LABEL[m] ?? m}
                 </span>
@@ -635,7 +635,7 @@ function UsuarioCard({
 
         {/* Último acceso */}
         {usuario.ultimo_acceso && (
-          <p className="text-gray-600 text-[10px] border-t border-white/5 pt-2">
+          <p className="text-gray-600 text-[10px] border-t border-gray-100 pt-2">
             Último acceso: {new Date(usuario.ultimo_acceso).toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })}
           </p>
         )}

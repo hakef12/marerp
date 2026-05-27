@@ -12,6 +12,10 @@
 import { createClient } from "npm:@supabase/supabase-js";
 import * as kv from "./kv_store.tsx";
 
+// ── Utilidad: validar UUID ─────────────────────────────────────────────────────
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUUID = (v: any): boolean => typeof v === 'string' && UUID_RE.test(v);
+
 // ── Cliente SQL ────────────────────────────────────────────────────────────────
 const getDB = () => createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -96,24 +100,77 @@ export async function obtenerProductos(empresaId: string) {
     precio:         Number(p.precio         || p.precio_venta || 0),
     // precio_compra es el campo KV equivalente a precio_costo/costo_unitario
     precio_costo:   Number(p.precio_costo   || p.precio_compra || p.costo_unitario || 0),
-    costo_unitario: Number(p.costo_unitario || p.precio_costo  || p.precio_compra  || 0),
+    costo_unitario: Number(p.costo_unitario || p.precio_compra || p.precio_costo   || 0),
     precio_compra:  Number(p.precio_compra  || p.precio_costo  || p.costo_unitario || 0),
     stock_actual:   Number(p.stock_actual   ?? p.stock ?? 0),
+    stock_minimo:   Number(p.stock_minimo   ?? 0),
+    stock_maximo:   Number(p.stock_maximo   ?? 0),
     // Normalizar unidad
     unidad:         p.unidad || p.unidad_medida || 'und',
     unidad_medida:  p.unidad_medida || p.unidad || 'und',
     // Normalizar categoria
     categoria:      p.categoria || p.categoria_id || null,
     categoria_id:   p.categoria_id || p.categoria || null,
+    // Normalizar booleanos nuevos
+    disponible:     p.disponible !== false,
+    gestiona_inventario: p.gestiona_inventario !== false,
+    es_receta:      p.es_receta  === true,
+    impuesto_incluido: p.impuesto_incluido === true,
+    porcentaje_iva: Number(p.porcentaje_iva ?? 15),
   }));
 }
 
 export async function guardarProducto(empresaId: string, producto: any) {
   const db = getDB();
   if (!producto.id) producto.id = crypto.randomUUID();
-  const { created_at, ...rest } = producto;
+
+  // Construir objeto con solo columnas reales de la tabla productos.
+  // Los campos normalizados (precio_compra, unidad_medida como alias, categoria como texto)
+  // NO se pasan directamente — solo los campos UUID reales se validan con isUUID().
+  const safeProducto: Record<string, any> = {
+    id:              producto.id,
+    empresa_id:      empresaId,
+    nombre:          producto.nombre          ?? null,
+    codigo:          producto.codigo          ?? null,
+    codigo_barras:   producto.codigo_barras   ?? null,
+    descripcion:     producto.descripcion     ?? null,
+    // categoria_id y proveedor_id son UUID — solo pasar si son UUID válidos
+    categoria_id:    isUUID(producto.categoria_id)  ? producto.categoria_id  : null,
+    proveedor_id:    isUUID(producto.proveedor_id)  ? producto.proveedor_id  : null,
+    proveedor_nombre: producto.proveedor_nombre     ?? null,
+    unidad_medida:   producto.unidad_medida   ?? producto.unidad ?? null,
+    unidad:          producto.unidad          ?? producto.unidad_medida ?? null,
+    precio_venta:    producto.precio_venta    ?? producto.precio ?? 0,
+    precio:          producto.precio          ?? producto.precio_venta ?? 0,
+    // precio_compra del formulario → precio_costo en DB (alias del mismo campo)
+    precio_costo:    producto.precio_costo    ?? producto.precio_compra ?? producto.costo_unitario ?? 0,
+    costo_unitario:  producto.costo_unitario  ?? producto.precio_compra ?? producto.precio_costo  ?? 0,
+    // precio_compra como columna directa (añadida por migración 008)
+    precio_compra:   producto.precio_compra   ?? producto.precio_costo  ?? producto.costo_unitario ?? 0,
+    stock_actual:    producto.stock_actual    ?? producto.stock ?? 0,
+    stock:           producto.stock           ?? producto.stock_actual ?? 0,
+    stock_minimo:    producto.stock_minimo    ?? 0,
+    stock_maximo:    producto.stock_maximo    ?? 0,
+    punto_pedido:    producto.punto_pedido    ?? 0,
+    consumo_promedio_diario: producto.consumo_promedio_diario ?? 0,
+    lead_time_dias:  producto.lead_time_dias  ?? 0,
+    activo:          producto.activo          ?? true,
+    disponible:      producto.disponible      ?? true,
+    tiene_iva:       producto.tiene_iva       ?? false,
+    es_compuesto:    producto.es_compuesto    ?? false,
+    // Campos de migración 008
+    gestiona_inventario: producto.gestiona_inventario ?? true,
+    es_receta:       producto.es_receta       ?? false,
+    impuesto_incluido: producto.impuesto_incluido ?? false,
+    porcentaje_iva:  producto.porcentaje_iva  ?? 15,
+    tipo:            producto.tipo            ?? null,
+    imagen_url:      producto.imagen_url      ?? null,
+    metadata:        producto.metadata        ?? {},
+    updated_at:      new Date().toISOString(),
+  };
+
   const { data, error } = await db.from('productos')
-    .upsert({ ...rest, empresa_id: empresaId, updated_at: new Date().toISOString() })
+    .upsert(safeProducto)
     .select().single();
   if (error) throw error;
   return data;
@@ -179,11 +236,66 @@ export async function obtenerRecetas(empresaId: string) {
 export async function guardarReceta(empresaId: string, receta: any) {
   const db = getDB();
   if (!receta.id) receta.id = crypto.randomUUID();
-  const { created_at, ...rest } = receta;
+
+  // Construir objeto seguro — mapea solo columnas conocidas de la tabla recetas.
+  // Evita errores "column does not exist" por campos del formulario RecetaModal.
+  const safeReceta: Record<string, any> = {
+    id:          receta.id,
+    empresa_id:  empresaId,
+    nombre:      receta.nombre       ?? null,
+    // producto_id debe ser UUID válido
+    producto_id: isUUID(receta.producto_id) ? receta.producto_id : null,
+    rendimiento: Number(receta.rendimiento ?? receta.porciones ?? 1),
+    porciones:   Number(receta.porciones   ?? 1),              // migración 006
+    unidad:      receta.unidad        ?? 'unidad',
+    costo_total: Number(receta.costo_total  ?? 0),
+    activo:      receta.activo         ?? true,
+    ingredientes: receta.ingredientes ?? [],
+    // Columnas de migración 006
+    precio_venta:    Number(receta.precio_venta    ?? receta.precio_sugerido ?? 0),
+    precio_sugerido: Number(receta.precio_sugerido ?? receta.precio_venta    ?? 0),
+    categoria:       receta.categoria        ?? null,
+    tiempo_preparacion: Number(receta.tiempo_preparacion ?? 0),
+    notas:           receta.notas            ?? null,
+    // Columnas de migración 008
+    descripcion:     receta.descripcion      ?? null,
+    dificultad:      receta.dificultad       ?? 'media',
+    instrucciones:   receta.instrucciones    ?? null,
+    costo_por_porcion: Number(receta.costo_por_porcion ?? 0),
+    margen_bruto:    Number(receta.margen_bruto ?? 0),
+    metadata:        receta.metadata         ?? {},
+    updated_at:      new Date().toISOString(),
+  };
+
   const { data, error } = await db.from('recetas')
-    .upsert({ ...rest, empresa_id: empresaId, updated_at: new Date().toISOString() })
+    .upsert(safeReceta)
     .select().single();
-  if (error) throw error;
+
+  // Si falla por columnas de migración 008 aún no aplicadas, reintentar sin ellas
+  if (error) {
+    const esMissingColumn = error.message?.includes('column') && error.message?.includes('does not exist');
+    if (esMissingColumn) {
+      const { descripcion, dificultad, instrucciones, costo_por_porcion, margen_bruto, ...baseReceta } = safeReceta;
+      // También intentar sin columnas de migración 006 si sigue fallando
+      const { data: data2, error: error2 } = await db.from('recetas')
+        .upsert(baseReceta)
+        .select().single();
+      if (error2) {
+        const esMissing2 = error2.message?.includes('column') && error2.message?.includes('does not exist');
+        if (esMissing2) {
+          const { precio_venta, precio_sugerido, categoria, tiempo_preparacion, porciones, notas, ...baseReceta2 } = baseReceta;
+          const { data: data3, error: error3 } = await db.from('recetas')
+            .upsert(baseReceta2)
+            .select().single();
+          if (error3) throw error3;
+          return data3;
+        }
+        throw error2;
+      }
+      return data2;
+    }
+    throw error;
+  }
   return data;
 }
 
@@ -213,10 +325,64 @@ export async function obtenerVentas(empresaId: string) {
 export async function guardarVenta(empresaId: string, venta: any) {
   const db = getDB();
   if (!venta.id) venta.id = crypto.randomUUID();
+  const ahora = new Date().toISOString();
+
+  // Construir objeto seguro — mapea campos del POS a columnas reales de la tabla.
+  // Evita errores "column does not exist" cuando el body incluye campos extra.
+  const safeVenta: Record<string, any> = {
+    id:            venta.id,
+    empresa_id:    empresaId,
+    // numero_ticket (POS) → numero + numero_ticket (008) + numero_orden (006)
+    numero:        venta.numero_ticket || venta.numero        || null,
+    numero_ticket: venta.numero_ticket || venta.numero        || null,  // migración 008
+    numero_orden:  venta.numero_ticket || venta.numero_orden  || null,  // migración 006
+    // fecha (POS) → fecha (008) + created_at
+    fecha:         venta.fecha         || ahora,                        // migración 008
+    created_at:    venta.fecha         || venta.created_at   || ahora,
+    cliente_nombre: venta.cliente      || venta.cliente_nombre || null,
+    subtotal:      Number(venta.subtotal   ?? 0),
+    descuento:     Number(venta.descuento  ?? 0),
+    // impuestos (POS) → iva + impuestos (008)
+    iva:           Number(venta.impuestos  ?? venta.iva       ?? 0),
+    impuestos:     Number(venta.impuestos  ?? venta.iva       ?? 0),    // migración 008
+    total:         Number(venta.total      ?? 0),
+    // metodo_pago (POS) → forma_pago + metodo_pago (008)
+    forma_pago:    venta.metodo_pago   || venta.forma_pago  || 'efectivo',
+    metodo_pago:   venta.metodo_pago   || venta.forma_pago  || 'efectivo', // migración 008
+    estado:        venta.estado        || 'completada',
+    // usuario_id (POS) → cajero_id + usuario_id (008)
+    cajero_id:     venta.usuario_id    || venta.cajero_id   || null,
+    usuario_id:    venta.usuario_id    || null,                          // migración 008
+    cajero_nombre: venta.cajero_nombre || null,                          // migración 008
+    costo_envio:   Number(venta.costo_envio ?? 0),                       // migración 008
+    notas:         venta.notas         || null,
+    items:         venta.items         || [],
+    metadata: {
+      ...(venta.metadata || {}),
+      cajero_nombre_snap: venta.cajero_nombre || null,
+    },
+    // Columnas de migración 006
+    bodega_id:     venta.bodega_id     || null,
+    mesa:          venta.mesa          || null,
+    tipo_servicio: venta.tipo_servicio || null,
+    anulada:       venta.anulada       ?? false,
+  };
+
   const { data, error } = await db.from('ventas')
-    .insert({ ...venta, empresa_id: empresaId, created_at: venta.created_at || new Date().toISOString() })
+    .insert(safeVenta)
     .select().single();
-  if (error) throw error;
+
+  // Fallback: si fallan columnas de migración 008, reintentar sin ellas
+  if (error) {
+    const esMissing = error.message?.includes('column') && error.message?.includes('does not exist');
+    if (esMissing) {
+      const { numero_ticket, fecha, impuestos, metodo_pago, usuario_id, cajero_nombre, costo_envio, ...baseVenta } = safeVenta;
+      const { data: data2, error: error2 } = await db.from('ventas').insert(baseVenta).select().single();
+      if (error2) throw error2;
+      return data2;
+    }
+    throw error;
+  }
   return data;
 }
 
@@ -325,9 +491,38 @@ export async function obtenerProveedores(empresaId: string) {
 export async function guardarProveedor(empresaId: string, proveedor: any) {
   const db = getDB();
   if (!proveedor.id) proveedor.id = crypto.randomUUID();
-  const { created_at, ...rest } = proveedor;
+
+  // Columnas reales de proveedores (verificadas en producción):
+  // id, empresa_id, nombre, ruc, telefono, email, direccion, activo,
+  // created_at, updated_at, contacto, metadata, dias_credito,
+  // ciudad, pais, banco, cuenta_bancaria, tipo_cuenta
+  // NOTA: ruc_nit y limite_credito NO existen → se mapean/ignoran
+  const safeData: Record<string, any> = {
+    id:              proveedor.id,
+    empresa_id:      empresaId,
+    nombre:          proveedor.nombre          ?? '',
+    ruc:             proveedor.ruc_nit         ?? proveedor.ruc          ?? null,
+    telefono:        proveedor.telefono        ?? null,
+    email:           proveedor.email           ?? null,
+    direccion:       proveedor.direccion       ?? null,
+    activo:          proveedor.activo          ?? true,
+    contacto:        proveedor.contacto        ?? null,
+    dias_credito:    proveedor.dias_credito    ?? 0,
+    ciudad:          proveedor.ciudad          ?? null,
+    pais:            proveedor.pais            ?? null,
+    banco:           proveedor.banco           ?? null,
+    cuenta_bancaria: proveedor.cuenta_bancaria ?? null,
+    tipo_cuenta:     proveedor.tipo_cuenta     ?? null,
+    // limite_credito no existe en la tabla → va en metadata
+    metadata: {
+      ...(proveedor.limite_credito != null ? { limite_credito: proveedor.limite_credito } : {}),
+      ...(proveedor.metadata ?? {}),
+    },
+    updated_at: new Date().toISOString(),
+  };
+
   const { data, error } = await db.from('proveedores')
-    .upsert({ ...rest, empresa_id: empresaId, updated_at: new Date().toISOString() })
+    .upsert(safeData)
     .select().single();
   if (error) throw error;
   return data;
@@ -392,7 +587,29 @@ export async function obtenerMovimientos(empresaId: string) {
 export async function guardarMovimiento(empresaId: string, movimiento: any) {
   const db = getDB();
   if (!movimiento.id) movimiento.id = crypto.randomUUID();
-  const mov = { ...movimiento, empresa_id: empresaId, created_at: new Date().toISOString() };
+
+  // Columnas reales de movimientos_inventario (verificadas en producción):
+  // id, empresa_id, producto_id, bodega_id, tipo, cantidad,
+  // stock_anterior, stock_nuevo, costo_unitario, costo_total,
+  // observaciones, referencia, usuario_id, fecha, created_at, bodega_destino_id
+  // NOTA: producto_nombre, precio_unitario y motivo NO existen en producción
+  const mov = {
+    id:            movimiento.id,
+    empresa_id:    empresaId,
+    producto_id:   movimiento.producto_id  ?? null,
+    bodega_id:     movimiento.bodega_id    ?? null,
+    tipo:          movimiento.tipo,
+    cantidad:      movimiento.cantidad,
+    costo_unitario: movimiento.costo_unitario ?? movimiento.precio_unitario ?? 0,
+    costo_total:   movimiento.costo_total  ?? null,
+    observaciones: movimiento.observaciones ?? movimiento.motivo ?? null,
+    referencia:    movimiento.referencia   ?? null,
+    // usuario_id debe ser UUID válido — si viene un nombre/string no-UUID se pasa null
+    usuario_id:    isUUID(movimiento.usuario_id) ? movimiento.usuario_id : null,
+    fecha:         new Date().toISOString(),
+    created_at:    new Date().toISOString(),
+  };
+
   const { data, error } = await db.from('movimientos_inventario').insert(mov).select().single();
   if (error) throw error;
 
@@ -458,7 +675,7 @@ export async function eliminarEmpleado(empresaId: string, empleadoId: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function obtenerCuentas(empresaId: string) {
-  return sqlConFallback(
+  const cuentas = await sqlConFallback(
     async () => {
       const db = getDB();
       const { data, error } = await db.from('cuentas_contables')
@@ -468,15 +685,39 @@ export async function obtenerCuentas(empresaId: string) {
     },
     `empresa_${empresaId}_cuentas_contables`
   );
+  // Agrega naturaleza derivada del tipo (no existe como columna en DB)
+  return cuentas.map((c: any) => ({
+    ...c,
+    naturaleza: (
+      c.tipo === 'pasivo' || c.tipo === 'ingreso' ? 'acreedora' :
+      c.tipo === 'patrimonio' && c.codigo?.startsWith('3.2') ? 'deudora' :
+      c.tipo === 'patrimonio' ? 'acreedora' : 'deudora'
+    ),
+    nivel: c.nivel ?? (c.codigo ? c.codigo.split('.').length : 3),
+  }));
 }
 
 export async function guardarCuenta(empresaId: string, cuenta: any) {
   const db = getDB();
   if (!cuenta.id) cuenta.id = crypto.randomUUID();
-  const { created_at, ...rest } = cuenta;
+  // Columnas reales verificadas de cuentas_contables:
+  // id, empresa_id, codigo, nombre, tipo, subtipo, saldo_actual,
+  // activa, created_at, updated_at, es_grupo, nivel
+  // naturaleza NO existe como columna — se deriva del tipo en runtime
+  const safeRow: Record<string, any> = {
+    id: cuenta.id,
+    empresa_id: empresaId,
+    codigo: cuenta.codigo,
+    nombre: cuenta.nombre,
+    tipo: cuenta.tipo,
+    es_grupo: cuenta.es_grupo ?? false,
+    activa: cuenta.activa ?? cuenta.activo ?? true,
+    nivel: cuenta.nivel ?? (cuenta.codigo ? cuenta.codigo.split('.').length : 3),
+    updated_at: new Date().toISOString(),
+  };
+  if (cuenta.subtipo) safeRow.subtipo = cuenta.subtipo;
   const { data, error } = await db.from('cuentas_contables')
-    .upsert({ ...rest, empresa_id: empresaId, updated_at: new Date().toISOString() })
-    .select().single();
+    .upsert(safeRow, { onConflict: 'id' }).select().single();
   if (error) throw error;
   return data;
 }
@@ -540,42 +781,56 @@ export async function registrarAsientoAutomatico(
 ): Promise<void> {
   try {
     const cuentas: any[] = await obtenerCuentas(empresaId);
-    if (cuentas.length === 0) return;
+    if (cuentas.length === 0) {
+      console.warn(`[Contabilidad] Sin plan contable — asiento "${opciones.tipo}" descartado`);
+      return;
+    }
 
+    // Resolver cuentas y reportar las que no existan
     const itemsResueltos = opciones.items
       .map(item => {
         const cuenta = cuentas.find((c: any) => c.codigo === item.codigo && !c.es_grupo);
-        if (!cuenta) return null;
+        if (!cuenta) {
+          console.warn(`[Contabilidad] Cuenta ${item.codigo} no encontrada — asiento "${opciones.tipo}" puede quedar incompleto`);
+          return null;
+        }
         return {
-          cuenta_id: cuenta.id,
+          cuenta_id:     cuenta.id,
           cuenta_codigo: cuenta.codigo,
           cuenta_nombre: cuenta.nombre,
-          debito: item.debito ?? 0,
-          credito: item.credito ?? 0,
-          descripcion: item.descripcion ?? opciones.descripcion,
+          debito:        item.debito  ?? 0,
+          credito:       item.credito ?? 0,
+          descripcion:   item.descripcion ?? opciones.descripcion,
         };
       })
       .filter(Boolean);
 
-    if (itemsResueltos.length === 0) return;
+    if (itemsResueltos.length === 0) {
+      console.warn(`[Contabilidad] Ninguna cuenta resuelta — asiento "${opciones.tipo}" descartado`);
+      return;
+    }
 
-    const totalD = itemsResueltos.reduce((s, i) => s + (i!.debito || 0), 0);
+    // Validar que el asiento esté balanceado (débitos = créditos)
+    const totalD = itemsResueltos.reduce((s, i) => s + (i!.debito  || 0), 0);
     const totalC = itemsResueltos.reduce((s, i) => s + (i!.credito || 0), 0);
-    if (Math.abs(totalD - totalC) > 0.01) return;
+    if (Math.abs(totalD - totalC) > 0.01) {
+      console.error(`[Contabilidad] Asiento "${opciones.tipo}" DESBALANCEADO — débitos ${totalD.toFixed(2)} ≠ créditos ${totalC.toFixed(2)} — descartado`);
+      return;
+    }
 
     await guardarAsiento(empresaId, {
-      tipo: opciones.tipo,
-      descripcion: opciones.descripcion,
-      referencia: opciones.referencia ?? '',
-      fecha: opciones.fecha ?? new Date().toISOString().split('T')[0],
-      estado: 'activo',
+      tipo:              opciones.tipo,
+      descripcion:       opciones.descripcion,
+      referencia:        opciones.referencia ?? '',
+      fecha:             opciones.fecha ?? new Date().toISOString().split('T')[0],
+      estado:            'activo',
       origen_automatico: true,
-      items: itemsResueltos,
-      total_debito: totalD,
-      total_credito: totalC,
+      items:             itemsResueltos,
+      total_debito:      parseFloat(totalD.toFixed(2)),
+      total_credito:     parseFloat(totalC.toFixed(2)),
     });
   } catch (err: any) {
-    console.error(`[Contabilidad] Error asiento automático (${opciones.tipo}):`, err?.message);
+    console.error(`[Contabilidad] Error guardando asiento automático "${opciones.tipo}":`, err?.message);
   }
 }
 
@@ -640,9 +895,31 @@ export async function obtenerCompras(empresaId: string) {
 export async function guardarCompra(empresaId: string, compra: any) {
   const db = getDB();
   if (!compra.id) compra.id = crypto.randomUUID();
-  const nuevaCompra = { ...compra, empresa_id: empresaId, created_at: new Date().toISOString() };
-  const { data, error } = await db.from('compras').insert(nuevaCompra).select().single();
+
+  // Columnas reales de compras (verificadas en producción):
+  // id, empresa_id, numero, proveedor_id, proveedor_nombre, subtotal, iva,
+  // total, estado, fecha, items, metadata, created_at,
+  // estado_pago, forma_pago, bodega_id, notas, updated_at
+  const insertBase: Record<string, any> = {
+    id:           compra.id,
+    empresa_id:   empresaId,
+    numero:       compra.numero_factura  ?? compra.numero      ?? '',
+    proveedor_id: compra.proveedor_id    ?? null,
+    fecha:        (compra.fecha || new Date().toISOString()).split('T')[0],
+    items:        compra.items           ?? [],
+    total:        compra.total_compra    ?? compra.total        ?? 0,
+    estado:       compra.estado          ?? 'pagada',
+    estado_pago:  compra.estado_pago     ?? 'pagada',
+    forma_pago:   compra.tipo_pago       ?? compra.forma_pago   ?? 'contado',
+    notas:        compra.observaciones   ?? compra.notas        ?? null,
+    metadata:     compra.metadata        ?? {},
+    created_at:   new Date().toISOString(),
+    updated_at:   new Date().toISOString(),
+  };
+
+  const { data, error } = await db.from('compras').insert(insertBase).select().single();
   if (error) throw error;
+
   return data;
 }
 
@@ -667,9 +944,34 @@ export async function obtenerCuentasPorPagar(empresaId: string) {
 export async function guardarCuentaPorPagar(empresaId: string, cxp: any) {
   const db = getDB();
   if (!cxp.id) cxp.id = crypto.randomUUID();
-  const { created_at, ...rest } = cxp;
+
+  // Columnas reales de cuentas_por_pagar:
+  // id, empresa_id, compra_id, proveedor_id, proveedor_nombre,
+  // monto, monto_pagado, saldo_pendiente, estado, fecha_vencimiento,
+  // metadata, created_at, updated_at
+  // NOTA: numero_factura y fecha_emision no existen → se guardan en metadata
+  const safeCxp = {
+    id:               cxp.id,
+    empresa_id:       empresaId,
+    compra_id:        cxp.compra_id        ?? null,
+    proveedor_id:     cxp.proveedor_id     ?? null,
+    proveedor_nombre: cxp.proveedor_nombre ?? null,
+    monto:            cxp.monto            ?? 0,
+    monto_pagado:     cxp.monto_pagado     ?? 0,
+    saldo_pendiente:  cxp.saldo_pendiente  ?? cxp.monto ?? 0,
+    estado:           cxp.estado           ?? 'pendiente',
+    fecha_vencimiento: cxp.fecha_vencimiento ?? null,
+    // numero_factura y fecha_emision van en metadata
+    metadata: {
+      ...(cxp.numero_factura ? { numero_factura: cxp.numero_factura } : {}),
+      ...(cxp.fecha_emision  ? { fecha_emision:  cxp.fecha_emision  } : {}),
+      ...(cxp.metadata       ? cxp.metadata                           : {}),
+    },
+    updated_at: new Date().toISOString(),
+  };
+
   const { data, error } = await db.from('cuentas_por_pagar')
-    .upsert({ ...rest, empresa_id: empresaId, updated_at: new Date().toISOString() })
+    .upsert(safeCxp)
     .select().single();
   if (error) throw error;
   return data;

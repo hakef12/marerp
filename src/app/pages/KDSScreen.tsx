@@ -54,7 +54,7 @@ function ComandaCard({
       {/* Header */}
       <div className="px-4 py-3 flex items-center justify-between" style={{ background: accionColor + '18' }}>
         <div>
-          <div className="text-white font-black text-xl flex items-center gap-2">
+          <div className="text-gray-900 font-black text-xl flex items-center gap-2">
             {comanda.mesa
               ? `Mesa ${comanda.mesa}`
               : comanda.tipo_servicio === 'para_llevar'
@@ -74,25 +74,25 @@ function ComandaCard({
               {comanda.cliente}
             </div>
           )}
-          <div className="text-xs text-gray-500 mt-0.5">{comanda.numero_orden}</div>
+          <div className="text-xs text-gray-600 mt-0.5">{comanda.numero_orden}</div>
         </div>
         <div className="text-right">
           <div className="text-3xl font-black tabular-nums" style={{ color: timeColor(secs) }}>
             {fmt(secs)}
           </div>
-          <div className="text-xs text-gray-500">min</div>
+          <div className="text-xs text-gray-600">min</div>
         </div>
       </div>
 
       {/* Items */}
       <div className="flex-1 p-3 space-y-2">
         {(comanda.items || []).map((item: any, i: number) => (
-          <div key={i} className="bg-white/5 rounded-xl px-3 py-2">
+          <div key={i} className="bg-gray-50 rounded-xl px-3 py-2">
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black" style={{ color: accionColor }}>
                 {item.cantidad}×
               </span>
-              <span className="text-white font-bold text-base leading-tight">{item.nombre}</span>
+              <span className="text-gray-900 font-bold text-base leading-tight">{item.nombre}</span>
             </div>
             {item.notas && (
               <div className="text-amber-400 text-sm mt-1 ml-1 italic">
@@ -131,7 +131,7 @@ function Columna({ title, icon, color, count, children }: {
     <div className="flex flex-col min-h-0">
       <div className="flex items-center gap-2 mb-3 px-1">
         <div style={{ color }}>{icon}</div>
-        <span className="text-white font-bold text-lg">{title}</span>
+        <span className="text-gray-900 font-bold text-lg">{title}</span>
         <span
           className="ml-auto text-sm font-bold px-2.5 py-0.5 rounded-full"
           style={{ backgroundColor: color + '25', color }}
@@ -248,15 +248,15 @@ export default function KDSScreen() {
   return (
     <div className="min-h-screen bg-[#060d18] flex flex-col overflow-hidden">
       {/* ── Top bar ── */}
-      <div className="flex-none flex items-center justify-between px-6 py-3 bg-[#0a1220] border-b border-white/8">
+      <div className="flex-none flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100">
         <div className="flex items-center gap-3">
-          <span className="text-2xl font-black text-white tracking-wide">KDS</span>
-          <span className="text-gray-500 text-sm">Kitchen Display System</span>
+          <span className="text-2xl font-black text-gray-900 tracking-wide">KDS</span>
+          <span className="text-gray-600 text-sm">Kitchen Display System</span>
         </div>
 
         <div className="flex items-center gap-4">
           {/* Hora */}
-          <span className="text-white font-mono text-lg tabular-nums">
+          <span className="text-gray-900 font-mono text-lg tabular-nums">
             {new Date(now).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </span>
 
@@ -272,7 +272,7 @@ export default function KDSScreen() {
           <button
             onClick={fetchComandas}
             disabled={updating}
-            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+            className="p-2 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
           >
             <RefreshCw className={`w-4 h-4 ${updating ? 'animate-spin' : ''}`} />
           </button>
@@ -346,8 +346,8 @@ export default function KDSScreen() {
       </div>
 
       {/* ── Footer ── */}
-      <div className="flex-none flex items-center justify-between px-6 py-2 bg-[#0a1220] border-t border-white/5 text-xs text-gray-600">
-        <span>M.A.R — Kitchen Display System</span>
+      <div className="flex-none flex items-center justify-between px-6 py-2 bg-white border-t border-gray-100 text-xs text-gray-600">
+        <span>M.A.R Cocina Local — Kitchen Display System</span>
         <span>Actualización automática cada {POLL_INTERVAL / 1000}s</span>
       </div>
     </div>

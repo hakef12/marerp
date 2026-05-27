@@ -231,9 +231,16 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
         const precioVenta = getPrecio(producto, receta);
         const margen = precioVenta > 0 ? ((precioVenta - costoTotal) / precioVenta * 100) : 0;
 
-        // Calcular ventas del producto
-        const itemsVendidos = ventas.flatMap((v: any) => 
-          (v.items || []).filter((item: any) => item.producto_id === receta.producto_id)
+        // Calcular ventas del producto — match robusto por id o nombre
+        const nombreReceta = (producto?.nombre || receta.nombre || '').toLowerCase().trim();
+        const itemsVendidos = ventas.flatMap((v: any) =>
+          (v.items || []).filter((item: any) => {
+            if (item.producto_id && receta.producto_id &&
+                String(item.producto_id) === String(receta.producto_id)) return true;
+            if (nombreReceta && item.nombre &&
+                item.nombre.toLowerCase().trim() === nombreReceta) return true;
+            return false;
+          })
         );
         const cantidadVendida = itemsVendidos.reduce((sum: number, item: any) => sum + (item.cantidad || 0), 0);
         const ingresoTotal = itemsVendidos.reduce((sum: number, item: any) => sum + (item.subtotal || 0), 0);
@@ -337,18 +344,24 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
       const ventas = await obtenerVentas(auth.empresaId);
 
       // Filtrar ventas por rango de fechas
+      // Usa fecha || created_at como fallback porque el campo varía según el origen
+      const fechaInicioTs = new Date(fechaInicio).getTime();
+      const fechaFinTs    = new Date(fechaFin).getTime();
       const ventasFiltradas = ventas.filter((v: any) => {
-        const fechaVenta = new Date(v.fecha);
-        return fechaVenta >= new Date(fechaInicio) && fechaVenta <= new Date(fechaFin);
+        const raw = v.fecha || v.created_at || v.fecha_venta;
+        if (!raw) return false;
+        const ts = new Date(raw).getTime();
+        return !isNaN(ts) && ts >= fechaInicioTs && ts <= fechaFinTs;
       });
 
       console.log(`📦 Total recetas: ${recetas.length}`);
-      console.log(`💰 Total ventas en periodo: ${ventasFiltradas.length}`);
+      console.log(`💰 Total ventas (all): ${ventas.length}  en periodo: ${ventasFiltradas.length}`);
 
       // Analizar cada plato del menú
       const platosConAnalisis = recetas.map((receta: any) => {
         const producto = productos.find((p: any) => p.id === receta.producto_id);
-        
+        const nombreProducto = (producto?.nombre || receta.nombre || '').toLowerCase().trim();
+
         // 1. Calcular COSTO DE RECETA (explosión de materiales / BOM)
         let costoReceta = 0;
         (receta.ingredientes || []).forEach((ing: any) => {
@@ -358,24 +371,35 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
         });
 
         const precioVenta = getPrecio(producto, receta);
-        
+
         // 2. Calcular MARGEN DE CONTRIBUCIÓN
         const margenContribucion = precioVenta - costoReceta;
         const porcentajeMargen = precioVenta > 0 ? (margenContribucion / precioVenta * 100) : 0;
 
-        // 3. Calcular VENTAS HISTÓRICAS
-        const itemsVendidos = ventasFiltradas.flatMap((v: any) => 
-          (v.items || []).filter((item: any) => item.producto_id === receta.producto_id)
+        // 3. Calcular VENTAS HISTÓRICAS — match robusto por id O por nombre
+        const matchItem = (item: any): boolean => {
+          if (!item) return false;
+          // Por producto_id (primary — comparar como strings)
+          if (item.producto_id && receta.producto_id &&
+              String(item.producto_id) === String(receta.producto_id)) return true;
+          // Por nombre (fallback — útil cuando producto_id no coincide o no está)
+          if (nombreProducto && item.nombre &&
+              item.nombre.toLowerCase().trim() === nombreProducto) return true;
+          return false;
+        };
+
+        const itemsVendidos = ventasFiltradas.flatMap((v: any) =>
+          (v.items || []).filter(matchItem)
         );
-        const cantidadVendida = itemsVendidos.reduce((sum: number, item: any) => sum + (item.cantidad || 0), 0);
-        const ingresosTotales = itemsVendidos.reduce((sum: number, item: any) => sum + (item.subtotal || 0), 0);
+        const cantidadVendida  = itemsVendidos.reduce((s: number, i: any) => s + (Number(i.cantidad)  || 0), 0);
+        const ingresosTotales  = itemsVendidos.reduce((s: number, i: any) => s + (Number(i.subtotal)  || 0), 0);
         const margenTotalGenerado = margenContribucion * cantidadVendida;
 
         return {
-          plato_id: receta.producto_id,
+          plato_id: receta.producto_id || receta.id,
           receta_id: receta.id,
-          nombre: producto?.nombre || 'Desconocido',
-          categoria: producto?.categoria || 'Sin categoría',
+          nombre: producto?.nombre || receta.nombre || 'Sin nombre',
+          categoria: producto?.categoria || receta.categoria || 'Sin categoría',
           precio: precioVenta,
           costo_unitario: costoReceta,
           cantidad_vendida: cantidadVendida,
@@ -386,16 +410,18 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
         };
       });
 
-      // Filtrar solo platos con ventas (para el análisis BCG)
-      const platosConVentas = platosConAnalisis.filter((p: any) => p.cantidad_vendida > 0);
+      // Incluir TODOS los platos del menú (con o sin ventas)
+      const platosConVentas = platosConAnalisis;
 
       // Calcular promedios para clasificación
       const totalVentas = platosConVentas.reduce((sum: number, p: any) => sum + p.cantidad_vendida, 0);
-      const promedioMargen = platosConVentas.length > 0 
-        ? platosConVentas.reduce((sum: number, p: any) => sum + p.margen_contribucion, 0) / platosConVentas.length
+      const platosConMargenes = platosConVentas.filter((p: any) => p.margen_contribucion !== 0);
+      const promedioMargen = platosConMargenes.length > 0
+        ? platosConMargenes.reduce((sum: number, p: any) => sum + p.margen_contribucion, 0) / platosConMargenes.length
         : 0;
-      const promedioVentas = platosConVentas.length > 0 
-        ? totalVentas / platosConVentas.length
+      const platosConVentasReales = platosConVentas.filter((p: any) => p.cantidad_vendida > 0);
+      const promedioVentas = platosConVentasReales.length > 0
+        ? totalVentas / platosConVentasReales.length
         : 0;
 
       console.log(`📈 Promedio margen contribución: $${promedioMargen.toFixed(2)}`);
@@ -403,17 +429,19 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
 
       // 4. CALCULAR ÍNDICES Y CLASIFICAR EN MATRIZ BCG
       const matrizBCG = platosConVentas.map((plato: any) => {
-        // Índice de Popularidad (ventas vs promedio)
-        const indicePopularidad = promedioVentas > 0 
-          ? (plato.cantidad_vendida / promedioVentas) * 100 
+        // Índice de Popularidad (ventas vs promedio — si no hay ventas en el sistema, siempre "bajo")
+        const indicePopularidad = promedioVentas > 0
+          ? (plato.cantidad_vendida / promedioVentas) * 100
           : 0;
-        const esPopular = indicePopularidad >= 100; // Mayor o igual al promedio
+        const esPopular = promedioVentas > 0 && indicePopularidad >= 100;
 
-        // Índice de Rentabilidad (margen vs promedio)
-        const indiceRentabilidad = promedioMargen > 0 
-          ? (plato.margen_contribucion / promedioMargen) * 100 
-          : 0;
-        const esRentable = indiceRentabilidad >= 100; // Mayor o igual al promedio
+        // Índice de Rentabilidad (margen vs promedio — si no hay referencia, positivo = rentable)
+        const indiceRentabilidad = promedioMargen > 0
+          ? (plato.margen_contribucion / promedioMargen) * 100
+          : (plato.margen_contribucion > 0 ? 100 : 0);
+        const esRentable = plato.precio > 0
+          ? plato.margen_contribucion > 0 && indiceRentabilidad >= 100
+          : false;
 
         // Clasificación BCG
         let categoriaBCG = '';
@@ -509,8 +537,6 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
       // Analizar cada receta
       recetas.forEach((receta: any) => {
         const producto = productos.find((p: any) => p.id === receta.producto_id);
-        
-        if (!producto) return;
 
         // Calcular costo actual
         let costoActual = 0;
@@ -521,7 +547,7 @@ export function setupIngenieriaMenuRoutes(app: any, authMiddleware: any) {
           }
         });
 
-        const precioVenta = producto.precio || 0;
+        const precioVenta = getPrecio(producto, receta);
         const margenActual = precioVenta - costoActual;
         const porcentajeCosto = precioVenta > 0 ? (costoActual / precioVenta * 100) : 0;
 

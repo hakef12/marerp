@@ -12,7 +12,9 @@ export function setupAuditoriaRoutes(app: any, authMiddleware: any) {
 
     try {
       const modulo = c.req.query('modulo');
-      const limite = parseInt(c.req.query('limite') || '200');
+      const desde  = c.req.query('desde');
+      const hasta  = c.req.query('hasta');
+      const limite = parseInt(c.req.query('limite') || '500');
 
       // Consulta base sin join (auditoria.usuario_id no tiene FK formal a usuarios)
       let query = supabase
@@ -22,9 +24,9 @@ export function setupAuditoriaRoutes(app: any, authMiddleware: any) {
         .order('created_at', { ascending: false })
         .limit(limite);
 
-      if (modulo && modulo !== 'todos') {
-        query = query.eq('modulo', modulo);
-      }
+      if (modulo && modulo !== 'todos') query = query.eq('modulo', modulo);
+      if (desde) query = query.gte('created_at', desde);
+      if (hasta) query = query.lte('created_at', hasta);
 
       const { data: logs, error } = await query;
 

@@ -648,6 +648,47 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
       if (!usandoSQL) {
         todasLasCompras = await obtenerCompras(auth.empresaId);
 
+        // Si compras sigue vacío, intentar construir desde cuentas_por_pagar
+        // (pasa cuando las compras antiguas se registraron solo como CxP)
+        if (todasLasCompras.length === 0) {
+          try {
+            const cxpList = await obtenerCuentasPorPagar(auth.empresaId);
+            if (cxpList.length > 0) {
+              console.log(`[compras] Sin compras en SQL/KV — usando ${cxpList.length} registros de CxP como fallback`);
+              todasLasCompras = cxpList.map((cxp: any) => {
+                // numero_factura y fecha_emision se guardan en metadata.* en CxP
+                const meta = cxp.metadata || {};
+                const numFac  = cxp.numero_factura || meta.numero_factura || cxp.numero || null;
+                const fechaDoc = cxp.fecha_emision || meta.fecha_emision || cxp.fecha || cxp.created_at;
+                return {
+                  id:               cxp.id,
+                  empresa_id:       cxp.empresa_id,
+                  proveedor_id:     cxp.proveedor_id || null,
+                  proveedor_nombre: cxp.proveedor_nombre || meta.proveedor_nombre || null,
+                  numero:           numFac,
+                  numero_factura:   numFac,
+                  fecha:            fechaDoc,
+                  total:            Number(cxp.monto || 0),
+                  total_compra:     Number(cxp.monto || 0),
+                  subtotal:         Number(meta.total_sin_impuestos || cxp.monto || 0),
+                  iva:              Number(meta.total_iva || 0),
+                  estado:           cxp.estado || 'pendiente',
+                  estado_pago:      cxp.estado || 'pendiente',
+                  forma_pago:       cxp.tipo_pago || meta.tipo_pago || 'credito',
+                  tipo_pago:        cxp.tipo_pago || meta.tipo_pago || 'credito',
+                  saldo_pendiente:  Number(cxp.saldo_pendiente ?? cxp.monto ?? 0),
+                  items:            [],
+                  metadata:         meta,
+                  created_at:       cxp.created_at,
+                  _fuente:          'cxp',
+                };
+              });
+            }
+          } catch (cxpErr: any) {
+            console.warn('[compras] Falló fallback CxP:', cxpErr.message);
+          }
+        }
+
         // Filtros en memoria
         if (fecha_inicio) todasLasCompras = todasLasCompras.filter((c: any) => (c.fecha || c.created_at || '') >= fecha_inicio);
         if (fecha_fin)    todasLasCompras = todasLasCompras.filter((c: any) => (c.fecha || c.created_at || '') <= fecha_fin + 'T23:59:59');
@@ -672,7 +713,8 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
 
         const enriquecidas = slice.map((row: any) => ({
           ...row,
-          proveedor: proveedoresMap.get(row.proveedor_id) || null,
+          proveedor: proveedoresMap.get(row.proveedor_id)
+            || (row.proveedor_nombre ? { id: row.proveedor_id, nombre: row.proveedor_nombre } : null),
           items: (row.items || []).map((item: any) => ({
             ...item,
             producto: productosMap.get(item.producto_id) || null,

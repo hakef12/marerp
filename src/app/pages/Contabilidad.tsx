@@ -34,6 +34,7 @@ import {
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { ExportButtons } from '../components/ExportButtons';
 import { exportToPDF, exportToExcel } from '../utils/exportUtils';
+import { Pagination, PaginationContent, PaginationItem, PaginationPrevious, PaginationNext, PaginationLink } from '../components/ui/pagination';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -179,6 +180,9 @@ export default function Contabilidad() {
   const [asientoFiltroFi, setAsientoFiltroFi] = useState(inicioMes);
   const [asientoFiltroFf, setAsientoFiltroFf] = useState(hoy.toISOString().split('T')[0]);
   const [asientoFiltroEstado, setAsientoFiltroEstado] = useState('');
+  const [asientoPage, setAsientoPage]   = useState(1);
+  const [asientoPages, setAsientoPages] = useState(1);
+  const [asientoTotal, setAsientoTotal] = useState(0);
   const [balanceFechaHasta, setBalanceFechaHasta] = useState(hoy.toISOString().split('T')[0]);
   const [resultFi, setResultFi] = useState(inicioMes);
   const [resultFf, setResultFf] = useState(hoy.toISOString().split('T')[0]);
@@ -235,14 +239,19 @@ export default function Contabilidad() {
     }
   }, [token]);
 
-  const loadAsientos = useCallback(async () => {
+  const loadAsientos = useCallback(async (page = 1) => {
     try {
       const params = new URLSearchParams();
       if (asientoFiltroFi) params.set('fecha_inicio', asientoFiltroFi);
       if (asientoFiltroFf) params.set('fecha_fin', asientoFiltroFf);
       if (asientoFiltroEstado) params.set('estado', asientoFiltroEstado);
+      params.set('page', String(page));
+      params.set('limit', '50');
       const data = await apiFetch(`${BASE}/contabilidad/asientos?${params}`, headers);
       setAsientos(data.asientos || []);
+      setAsientoPage(data.page || page);
+      setAsientoPages(data.pages || 1);
+      setAsientoTotal(data.total || 0);
     } catch (e: any) {
       toast.error('Error cargando asientos: ' + e.message);
     }
@@ -424,7 +433,7 @@ export default function Contabilidad() {
   };
 
   const handleInicializarPlan = async () => {
-    if (!confirm('¿Inicializar Plan Contable NEC Ecuador? Solo funciona si no hay cuentas.')) return;
+    if (!confirm('¿Inicializar / Sincronizar Plan Contable NEC Ecuador? Agrega cuentas faltantes sin eliminar las existentes.')) return;
     setLoading(true);
     try {
       const data = await apiFetch(`${BASE}/contabilidad/cuentas/inicializar`, headers, { method: 'POST' });
@@ -472,8 +481,8 @@ export default function Contabilidad() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-1">Contabilidad</h1>
-          <p className="text-gray-400 text-sm">Plan Contable NEC Ecuador · Partida Doble</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-1">Contabilidad</h1>
+          <p className="text-gray-600 text-sm">Plan Contable NEC Ecuador · Partida Doble</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {/* ── DASHBOARD: resumen KPI ── */}
@@ -556,12 +565,12 @@ export default function Contabilidad() {
                 </Button>
               )}
               <Button variant="outline" onClick={handleInicializarPlan} disabled={loading}
-                className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10">
+                className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10">
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                Inicializar Plan Ecuador
+                Sincronizar Plan Ecuador
               </Button>
               <Button onClick={() => { setEditCuenta(null); setCuentaForm(emptyCuentaForm()); setShowCuentaModal(true); }}
-                className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+                className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
                 <Plus className="w-4 h-4 mr-2" /> Nueva Cuenta
               </Button>
             </>
@@ -594,7 +603,7 @@ export default function Contabilidad() {
           {tab === 'balance' && (
             <>
               <Button variant="outline" onClick={loadBalance}
-                className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10">
+                className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10">
                 <RefreshCw className="w-4 h-4 mr-2" /> Actualizar
               </Button>
               {balanceData && (
@@ -644,7 +653,7 @@ export default function Contabilidad() {
           {tab === 'resultados' && (
             <>
               <Button variant="outline" onClick={loadResultados}
-                className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10">
+                className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10">
                 <RefreshCw className="w-4 h-4 mr-2" /> Actualizar
               </Button>
               {resultadosData && (
@@ -740,7 +749,7 @@ export default function Contabilidad() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 rounded-xl border border-[#00E5FF]/20 p-2 flex gap-1 overflow-x-auto flex-wrap">
+      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border border-[#F97316]/20 p-2 flex gap-1 overflow-x-auto flex-wrap">
         {TABS.map(t => {
           const Icon = t.icon;
           return (
@@ -749,8 +758,8 @@ export default function Contabilidad() {
               onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium whitespace-nowrap transition-all text-sm ${
                 tab === t.id
-                  ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -765,116 +774,116 @@ export default function Contabilidad() {
         <div className="space-y-6">
           {/* KPI Cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-green-500/30 border-2 col-span-2 md:col-span-1">
+            <Card className="bg-white border-green-500/30 border-2 col-span-2 md:col-span-1">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Wallet className="w-4 h-4 text-green-400" />
-                  <span className="text-xs text-gray-400">Caja + Bancos</span>
+                  <span className="text-xs text-gray-600">Caja + Bancos</span>
                 </div>
                 <div className="text-2xl font-bold text-green-400">{fmt(dashboard?.liquidez.caja || 0)}</div>
-                <div className="text-xs text-gray-500 mt-1">Saldo disponible</div>
+                <div className="text-xs text-gray-600 mt-1">Saldo disponible</div>
               </CardContent>
             </Card>
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-blue-500/30 border-2">
+            <Card className="bg-white border-blue-500/30 border-2">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <CreditCard className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs text-gray-400">CxC</span>
+                  <span className="text-xs text-gray-600">CxC</span>
                 </div>
                 <div className="text-2xl font-bold text-blue-400">{fmt(dashboard?.liquidez.cxc || 0)}</div>
-                <div className="text-xs text-gray-500 mt-1">Por cobrar</div>
+                <div className="text-xs text-gray-600 mt-1">Por cobrar</div>
               </CardContent>
             </Card>
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-red-500/30 border-2">
+            <Card className="bg-white border-red-500/30 border-2">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <TrendingDown className="w-4 h-4 text-red-400" />
-                  <span className="text-xs text-gray-400">CxP</span>
+                  <span className="text-xs text-gray-600">CxP</span>
                 </div>
                 <div className="text-2xl font-bold text-red-400">{fmt(dashboard?.liquidez.cxp || 0)}</div>
-                <div className="text-xs text-gray-500 mt-1">Por pagar</div>
+                <div className="text-xs text-gray-600 mt-1">Por pagar</div>
               </CardContent>
             </Card>
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/30 border-2">
+            <Card className="bg-white border-[#F97316]/30 border-2">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <TrendingUp className="w-4 h-4 text-[#00E5FF]" />
-                  <span className="text-xs text-gray-400">Utilidad mes</span>
+                  <TrendingUp className="w-4 h-4 text-[#F97316]" />
+                  <span className="text-xs text-gray-600">Utilidad mes</span>
                 </div>
-                <div className={`text-2xl font-bold ${(dashboard?.mes.utilidad || 0) >= 0 ? 'text-[#00E5FF]' : 'text-red-400'}`}>
+                <div className={`text-2xl font-bold ${(dashboard?.mes.utilidad || 0) >= 0 ? 'text-[#F97316]' : 'text-red-400'}`}>
                   {fmt(dashboard?.mes.utilidad || 0)}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">Ing: {fmt(dashboard?.mes.ingreso || 0)}</div>
+                <div className="text-xs text-gray-600 mt-1">Ing: {fmt(dashboard?.mes.ingreso || 0)}</div>
               </CardContent>
             </Card>
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#7B61FF]/30 border-2">
+            <Card className="bg-white border-[#FB923C]/30 border-2">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <BarChart2 className="w-4 h-4 text-[#7B61FF]" />
-                  <span className="text-xs text-gray-400">Ingresos año</span>
+                  <BarChart2 className="w-4 h-4 text-[#FB923C]" />
+                  <span className="text-xs text-gray-600">Ingresos año</span>
                 </div>
-                <div className="text-2xl font-bold text-[#7B61FF]">{fmt(dashboard?.anio.ingreso || 0)}</div>
-                <div className="text-xs text-gray-500 mt-1">Acumulado {hoy.getFullYear()}</div>
+                <div className="text-2xl font-bold text-[#FB923C]">{fmt(dashboard?.anio.ingreso || 0)}</div>
+                <div className="text-xs text-gray-600 mt-1">Acumulado {hoy.getFullYear()}</div>
               </CardContent>
             </Card>
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-yellow-500/30 border-2">
+            <Card className="bg-white border-yellow-500/30 border-2">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Calculator className="w-4 h-4 text-yellow-400" />
-                  <span className="text-xs text-gray-400">Ratio corriente</span>
+                  <span className="text-xs text-gray-600">Ratio corriente</span>
                 </div>
                 <div className="text-2xl font-bold text-yellow-400">
                   {(dashboard?.liquidez.ratio_corriente || 0).toFixed(2)}x
                 </div>
-                <div className="text-xs text-gray-500 mt-1">(CxC+Caja)/CxP</div>
+                <div className="text-xs text-gray-600 mt-1">(CxC+Caja)/CxP</div>
               </CardContent>
             </Card>
           </div>
 
           {/* Quick stats */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+            <Card className="bg-white border-[#F97316]/20">
               <CardHeader>
-                <CardTitle className="text-white text-base">Resumen del mes</CardTitle>
+                <CardTitle className="text-gray-900 text-base">Resumen del mes</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">Ingresos</span>
+                  <span className="text-gray-600">Ingresos</span>
                   <span className="text-green-400 font-semibold">{fmt(dashboard?.mes.ingreso || 0)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">Gastos y Costos</span>
+                  <span className="text-gray-600">Gastos y Costos</span>
                   <span className="text-red-400 font-semibold">{fmt(dashboard?.mes.gasto || 0)}</span>
                 </div>
-                <div className="border-t border-[#00E5FF]/20 pt-3 flex justify-between font-bold">
-                  <span className="text-white">Utilidad neta</span>
-                  <span className={`${(dashboard?.mes.utilidad || 0) >= 0 ? 'text-[#00E5FF]' : 'text-red-400'}`}>
+                <div className="border-t border-[#F97316]/20 pt-3 flex justify-between font-bold">
+                  <span className="text-gray-900">Utilidad neta</span>
+                  <span className={`${(dashboard?.mes.utilidad || 0) >= 0 ? 'text-[#F97316]' : 'text-red-400'}`}>
                     {fmt(dashboard?.mes.utilidad || 0)}
                     {dashboard?.mes.ingreso ? ` (${fmtPct((dashboard.mes.utilidad / dashboard.mes.ingreso) * 100)})` : ''}
                   </span>
                 </div>
               </CardContent>
             </Card>
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+            <Card className="bg-white border-[#F97316]/20">
               <CardHeader>
-                <CardTitle className="text-white text-base">Actividad contable</CardTitle>
+                <CardTitle className="text-gray-900 text-base">Actividad contable</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">Total asientos activos</span>
-                  <span className="text-white font-semibold">{dashboard?.total_asientos || 0}</span>
+                  <span className="text-gray-600">Total asientos activos</span>
+                  <span className="text-gray-900 font-semibold">{dashboard?.total_asientos || 0}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-400">Total cuentas (hoja)</span>
-                  <span className="text-white font-semibold">{dashboard?.total_cuentas || 0}</span>
+                  <span className="text-gray-600">Total cuentas (hoja)</span>
+                  <span className="text-gray-900 font-semibold">{dashboard?.total_cuentas || 0}</span>
                 </div>
                 <div className="flex gap-2 pt-2">
                   <Button size="sm" onClick={() => setTab('asientos')}
-                    className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-xs">
+                    className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316] text-xs">
                     Ver asientos
                   </Button>
                   <Button size="sm" onClick={() => setTab('resultados')}
-                    className="flex-1 bg-gradient-to-r from-[#7B61FF] to-[#00E5FF] text-xs">
+                    className="flex-1 bg-gradient-to-r from-[#FB923C] to-[#F97316] text-xs">
                     Ver resultados
                   </Button>
                 </div>
@@ -888,28 +897,28 @@ export default function Contabilidad() {
       {tab === 'asientos' && (
         <div className="space-y-4">
           {/* Filters */}
-          <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardContent className="p-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
-                  <Label className="text-xs text-gray-400">Desde</Label>
+                  <Label className="text-xs text-gray-600">Desde</Label>
                   <Input type="date" value={asientoFiltroFi}
                     onChange={e => setAsientoFiltroFi(e.target.value)}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white text-sm mt-1" />
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 text-sm mt-1" />
                 </div>
                 <div>
-                  <Label className="text-xs text-gray-400">Hasta</Label>
+                  <Label className="text-xs text-gray-600">Hasta</Label>
                   <Input type="date" value={asientoFiltroFf}
                     onChange={e => setAsientoFiltroFf(e.target.value)}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white text-sm mt-1" />
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 text-sm mt-1" />
                 </div>
                 <div>
-                  <Label className="text-xs text-gray-400">Estado</Label>
+                  <Label className="text-xs text-gray-600">Estado</Label>
                   <Select value={asientoFiltroEstado || '__all__'} onValueChange={v => setAsientoFiltroEstado(v === '__all__' ? '' : v)}>
-                    <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white text-sm mt-1">
+                    <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 text-sm mt-1">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                    <SelectContent className="bg-white border-[#F97316]/30">
                       <SelectItem value="__all__">Todos</SelectItem>
                       <SelectItem value="activo">Activos</SelectItem>
                       <SelectItem value="anulado">Anulados</SelectItem>
@@ -917,7 +926,7 @@ export default function Contabilidad() {
                   </Select>
                 </div>
                 <div className="flex items-end">
-                  <Button onClick={loadAsientos} className="w-full bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-sm">
+                  <Button onClick={() => { setAsientoPage(1); loadAsientos(1); }} className="w-full bg-gradient-to-r from-[#C2410C] to-[#F97316] text-sm">
                     <RefreshCw className="w-4 h-4 mr-1" /> Filtrar
                   </Button>
                 </div>
@@ -925,24 +934,33 @@ export default function Contabilidad() {
             </CardContent>
           </Card>
 
+          {/* List header: total count */}
+          {asientoTotal > 0 && (
+            <div className="flex items-center justify-between px-1">
+              <p className="text-sm text-gray-600">{asientoTotal} asiento{asientoTotal !== 1 ? 's' : ''} encontrado{asientoTotal !== 1 ? 's' : ''}</p>
+              <p className="text-xs text-gray-600">Página {asientoPage} de {asientoPages}</p>
+            </div>
+          )}
+
           {/* List */}
           {asientos.length === 0 ? (
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+            <Card className="bg-white border-[#F97316]/20">
               <CardContent className="p-12 text-center">
                 <FileText className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400">No hay asientos en este período</p>
+                <p className="text-gray-600">No hay asientos en este período</p>
               </CardContent>
             </Card>
           ) : (
-            asientos.map(asiento => (
-              <Card key={asiento.id} className={`bg-[#0A1A2F]/60 backdrop-blur-xl border-2 transition-all ${
-                asiento.estado === 'anulado' ? 'border-red-500/20 opacity-70' : 'border-[#00E5FF]/20 hover:border-[#7B61FF]/40'
+            <>
+            {asientos.map(asiento => (
+              <Card key={asiento.id} className={`bg-white border-2 transition-all ${
+                asiento.estado === 'anulado' ? 'border-red-500/20 opacity-70' : 'border-[#F97316]/20 hover:border-[#FB923C]/40'
               }`}>
                 <CardContent className="p-5">
                   <div className="flex justify-between items-start mb-4">
                     <div>
                       <div className="flex items-center gap-3">
-                        <span className="text-[#00E5FF] font-mono font-bold">{asiento.numero}</span>
+                        <span className="text-[#F97316] font-mono font-bold">{asiento.numero}</span>
                         <Badge className={asiento.estado === 'anulado'
                           ? 'bg-red-500/20 text-red-400 border-red-500/30'
                           : 'bg-green-500/20 text-green-400 border-green-500/30'
@@ -950,18 +968,18 @@ export default function Contabilidad() {
                           {asiento.estado === 'anulado' ? 'Anulado' : 'Activo'}
                         </Badge>
                         {asiento.tipo && asiento.tipo !== 'manual' && (
-                          <Badge className="bg-[#7B61FF]/20 text-[#7B61FF] border-[#7B61FF]/30 text-xs">
+                          <Badge className="bg-[#FB923C]/20 text-[#FB923C] border-[#FB923C]/30 text-xs">
                             {asiento.tipo}
                           </Badge>
                         )}
                       </div>
-                      <p className="text-sm text-gray-400 mt-1">{asiento.fecha} · {asiento.descripcion}</p>
-                      {asiento.referencia && <p className="text-xs text-gray-500">Ref: {asiento.referencia}</p>}
+                      <p className="text-sm text-gray-600 mt-1">{asiento.fecha} · {asiento.descripcion}</p>
+                      {asiento.referencia && <p className="text-xs text-gray-600">Ref: {asiento.referencia}</p>}
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="text-right mr-4">
-                        <div className="text-xs text-gray-400">Débito / Crédito</div>
-                        <div className="font-bold text-white">{fmt(asiento.total_debito)} / {fmt(asiento.total_credito)}</div>
+                        <div className="text-xs text-gray-600">Débito / Crédito</div>
+                        <div className="font-bold text-gray-900">{fmt(asiento.total_debito)} / {fmt(asiento.total_credito)}</div>
                       </div>
                       {asiento.estado !== 'anulado' && (
                         <Button size="sm" variant="outline"
@@ -975,22 +993,22 @@ export default function Contabilidad() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="border-b border-[#00E5FF]/10">
-                          <th className="text-left py-1 text-gray-500 font-normal">Cuenta</th>
-                          <th className="text-left py-1 text-gray-500 font-normal">Detalle</th>
-                          <th className="text-right py-1 text-gray-500 font-normal w-24">Débito</th>
-                          <th className="text-right py-1 text-gray-500 font-normal w-24">Crédito</th>
+                        <tr className="border-b border-[#F97316]/10">
+                          <th className="text-left py-1 text-gray-600 font-normal">Cuenta</th>
+                          <th className="text-left py-1 text-gray-600 font-normal">Detalle</th>
+                          <th className="text-right py-1 text-gray-600 font-normal w-24">Débito</th>
+                          <th className="text-right py-1 text-gray-600 font-normal w-24">Crédito</th>
                         </tr>
                       </thead>
                       <tbody>
                         {asiento.items?.map((item: any, idx: number) => {
                           const cuenta = cuentas.find(c => c.id === item.cuenta_id);
                           return (
-                            <tr key={idx} className="border-b border-[#00E5FF]/5">
-                              <td className="py-1 text-gray-300">
+                            <tr key={idx} className="border-b border-[#F97316]/5">
+                              <td className="py-1 text-gray-600">
                                 {cuenta ? `${cuenta.codigo} - ${cuenta.nombre}` : item.cuenta_id}
                               </td>
-                              <td className="py-1 text-gray-500">{item.descripcion}</td>
+                              <td className="py-1 text-gray-600">{item.descripcion}</td>
                               <td className="text-right py-1 text-green-400">
                                 {item.debito > 0 ? fmt(item.debito) : ''}
                               </td>
@@ -1000,8 +1018,8 @@ export default function Contabilidad() {
                             </tr>
                           );
                         })}
-                        <tr className="font-bold bg-white/5">
-                          <td colSpan={2} className="py-2 text-gray-400 text-xs">TOTALES</td>
+                        <tr className="font-bold bg-gray-50">
+                          <td colSpan={2} className="py-2 text-gray-600 text-xs">TOTALES</td>
                           <td className="text-right py-2 text-green-400 text-xs">{fmt(asiento.total_debito)}</td>
                           <td className="text-right py-2 text-red-400 text-xs">{fmt(asiento.total_credito)}</td>
                         </tr>
@@ -1010,26 +1028,62 @@ export default function Contabilidad() {
                   </div>
                 </CardContent>
               </Card>
-            ))
+            ))}
+            {/* Pagination */}
+            {asientoPages > 1 && (
+              <div className="flex justify-center mt-2">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={() => { if (asientoPage > 1) loadAsientos(asientoPage - 1); }}
+                        className={asientoPage <= 1 ? 'pointer-events-none opacity-40 text-gray-600' : 'cursor-pointer text-[#F97316] hover:text-[#F97316]'}
+                      />
+                    </PaginationItem>
+                    {Array.from({ length: Math.min(5, asientoPages) }, (_, i) => {
+                      const start = Math.max(1, Math.min(asientoPage - 2, asientoPages - 4));
+                      const p = start + i;
+                      if (p > asientoPages) return null;
+                      return (
+                        <PaginationItem key={p}>
+                          <PaginationLink
+                            isActive={p === asientoPage}
+                            onClick={() => loadAsientos(p)}
+                            className={`cursor-pointer ${p === asientoPage ? 'bg-[#F97316]/20 text-[#F97316] border-[#F97316]/40' : 'text-gray-600 hover:text-gray-900'}`}
+                          >{p}</PaginationLink>
+                        </PaginationItem>
+                      );
+                    })}
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={() => { if (asientoPage < asientoPages) loadAsientos(asientoPage + 1); }}
+                        className={asientoPage >= asientoPages ? 'pointer-events-none opacity-40 text-gray-600' : 'cursor-pointer text-[#F97316] hover:text-[#F97316]'}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
+            </>
           )}
         </div>
       )}
 
       {/* ── TAB: CATÁLOGO ───────────────────────────────────────────────── */}
       {tab === 'catalogo' && (
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
-            <CardTitle className="text-white">Plan de Cuentas NEC Ecuador</CardTitle>
-            <p className="text-sm text-gray-400">{cuentas.length} cuentas registradas</p>
+            <CardTitle className="text-gray-900">Plan de Cuentas NEC Ecuador</CardTitle>
+            <p className="text-sm text-gray-600">{cuentas.length} cuentas registradas</p>
           </CardHeader>
           <CardContent>
             {cuentas.length === 0 ? (
               <div className="text-center py-16">
                 <BookOpen className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400 text-lg mb-2">No hay cuentas configuradas</p>
-                <p className="text-gray-500 text-sm mb-6">Inicialice el Plan Contable NEC Ecuador o cree cuentas manualmente</p>
+                <p className="text-gray-600 text-lg mb-2">No hay cuentas configuradas</p>
+                <p className="text-gray-600 text-sm mb-6">Inicialice el Plan Contable NEC Ecuador o cree cuentas manualmente</p>
                 <Button onClick={handleInicializarPlan} disabled={loading}
-                  className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+                  className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
                   <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                   Inicializar Plan NEC Ecuador
                 </Button>
@@ -1038,32 +1092,32 @@ export default function Contabilidad() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b-2 border-[#00E5FF]/30">
-                      <th className="text-left py-2 px-3 text-gray-400 text-xs">Código</th>
-                      <th className="text-left py-2 px-3 text-gray-400 text-xs">Nombre</th>
-                      <th className="text-left py-2 px-3 text-gray-400 text-xs">Tipo</th>
-                      <th className="text-left py-2 px-3 text-gray-400 text-xs">Naturaleza</th>
-                      <th className="text-center py-2 px-3 text-gray-400 text-xs">Grupo</th>
-                      <th className="text-right py-2 px-3 text-gray-400 text-xs">Saldo</th>
-                      <th className="text-center py-2 px-3 text-gray-400 text-xs">Acciones</th>
+                    <tr className="border-b-2 border-[#F97316]/30">
+                      <th className="text-left py-2 px-3 text-gray-600 text-xs">Código</th>
+                      <th className="text-left py-2 px-3 text-gray-600 text-xs">Nombre</th>
+                      <th className="text-left py-2 px-3 text-gray-600 text-xs">Tipo</th>
+                      <th className="text-left py-2 px-3 text-gray-600 text-xs">Naturaleza</th>
+                      <th className="text-center py-2 px-3 text-gray-600 text-xs">Grupo</th>
+                      <th className="text-right py-2 px-3 text-gray-600 text-xs">Saldo</th>
+                      <th className="text-center py-2 px-3 text-gray-600 text-xs">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {cuentas.map(cuenta => (
                       <tr key={cuenta.id}
-                        className={`border-b border-[#00E5FF]/10 hover:bg-white/5 transition-colors ${
+                        className={`border-b border-[#F97316]/10 hover:bg-gray-50 transition-colors ${
                           cuenta.es_grupo ? 'bg-white/[0.02]' : ''
                         }`}
                         style={{ paddingLeft: `${(cuenta.nivel - 1) * 12}px` }}
                       >
                         <td className="py-2 px-3">
-                          <span className="font-mono text-xs text-gray-300"
+                          <span className="font-mono text-xs text-gray-600"
                             style={{ paddingLeft: `${(cuenta.nivel - 1) * 12}px` }}>
                             {cuenta.codigo}
                           </span>
                         </td>
                         <td className="py-2 px-3">
-                          <span className={`text-sm ${cuenta.es_grupo ? 'font-bold text-white' : 'text-gray-300'}`}
+                          <span className={`text-sm ${cuenta.es_grupo ? 'font-bold text-gray-900' : 'text-gray-600'}`}
                             style={{ paddingLeft: `${(cuenta.nivel - 1) * 12}px` }}>
                             {cuenta.nombre}
                           </span>
@@ -1073,11 +1127,11 @@ export default function Contabilidad() {
                             {TIPO_LABELS[cuenta.tipo]}
                           </Badge>
                         </td>
-                        <td className="py-2 px-3 text-xs text-gray-400 capitalize">{cuenta.naturaleza}</td>
-                        <td className="py-2 px-3 text-center text-xs text-gray-500">
+                        <td className="py-2 px-3 text-xs text-gray-600 capitalize">{cuenta.naturaleza}</td>
+                        <td className="py-2 px-3 text-center text-xs text-gray-600">
                           {cuenta.es_grupo ? 'Sí' : '—'}
                         </td>
-                        <td className="py-2 px-3 text-right text-sm font-mono text-[#00E5FF]">
+                        <td className="py-2 px-3 text-right text-sm font-mono text-[#F97316]">
                           {cuenta.saldo_calculado !== undefined ? fmt(cuenta.saldo_calculado) : '—'}
                         </td>
                         <td className="py-2 px-3">
@@ -1110,18 +1164,18 @@ export default function Contabilidad() {
       {/* ── TAB: LIBRO MAYOR ────────────────────────────────────────────── */}
       {tab === 'mayor' && (
         <div className="space-y-4">
-          <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardContent className="p-4">
               <div className="flex gap-4 items-end">
                 <div className="flex-1">
-                  <Label className="text-xs text-gray-400">Seleccionar cuenta</Label>
+                  <Label className="text-xs text-gray-600">Seleccionar cuenta</Label>
                   <Select value={mayorCuentaId} onValueChange={setMayorCuentaId}>
-                    <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white mt-1">
+                    <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1">
                       <SelectValue placeholder="Elegir cuenta..." />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 max-h-64">
+                    <SelectContent className="bg-white border-[#F97316]/30 max-h-64">
                       {cuentas.filter(c => !c.es_grupo).map(c => (
-                        <SelectItem key={c.id} value={c.id} className="text-white hover:bg-white/10">
+                        <SelectItem key={c.id} value={c.id} className="text-gray-900 hover:bg-gray-100">
                           {c.codigo} — {c.nombre}
                         </SelectItem>
                       ))}
@@ -1129,7 +1183,7 @@ export default function Contabilidad() {
                   </Select>
                 </div>
                 <Button onClick={loadMayor} disabled={!mayorCuentaId}
-                  className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+                  className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
                   Cargar Libro Mayor
                 </Button>
               </div>
@@ -1137,45 +1191,45 @@ export default function Contabilidad() {
           </Card>
 
           {mayorData && (
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+            <Card className="bg-white border-[#F97316]/20">
               <CardHeader>
                 <div className="flex justify-between items-start">
                   <div>
-                    <CardTitle className="text-white">{mayorData.cuenta?.codigo} — {mayorData.cuenta?.nombre}</CardTitle>
-                    <p className="text-sm text-gray-400 mt-1 capitalize">
+                    <CardTitle className="text-gray-900">{mayorData.cuenta?.codigo} — {mayorData.cuenta?.nombre}</CardTitle>
+                    <p className="text-sm text-gray-600 mt-1 capitalize">
                       Tipo: {TIPO_LABELS[mayorData.cuenta?.tipo]} · Naturaleza: {mayorData.cuenta?.naturaleza}
                     </p>
                   </div>
                   <div className="text-right">
-                    <div className="text-xs text-gray-400">Saldo final</div>
-                    <div className="text-2xl font-bold text-[#00E5FF]">{fmt(mayorData.saldo_final || 0)}</div>
+                    <div className="text-xs text-gray-600">Saldo final</div>
+                    <div className="text-2xl font-bold text-[#F97316]">{fmt(mayorData.saldo_final || 0)}</div>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 {mayorData.movimientos?.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">Sin movimientos en esta cuenta</p>
+                  <p className="text-center text-gray-600 py-8">Sin movimientos en esta cuenta</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b-2 border-[#00E5FF]/30">
-                          <th className="text-left py-2 px-2 text-gray-400 text-xs">Fecha</th>
-                          <th className="text-left py-2 px-2 text-gray-400 text-xs">Asiento</th>
-                          <th className="text-left py-2 px-2 text-gray-400 text-xs">Descripción</th>
-                          <th className="text-right py-2 px-2 text-gray-400 text-xs">Débito</th>
-                          <th className="text-right py-2 px-2 text-gray-400 text-xs">Crédito</th>
-                          <th className="text-right py-2 px-2 text-gray-400 text-xs">Saldo</th>
+                        <tr className="border-b-2 border-[#F97316]/30">
+                          <th className="text-left py-2 px-2 text-gray-600 text-xs">Fecha</th>
+                          <th className="text-left py-2 px-2 text-gray-600 text-xs">Asiento</th>
+                          <th className="text-left py-2 px-2 text-gray-600 text-xs">Descripción</th>
+                          <th className="text-right py-2 px-2 text-gray-600 text-xs">Débito</th>
+                          <th className="text-right py-2 px-2 text-gray-600 text-xs">Crédito</th>
+                          <th className="text-right py-2 px-2 text-gray-600 text-xs">Saldo</th>
                         </tr>
                       </thead>
                       <tbody>
                         {mayorData.movimientos.map((mov: any, i: number) => (
-                          <tr key={i} className="border-b border-[#00E5FF]/10 hover:bg-white/5">
-                            <td className="py-2 px-2 text-gray-400 text-xs">{mov.fecha}</td>
-                            <td className="py-2 px-2 text-[#00E5FF] font-mono text-xs">{mov.numero}</td>
-                            <td className="py-2 px-2 text-gray-300 text-xs">
+                          <tr key={i} className="border-b border-[#F97316]/10 hover:bg-gray-50">
+                            <td className="py-2 px-2 text-gray-600 text-xs">{mov.fecha}</td>
+                            <td className="py-2 px-2 text-[#F97316] font-mono text-xs">{mov.numero}</td>
+                            <td className="py-2 px-2 text-gray-600 text-xs">
                               {mov.descripcion}
-                              {mov.detalle && <span className="text-gray-500"> · {mov.detalle}</span>}
+                              {mov.detalle && <span className="text-gray-600"> · {mov.detalle}</span>}
                             </td>
                             <td className="py-2 px-2 text-right text-green-400 text-xs">
                               {mov.debito > 0 ? fmt(mov.debito) : ''}
@@ -1183,7 +1237,7 @@ export default function Contabilidad() {
                             <td className="py-2 px-2 text-right text-red-400 text-xs">
                               {mov.credito > 0 ? fmt(mov.credito) : ''}
                             </td>
-                            <td className="py-2 px-2 text-right font-mono font-bold text-white text-xs">
+                            <td className="py-2 px-2 text-right font-mono font-bold text-gray-900 text-xs">
                               {fmt(mov.saldo)}
                             </td>
                           </tr>
@@ -1197,10 +1251,10 @@ export default function Contabilidad() {
           )}
 
           {!mayorData && !mayorCuentaId && (
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+            <Card className="bg-white border-[#F97316]/20">
               <CardContent className="p-12 text-center">
                 <Layers className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400">Seleccione una cuenta para ver sus movimientos</p>
+                <p className="text-gray-600">Seleccione una cuenta para ver sus movimientos</p>
               </CardContent>
             </Card>
           )}
@@ -1210,16 +1264,16 @@ export default function Contabilidad() {
       {/* ── TAB: BALANCE GENERAL ────────────────────────────────────────── */}
       {tab === 'balance' && (
         <div className="space-y-4">
-          <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardContent className="p-4">
               <div className="flex gap-4 items-end">
                 <div>
-                  <Label className="text-xs text-gray-400">Hasta la fecha</Label>
+                  <Label className="text-xs text-gray-600">Hasta la fecha</Label>
                   <Input type="date" value={balanceFechaHasta}
                     onChange={e => setBalanceFechaHasta(e.target.value)}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white mt-1" />
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1" />
                 </div>
-                <Button onClick={loadBalance} className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+                <Button onClick={loadBalance} className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
                   <RefreshCw className="w-4 h-4 mr-2" /> Generar
                 </Button>
               </div>
@@ -1233,12 +1287,12 @@ export default function Contabilidad() {
             const patrimonio = bCuentas.filter(c => c.tipo === 'patrimonio' && !c.es_grupo);
             const { totales, balanceado } = balanceData;
             return (
-              <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
-                <CardHeader className="bg-gradient-to-r from-[#7B61FF]/10 to-[#00E5FF]/10 border-b border-[#00E5FF]/20">
+              <Card className="bg-white border-[#F97316]/20">
+                <CardHeader className="bg-gradient-to-r from-[#FB923C]/10 to-[#F97316]/10 border-b border-[#F97316]/20">
                   <div className="flex justify-between items-center">
                     <div>
-                      <CardTitle className="text-white">Balance General</CardTitle>
-                      <p className="text-sm text-gray-400">Hasta {balanceFechaHasta}</p>
+                      <CardTitle className="text-gray-900">Balance General</CardTitle>
+                      <p className="text-sm text-gray-600">Hasta {balanceFechaHasta}</p>
                     </div>
                     <Badge className={balanceado ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}>
                       {balanceado ? <><CheckCircle className="w-3 h-3 mr-1 inline" />Cuadrado</> : <><AlertCircle className="w-3 h-3 mr-1 inline" />Descuadrado</>}
@@ -1249,19 +1303,19 @@ export default function Contabilidad() {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* ACTIVOS */}
                     <div>
-                      <h3 className="font-bold text-lg text-white mb-4 pb-2 border-b-2 border-blue-500">ACTIVOS</h3>
+                      <h3 className="font-bold text-lg text-gray-900 mb-4 pb-2 border-b-2 border-blue-500">ACTIVOS</h3>
                       <div className="space-y-1">
                         {activos.filter(c => (c.saldo_calculado || 0) !== 0).map(c => (
-                          <div key={c.id} className="flex justify-between text-sm hover:bg-white/5 p-1.5 rounded">
-                            <span className="text-gray-300 text-xs"><span className="font-mono text-gray-500 mr-2">{c.codigo}</span>{c.nombre}</span>
-                            <span className="text-white font-medium text-xs">{fmt(c.saldo_calculado || 0)}</span>
+                          <div key={c.id} className="flex justify-between text-sm hover:bg-gray-50 p-1.5 rounded">
+                            <span className="text-gray-600 text-xs"><span className="font-mono text-gray-600 mr-2">{c.codigo}</span>{c.nombre}</span>
+                            <span className="text-gray-900 font-medium text-xs">{fmt(c.saldo_calculado || 0)}</span>
                           </div>
                         ))}
                         {activos.filter(c => (c.saldo_calculado || 0) === 0).length === activos.length && (
                           <p className="text-gray-600 text-xs py-2">Sin movimientos</p>
                         )}
                         <div className="flex justify-between pt-3 mt-2 border-t-2 border-blue-500 font-bold">
-                          <span className="text-white">TOTAL ACTIVOS</span>
+                          <span className="text-gray-900">TOTAL ACTIVOS</span>
                           <span className="text-blue-400">{fmt(totales.activo)}</span>
                         </div>
                       </div>
@@ -1269,38 +1323,38 @@ export default function Contabilidad() {
                     {/* PASIVOS + PATRIMONIO */}
                     <div className="space-y-6">
                       <div>
-                        <h3 className="font-bold text-lg text-white mb-4 pb-2 border-b-2 border-red-500">PASIVOS</h3>
+                        <h3 className="font-bold text-lg text-gray-900 mb-4 pb-2 border-b-2 border-red-500">PASIVOS</h3>
                         <div className="space-y-1">
                           {pasivos.filter(c => (c.saldo_calculado || 0) !== 0).map(c => (
-                            <div key={c.id} className="flex justify-between text-sm hover:bg-white/5 p-1.5 rounded">
-                              <span className="text-gray-300 text-xs"><span className="font-mono text-gray-500 mr-2">{c.codigo}</span>{c.nombre}</span>
-                              <span className="text-white font-medium text-xs">{fmt(c.saldo_calculado || 0)}</span>
+                            <div key={c.id} className="flex justify-between text-sm hover:bg-gray-50 p-1.5 rounded">
+                              <span className="text-gray-600 text-xs"><span className="font-mono text-gray-600 mr-2">{c.codigo}</span>{c.nombre}</span>
+                              <span className="text-gray-900 font-medium text-xs">{fmt(c.saldo_calculado || 0)}</span>
                             </div>
                           ))}
                           <div className="flex justify-between pt-3 border-t border-red-500/40 font-semibold">
-                            <span className="text-gray-300">Total Pasivos</span>
+                            <span className="text-gray-600">Total Pasivos</span>
                             <span className="text-red-400">{fmt(totales.pasivo)}</span>
                           </div>
                         </div>
                       </div>
                       <div>
-                        <h3 className="font-bold text-lg text-white mb-4 pb-2 border-b-2 border-purple-500">PATRIMONIO</h3>
+                        <h3 className="font-bold text-lg text-gray-900 mb-4 pb-2 border-b-2 border-purple-500">PATRIMONIO</h3>
                         <div className="space-y-1">
                           {patrimonio.filter(c => (c.saldo_calculado || 0) !== 0).map(c => (
-                            <div key={c.id} className="flex justify-between text-sm hover:bg-white/5 p-1.5 rounded">
-                              <span className="text-gray-300 text-xs"><span className="font-mono text-gray-500 mr-2">{c.codigo}</span>{c.nombre}</span>
-                              <span className="text-white font-medium text-xs">{fmt(c.saldo_calculado || 0)}</span>
+                            <div key={c.id} className="flex justify-between text-sm hover:bg-gray-50 p-1.5 rounded">
+                              <span className="text-gray-600 text-xs"><span className="font-mono text-gray-600 mr-2">{c.codigo}</span>{c.nombre}</span>
+                              <span className="text-gray-900 font-medium text-xs">{fmt(c.saldo_calculado || 0)}</span>
                             </div>
                           ))}
                           <div className="flex justify-between pt-3 border-t border-purple-500/40 font-semibold">
-                            <span className="text-gray-300">Total Patrimonio</span>
+                            <span className="text-gray-600">Total Patrimonio</span>
                             <span className="text-purple-400">{fmt(totales.patrimonio)}</span>
                           </div>
                         </div>
                       </div>
                       <div className="flex justify-between pt-3 border-t-2 border-white font-bold text-lg">
-                        <span className="text-white">PASIVO + PATRIMONIO</span>
-                        <span className="text-[#7B61FF]">{fmt(totales.pasivo + totales.patrimonio)}</span>
+                        <span className="text-gray-900">PASIVO + PATRIMONIO</span>
+                        <span className="text-[#FB923C]">{fmt(totales.pasivo + totales.patrimonio)}</span>
                       </div>
                     </div>
                   </div>
@@ -1310,10 +1364,10 @@ export default function Contabilidad() {
           })()}
 
           {!balanceData && (
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+            <Card className="bg-white border-[#F97316]/20">
               <CardContent className="p-12 text-center">
                 <DollarSign className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400">Haga clic en "Generar" para ver el Balance General</p>
+                <p className="text-gray-600">Haga clic en "Generar" para ver el Balance General</p>
               </CardContent>
             </Card>
           )}
@@ -1323,22 +1377,22 @@ export default function Contabilidad() {
       {/* ── TAB: ESTADO DE RESULTADOS ───────────────────────────────────── */}
       {tab === 'resultados' && (
         <div className="space-y-4">
-          <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardContent className="p-4">
               <div className="flex gap-4 items-end flex-wrap">
                 <div>
-                  <Label className="text-xs text-gray-400">Desde</Label>
+                  <Label className="text-xs text-gray-600">Desde</Label>
                   <Input type="date" value={resultFi}
                     onChange={e => setResultFi(e.target.value)}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white mt-1" />
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1" />
                 </div>
                 <div>
-                  <Label className="text-xs text-gray-400">Hasta</Label>
+                  <Label className="text-xs text-gray-600">Hasta</Label>
                   <Input type="date" value={resultFf}
                     onChange={e => setResultFf(e.target.value)}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white mt-1" />
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1" />
                 </div>
-                <Button onClick={loadResultados} className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+                <Button onClick={loadResultados} className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
                   <RefreshCw className="w-4 h-4 mr-2" /> Generar
                 </Button>
               </div>
@@ -1351,25 +1405,25 @@ export default function Contabilidad() {
             const ingresos = rCuentas.filter(c => c.tipo === 'ingreso' && !c.es_grupo);
             const costos = rCuentas.filter(c => c.tipo === 'costo' && !c.es_grupo);
             const gastos = rCuentas.filter(c => c.tipo === 'gasto' && !c.es_grupo);
-            const LineRow = ({ label, value, color = 'text-white', bold = false, indent = false }: any) => (
+            const LineRow = ({ label, value, color = 'text-gray-900', bold = false, indent = false }: any) => (
               <div className={`flex justify-between py-1 ${indent ? 'pl-4' : ''} ${bold ? 'font-bold' : 'text-sm'}`}>
-                <span className={bold ? 'text-white' : 'text-gray-300'}>{label}</span>
+                <span className={bold ? 'text-gray-900' : 'text-gray-600'}>{label}</span>
                 <span className={color}>{fmt(value)}</span>
               </div>
             );
             return (
-              <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
-                <CardHeader className="bg-gradient-to-r from-green-500/10 to-[#00E5FF]/10 border-b border-[#00E5FF]/20">
-                  <CardTitle className="text-white">Estado de Resultados Integral</CardTitle>
-                  <p className="text-sm text-gray-400">{resultFi} al {resultFf}</p>
+              <Card className="bg-white border-[#F97316]/20">
+                <CardHeader className="bg-gradient-to-r from-green-500/10 to-[#F97316]/10 border-b border-[#F97316]/20">
+                  <CardTitle className="text-gray-900">Estado de Resultados Integral</CardTitle>
+                  <p className="text-sm text-gray-600">{resultFi} al {resultFf}</p>
                 </CardHeader>
                 <CardContent className="p-6 space-y-6">
                   {/* Ingresos */}
                   <div>
-                    <h3 className="font-bold text-white border-b-2 border-green-500 pb-2 mb-3">INGRESOS</h3>
+                    <h3 className="font-bold text-gray-900 border-b-2 border-green-500 pb-2 mb-3">INGRESOS</h3>
                     {ingresos.filter(c => (c.saldo_calculado || 0) > 0).map(c => (
                       <div key={c.id} className="flex justify-between py-1 pl-4 text-sm">
-                        <span className="text-gray-300 text-xs">{c.codigo} — {c.nombre}</span>
+                        <span className="text-gray-600 text-xs">{c.codigo} — {c.nombre}</span>
                         <span className="text-green-400 text-xs">{fmt(c.saldo_calculado || 0)}</span>
                       </div>
                     ))}
@@ -1378,47 +1432,47 @@ export default function Contabilidad() {
 
                   {/* Costos */}
                   <div>
-                    <h3 className="font-bold text-white border-b-2 border-orange-500 pb-2 mb-3">COSTO DE VENTAS</h3>
+                    <h3 className="font-bold text-gray-900 border-b-2 border-orange-500 pb-2 mb-3">COSTO DE VENTAS</h3>
                     {costos.filter(c => (c.saldo_calculado || 0) > 0).map(c => (
                       <div key={c.id} className="flex justify-between py-1 pl-4 text-sm">
-                        <span className="text-gray-300 text-xs">{c.codigo} — {c.nombre}</span>
+                        <span className="text-gray-600 text-xs">{c.codigo} — {c.nombre}</span>
                         <span className="text-orange-400 text-xs">({fmt(c.saldo_calculado || 0)})</span>
                       </div>
                     ))}
                     <LineRow label="TOTAL COSTO" value={r.total_costo} color="text-orange-400" bold />
-                    <div className="mt-2 pt-2 border-t border-[#00E5FF]/20">
+                    <div className="mt-2 pt-2 border-t border-[#F97316]/20">
                       <LineRow label={`UTILIDAD BRUTA (${fmtPct(r.margen_bruto)})`} value={r.utilidad_bruta}
-                        color={r.utilidad_bruta >= 0 ? 'text-[#00E5FF]' : 'text-red-400'} bold />
+                        color={r.utilidad_bruta >= 0 ? 'text-[#F97316]' : 'text-red-400'} bold />
                     </div>
                   </div>
 
                   {/* Gastos */}
                   <div>
-                    <h3 className="font-bold text-white border-b-2 border-yellow-500 pb-2 mb-3">GASTOS OPERACIONALES</h3>
+                    <h3 className="font-bold text-gray-900 border-b-2 border-yellow-500 pb-2 mb-3">GASTOS OPERACIONALES</h3>
                     {gastos.filter(c => (c.saldo_calculado || 0) > 0).map(c => (
                       <div key={c.id} className="flex justify-between py-1 pl-4 text-sm">
-                        <span className="text-gray-300 text-xs">{c.codigo} — {c.nombre}</span>
+                        <span className="text-gray-600 text-xs">{c.codigo} — {c.nombre}</span>
                         <span className="text-yellow-400 text-xs">({fmt(c.saldo_calculado || 0)})</span>
                       </div>
                     ))}
                     <LineRow label="TOTAL GASTOS" value={r.total_gasto} color="text-yellow-400" bold />
-                    <div className="mt-2 pt-2 border-t border-[#00E5FF]/20">
+                    <div className="mt-2 pt-2 border-t border-[#F97316]/20">
                       <LineRow label={`UTILIDAD OPERACIONAL (${fmtPct(r.margen_operacional)})`} value={r.utilidad_operacional}
-                        color={r.utilidad_operacional >= 0 ? 'text-[#00E5FF]' : 'text-red-400'} bold />
+                        color={r.utilidad_operacional >= 0 ? 'text-[#F97316]' : 'text-red-400'} bold />
                     </div>
                   </div>
 
                   {/* Distribución */}
                   <div className="bg-gradient-to-r from-white/5 to-white/10 p-5 rounded-xl space-y-2">
-                    <h3 className="font-bold text-white mb-3">DISTRIBUCIÓN Y UTILIDAD NETA</h3>
+                    <h3 className="font-bold text-gray-900 mb-3">DISTRIBUCIÓN Y UTILIDAD NETA</h3>
                     <LineRow label="15% Participación Trabajadores" value={r.participacion_trabajadores} color="text-red-400" indent />
-                    <LineRow label="Utilidad antes IR" value={r.utilidad_antes_ir} color="text-white" indent />
+                    <LineRow label="Utilidad antes IR" value={r.utilidad_antes_ir} color="text-gray-900" indent />
                     <LineRow label="25% Impuesto a la Renta" value={r.impuesto_renta} color="text-red-400" indent />
-                    <div className="border-t-2 border-[#00E5FF]/40 mt-3 pt-3">
+                    <div className="border-t-2 border-[#F97316]/40 mt-3 pt-3">
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-3">
                           {r.utilidad_neta >= 0 ? <TrendingUp className="w-6 h-6 text-green-400" /> : <TrendingDown className="w-6 h-6 text-red-400" />}
-                          <span className="text-xl font-bold text-white">
+                          <span className="text-xl font-bold text-gray-900">
                             {r.utilidad_neta >= 0 ? 'UTILIDAD NETA' : 'PÉRDIDA NETA'}
                           </span>
                         </div>
@@ -1426,7 +1480,7 @@ export default function Contabilidad() {
                           <div className={`text-2xl font-bold ${r.utilidad_neta >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {fmt(r.utilidad_neta)}
                           </div>
-                          <div className="text-xs text-gray-400">Margen {fmtPct(r.margen_neto)}</div>
+                          <div className="text-xs text-gray-600">Margen {fmtPct(r.margen_neto)}</div>
                         </div>
                       </div>
                     </div>
@@ -1437,10 +1491,10 @@ export default function Contabilidad() {
           })()}
 
           {!resultadosData && (
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+            <Card className="bg-white border-[#F97316]/20">
               <CardContent className="p-12 text-center">
                 <TrendingUp className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400">Haga clic en "Generar" para ver el Estado de Resultados</p>
+                <p className="text-gray-600">Haga clic en "Generar" para ver el Estado de Resultados</p>
               </CardContent>
             </Card>
           )}
@@ -1450,22 +1504,22 @@ export default function Contabilidad() {
       {/* ── TAB: FLUJO DE EFECTIVO ──────────────────────────────────────── */}
       {tab === 'flujo' && (
         <div className="space-y-4">
-          <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardContent className="p-4">
               <div className="flex gap-4 items-end flex-wrap">
                 <div>
-                  <Label className="text-xs text-gray-400">Desde</Label>
+                  <Label className="text-xs text-gray-600">Desde</Label>
                   <Input type="date" value={flujoFi}
                     onChange={e => setFlujoFi(e.target.value)}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white mt-1" />
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1" />
                 </div>
                 <div>
-                  <Label className="text-xs text-gray-400">Hasta</Label>
+                  <Label className="text-xs text-gray-600">Hasta</Label>
                   <Input type="date" value={flujoFf}
                     onChange={e => setFlujoFf(e.target.value)}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white mt-1" />
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1" />
                 </div>
-                <Button onClick={loadFlujo} className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+                <Button onClick={loadFlujo} className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
                   <RefreshCw className="w-4 h-4 mr-2" /> Generar
                 </Button>
               </div>
@@ -1476,24 +1530,24 @@ export default function Contabilidad() {
             const f = flujoData.flujo;
             const Section = ({ title, color, items, total }: any) => (
               <div className="space-y-2">
-                <h3 className={`font-bold text-white border-b-2 ${color} pb-2`}>{title}</h3>
+                <h3 className={`font-bold text-gray-900 border-b-2 ${color} pb-2`}>{title}</h3>
                 {items.map(([label, value]: any, i: number) => (
                   <div key={i} className="flex justify-between text-sm pl-4">
-                    <span className="text-gray-400">{label}</span>
+                    <span className="text-gray-600">{label}</span>
                     <span className={value >= 0 ? 'text-green-400' : 'text-red-400'}>{fmt(value)}</span>
                   </div>
                 ))}
-                <div className="flex justify-between font-bold pt-2 border-t border-white/10">
-                  <span className="text-white">Subtotal</span>
-                  <span className={total >= 0 ? 'text-[#00E5FF]' : 'text-red-400'}>{fmt(total)}</span>
+                <div className="flex justify-between font-bold pt-2 border-t border-gray-100">
+                  <span className="text-gray-900">Subtotal</span>
+                  <span className={total >= 0 ? 'text-[#F97316]' : 'text-red-400'}>{fmt(total)}</span>
                 </div>
               </div>
             );
             return (
-              <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
-                <CardHeader className="bg-gradient-to-r from-[#00E5FF]/10 to-[#7B61FF]/10 border-b border-[#00E5FF]/20">
-                  <CardTitle className="text-white">Estado de Flujo de Efectivo</CardTitle>
-                  <p className="text-sm text-gray-400">Método Indirecto · {flujoData.periodo?.inicio} al {flujoData.periodo?.fin}</p>
+              <Card className="bg-white border-[#F97316]/20">
+                <CardHeader className="bg-gradient-to-r from-[#F97316]/10 to-[#FB923C]/10 border-b border-[#F97316]/20">
+                  <CardTitle className="text-gray-900">Estado de Flujo de Efectivo</CardTitle>
+                  <p className="text-sm text-gray-600">Método Indirecto · {flujoData.periodo?.inicio} al {flujoData.periodo?.fin}</p>
                 </CardHeader>
                 <CardContent className="p-6 space-y-8">
                   <Section title="ACTIVIDADES OPERATIVAS"
@@ -1521,7 +1575,7 @@ export default function Contabilidad() {
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-3">
                         <Wallet className={`w-8 h-8 ${f.flujo_neto >= 0 ? 'text-green-400' : 'text-red-400'}`} />
-                        <span className="text-xl font-bold text-white">VARIACIÓN NETA DE EFECTIVO</span>
+                        <span className="text-xl font-bold text-gray-900">VARIACIÓN NETA DE EFECTIVO</span>
                       </div>
                       <span className={`text-3xl font-bold ${f.flujo_neto >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {fmt(f.flujo_neto)}
@@ -1534,10 +1588,10 @@ export default function Contabilidad() {
           })()}
 
           {!flujoData && (
-            <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+            <Card className="bg-white border-[#F97316]/20">
               <CardContent className="p-12 text-center">
                 <Wallet className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400">Haga clic en "Generar" para ver el Flujo de Efectivo</p>
+                <p className="text-gray-600">Haga clic en "Generar" para ver el Flujo de Efectivo</p>
               </CardContent>
             </Card>
           )}
@@ -1547,16 +1601,16 @@ export default function Contabilidad() {
       {/* ── TAB: PRESUPUESTO ────────────────────────────────────────────── */}
       {tab === 'presupuesto' && (
         <div className="space-y-4">
-          <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardContent className="p-4">
               <div className="flex gap-4 items-end flex-wrap">
                 <div>
-                  <Label className="text-xs text-gray-400">Año</Label>
+                  <Label className="text-xs text-gray-600">Año</Label>
                   <Input type="number" value={presAnio} min={2020} max={2035}
                     onChange={e => setPresAnio(parseInt(e.target.value))}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white mt-1 w-28" />
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1 w-28" />
                 </div>
-                <Button onClick={loadPresupuesto} className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+                <Button onClick={loadPresupuesto} className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
                   <RefreshCw className="w-4 h-4 mr-2" /> Cargar
                 </Button>
                 <Button onClick={addPresItem} variant="outline"
@@ -1571,28 +1625,28 @@ export default function Contabilidad() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardHeader>
-              <CardTitle className="text-white">Presupuesto {presAnio} vs Real</CardTitle>
+              <CardTitle className="text-gray-900">Presupuesto {presAnio} vs Real</CardTitle>
             </CardHeader>
             <CardContent>
               {presupuesto.length === 0 ? (
                 <div className="text-center py-12">
                   <BarChart2 className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-                  <p className="text-gray-400">No hay líneas presupuestadas para {presAnio}</p>
-                  <p className="text-gray-500 text-sm mt-2">Haga clic en "Agregar línea" para comenzar</p>
+                  <p className="text-gray-600">No hay líneas presupuestadas para {presAnio}</p>
+                  <p className="text-gray-600 text-sm mt-2">Haga clic en "Agregar línea" para comenzar</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b-2 border-[#00E5FF]/30">
-                        <th className="text-left py-2 px-3 text-gray-400 text-xs">Cuenta</th>
-                        <th className="text-right py-2 px-3 text-gray-400 text-xs">Presupuesto</th>
-                        <th className="text-right py-2 px-3 text-gray-400 text-xs">Real</th>
-                        <th className="text-right py-2 px-3 text-gray-400 text-xs">Variación</th>
-                        <th className="text-right py-2 px-3 text-gray-400 text-xs">% Cumpl.</th>
-                        <th className="text-center py-2 px-3 text-gray-400 text-xs">Acc.</th>
+                      <tr className="border-b-2 border-[#F97316]/30">
+                        <th className="text-left py-2 px-3 text-gray-600 text-xs">Cuenta</th>
+                        <th className="text-right py-2 px-3 text-gray-600 text-xs">Presupuesto</th>
+                        <th className="text-right py-2 px-3 text-gray-600 text-xs">Real</th>
+                        <th className="text-right py-2 px-3 text-gray-600 text-xs">Variación</th>
+                        <th className="text-right py-2 px-3 text-gray-600 text-xs">% Cumpl.</th>
+                        <th className="text-center py-2 px-3 text-gray-600 text-xs">Acc.</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1600,7 +1654,7 @@ export default function Contabilidad() {
                         const cumpl = item.cumplimiento || 0;
                         const variacion = item.variacion || 0;
                         return (
-                          <tr key={idx} className="border-b border-[#00E5FF]/10 hover:bg-white/5">
+                          <tr key={idx} className="border-b border-[#F97316]/10 hover:bg-gray-50">
                             <td className="py-2 px-3">
                               <Select value={item.cuenta_id}
                                 onValueChange={v => {
@@ -1612,12 +1666,12 @@ export default function Contabilidad() {
                                   } : pi));
                                 }}
                               >
-                                <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white text-xs h-8">
+                                <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 text-xs h-8">
                                   <SelectValue />
                                 </SelectTrigger>
-                                <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                                <SelectContent className="bg-white border-[#F97316]/30">
                                   {cuentas.filter(c => !c.es_grupo).map(c => (
-                                    <SelectItem key={c.id} value={c.id} className="text-white text-xs">
+                                    <SelectItem key={c.id} value={c.id} className="text-gray-900 text-xs">
                                       {c.codigo} — {c.nombre}
                                     </SelectItem>
                                   ))}
@@ -1628,10 +1682,10 @@ export default function Contabilidad() {
                               <Input type="number" step="0.01" min="0"
                                 value={item.presupuesto}
                                 onChange={e => setPresupuesto(p => p.map((pi, i) => i === idx ? { ...pi, presupuesto: parseFloat(e.target.value) || 0 } : pi))}
-                                className="bg-white/5 border-[#00E5FF]/20 text-white text-xs h-8 text-right"
+                                className="bg-gray-50 border-[#F97316]/20 text-gray-900 text-xs h-8 text-right"
                               />
                             </td>
-                            <td className="py-2 px-3 text-right text-white text-sm font-mono">
+                            <td className="py-2 px-3 text-right text-gray-900 text-sm font-mono">
                               {item.real !== undefined ? fmt(item.real) : '—'}
                             </td>
                             <td className={`py-2 px-3 text-right text-sm font-mono ${variacion >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -1645,7 +1699,7 @@ export default function Contabilidad() {
                                     style={{ width: `${Math.min(100, cumpl)}%` }}
                                   />
                                 </div>
-                                <span className="text-xs text-gray-300">{cumpl.toFixed(1)}%</span>
+                                <span className="text-xs text-gray-600">{cumpl.toFixed(1)}%</span>
                               </div>
                             </td>
                             <td className="py-2 px-3 text-center">
@@ -1659,12 +1713,12 @@ export default function Contabilidad() {
                       })}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t-2 border-[#00E5FF]/30 bg-white/5">
-                        <td className="py-2 px-3 font-bold text-white text-sm">TOTALES</td>
-                        <td className="py-2 px-3 text-right font-bold text-white text-sm">
+                      <tr className="border-t-2 border-[#F97316]/30 bg-gray-50">
+                        <td className="py-2 px-3 font-bold text-gray-900 text-sm">TOTALES</td>
+                        <td className="py-2 px-3 text-right font-bold text-gray-900 text-sm">
                           {fmt(presupuesto.reduce((s, i) => s + i.presupuesto, 0))}
                         </td>
-                        <td className="py-2 px-3 text-right font-bold text-white text-sm">
+                        <td className="py-2 px-3 text-right font-bold text-gray-900 text-sm">
                           {fmt(presupuesto.reduce((s, i) => s + (i.real || 0), 0))}
                         </td>
                         <td className="py-2 px-3 text-right font-bold text-sm">
@@ -1685,26 +1739,26 @@ export default function Contabilidad() {
 
       {/* ── MODAL: NUEVO ASIENTO ────────────────────────────────────────── */}
       <Dialog open={showAsientoModal} onOpenChange={open => { if (!open) { setShowAsientoModal(false); setAsientoForm(emptyAsientoForm()); } }}>
-        <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-white border-[#F97316]/30 text-gray-900 max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl">Nuevo Asiento Contable — Partida Doble</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleGuardarAsiento} className="space-y-5 mt-2">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div>
-                <Label className="text-xs text-gray-400">Fecha *</Label>
+                <Label className="text-xs text-gray-600">Fecha *</Label>
                 <Input type="date" value={asientoForm.fecha}
                   onChange={e => setAsientoForm(f => ({ ...f, fecha: e.target.value }))}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white mt-1" required />
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1" required />
               </div>
               <div>
-                <Label className="text-xs text-gray-400">Tipo</Label>
+                <Label className="text-xs text-gray-600">Tipo</Label>
                 <Select value={asientoForm.tipo}
                   onValueChange={v => setAsientoForm(f => ({ ...f, tipo: v }))}>
-                  <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white mt-1">
+                  <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                  <SelectContent className="bg-white border-[#F97316]/30">
                     <SelectItem value="manual">Manual</SelectItem>
                     <SelectItem value="venta">Venta</SelectItem>
                     <SelectItem value="compra">Compra</SelectItem>
@@ -1715,49 +1769,49 @@ export default function Contabilidad() {
                 </Select>
               </div>
               <div>
-                <Label className="text-xs text-gray-400">Referencia</Label>
+                <Label className="text-xs text-gray-600">Referencia</Label>
                 <Input value={asientoForm.referencia}
                   onChange={e => setAsientoForm(f => ({ ...f, referencia: e.target.value }))}
                   placeholder="Factura, Contrato..."
-                  className="bg-white/5 border-[#00E5FF]/20 text-white mt-1" />
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1" />
               </div>
             </div>
             <div>
-              <Label className="text-xs text-gray-400">Descripción / Glosa *</Label>
+              <Label className="text-xs text-gray-600">Descripción / Glosa *</Label>
               <Textarea value={asientoForm.descripcion}
                 onChange={e => setAsientoForm(f => ({ ...f, descripcion: e.target.value }))}
                 rows={2} required
-                className="bg-white/5 border-[#00E5FF]/20 text-white mt-1"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1"
                 placeholder="Descripción del asiento contable..." />
             </div>
 
             {/* Items */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <Label className="text-xs text-gray-400">Líneas del Asiento</Label>
+                <Label className="text-xs text-gray-600">Líneas del Asiento</Label>
                 <button type="button" onClick={addItemRow}
-                  className="text-xs text-[#00E5FF] hover:text-white flex items-center gap-1">
+                  className="text-xs text-[#F97316] hover:text-gray-900 flex items-center gap-1">
                   <Plus className="w-3 h-3" /> Agregar línea
                 </button>
               </div>
               <div className="space-y-2">
-                <div className="grid grid-cols-12 gap-2 text-xs text-gray-500 px-1">
+                <div className="grid grid-cols-12 gap-2 text-xs text-gray-600 px-1">
                   <div className="col-span-5">Cuenta</div>
                   <div className="col-span-3">Detalle</div>
                   <div className="col-span-2 text-right">Débito</div>
                   <div className="col-span-2 text-right">Crédito</div>
                 </div>
                 {asientoForm.items.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-center p-2 bg-white/5 rounded-lg border border-[#00E5FF]/10">
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center p-2 bg-gray-50 rounded-lg border border-[#F97316]/10">
                     <div className="col-span-5">
                       <Select value={item.cuenta_id}
                         onValueChange={v => updateItem(idx, 'cuenta_id', v)}>
-                        <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white text-xs h-8">
+                        <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 text-xs h-8">
                           <SelectValue placeholder="Seleccionar..." />
                         </SelectTrigger>
-                        <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 max-h-48">
+                        <SelectContent className="bg-white border-[#F97316]/30 max-h-48">
                           {cuentas.filter(c => !c.es_grupo).map(c => (
-                            <SelectItem key={c.id} value={c.id} className="text-white text-xs">
+                            <SelectItem key={c.id} value={c.id} className="text-gray-900 text-xs">
                               {c.codigo} — {c.nombre}
                             </SelectItem>
                           ))}
@@ -1768,7 +1822,7 @@ export default function Contabilidad() {
                       <Input value={item.descripcion}
                         onChange={e => updateItem(idx, 'descripcion', e.target.value)}
                         placeholder="Detalle..."
-                        className="bg-white/5 border-[#00E5FF]/20 text-white text-xs h-8" />
+                        className="bg-gray-50 border-[#F97316]/20 text-gray-900 text-xs h-8" />
                     </div>
                     <div className="col-span-2">
                       <Input type="number" step="0.01" min="0"
@@ -1785,7 +1839,7 @@ export default function Contabilidad() {
                           placeholder="0.00"
                           className="bg-red-500/10 border-red-500/20 text-red-400 text-xs h-8 text-right flex-1" />
                         <button type="button" onClick={() => removeItemRow(idx)}
-                          className="p-1 text-gray-500 hover:text-red-400">
+                          className="p-1 text-gray-600 hover:text-red-400">
                           <X className="w-3 h-3" />
                         </button>
                       </div>
@@ -1799,15 +1853,15 @@ export default function Contabilidad() {
             <div className={`rounded-lg p-4 ${isBalanced ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-400">Total Débitos</span>
+                  <span className="text-gray-600">Total Débitos</span>
                   <div className="text-lg font-bold text-green-400">{fmt(totalDebito)}</div>
                 </div>
                 <div>
-                  <span className="text-gray-400">Total Créditos</span>
+                  <span className="text-gray-600">Total Créditos</span>
                   <div className="text-lg font-bold text-red-400">{fmt(totalCredito)}</div>
                 </div>
                 <div>
-                  <span className="text-gray-400">Estado</span>
+                  <span className="text-gray-600">Estado</span>
                   <div className={`text-lg font-bold flex items-center gap-2 ${isBalanced ? 'text-green-400' : 'text-red-400'}`}>
                     {isBalanced ? <><CheckCircle className="w-5 h-5" /> Balanceado</> : <><AlertCircle className="w-5 h-5" /> Diferencia: {fmt(Math.abs(totalDebito - totalCredito))}</>}
                   </div>
@@ -1818,7 +1872,7 @@ export default function Contabilidad() {
             <div className="flex gap-3">
               <Button type="button" variant="outline"
                 onClick={() => { setShowAsientoModal(false); setAsientoForm(emptyAsientoForm()); }}
-                className="flex-1 border-[#00E5FF]/30 text-white">
+                className="flex-1 border-[#F97316]/30 text-gray-900">
                 Cancelar
               </Button>
               <Button type="submit" disabled={!isBalanced}
@@ -1832,25 +1886,25 @@ export default function Contabilidad() {
 
       {/* ── MODAL: ANULAR ASIENTO ───────────────────────────────────────── */}
       <Dialog open={showAnularModal} onOpenChange={setShowAnularModal}>
-        <DialogContent className="bg-[#0A1A2F] border-red-500/30 text-white max-w-md">
+        <DialogContent className="bg-white border-red-500/30 text-gray-900 max-w-md">
           <DialogHeader>
             <DialogTitle className="text-xl text-red-400">Anular Asiento Contable</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
-            <p className="text-gray-400 text-sm">
+            <p className="text-gray-600 text-sm">
               Esta acción anulará el asiento y generará automáticamente un asiento de reversión.
             </p>
             <div>
-              <Label className="text-xs text-gray-400">Motivo de anulación *</Label>
+              <Label className="text-xs text-gray-600">Motivo de anulación *</Label>
               <Textarea value={motivoAnulacion}
                 onChange={e => setMotivoAnulacion(e.target.value)}
                 rows={3} required
-                className="bg-white/5 border-red-500/20 text-white mt-1"
+                className="bg-gray-50 border-red-500/20 text-gray-900 mt-1"
                 placeholder="Especifique el motivo..." />
             </div>
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => { setShowAnularModal(false); setMotivoAnulacion(''); }}
-                className="flex-1 border-[#00E5FF]/30 text-white">
+                className="flex-1 border-[#F97316]/30 text-gray-900">
                 Cancelar
               </Button>
               <Button onClick={handleAnular}
@@ -1864,27 +1918,27 @@ export default function Contabilidad() {
 
       {/* ── MODAL: CUENTA ───────────────────────────────────────────────── */}
       <Dialog open={showCuentaModal} onOpenChange={setShowCuentaModal}>
-        <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white max-w-xl">
+        <DialogContent className="bg-white border-[#F97316]/30 text-gray-900 max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-xl">{editCuenta?.id ? 'Editar' : 'Nueva'} Cuenta Contable</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleGuardarCuenta} className="space-y-4 mt-2">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-xs text-gray-400">Código *</Label>
+                <Label className="text-xs text-gray-600">Código *</Label>
                 <Input value={cuentaForm.codigo}
                   onChange={e => setCuentaForm(f => ({ ...f, codigo: e.target.value }))}
                   placeholder="1.1.01" required
-                  className="bg-white/5 border-[#00E5FF]/20 text-white mt-1 font-mono" />
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1 font-mono" />
               </div>
               <div>
-                <Label className="text-xs text-gray-400">Nivel</Label>
+                <Label className="text-xs text-gray-600">Nivel</Label>
                 <Select value={String(cuentaForm.nivel)}
                   onValueChange={v => setCuentaForm(f => ({ ...f, nivel: parseInt(v) }))}>
-                  <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white mt-1">
+                  <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                  <SelectContent className="bg-white border-[#F97316]/30">
                     <SelectItem value="1">Nivel 1 (Grupo principal)</SelectItem>
                     <SelectItem value="2">Nivel 2 (Subgrupo)</SelectItem>
                     <SelectItem value="3">Nivel 3 (Cuenta detalle)</SelectItem>
@@ -1893,24 +1947,24 @@ export default function Contabilidad() {
               </div>
             </div>
             <div>
-              <Label className="text-xs text-gray-400">Nombre *</Label>
+              <Label className="text-xs text-gray-600">Nombre *</Label>
               <Input value={cuentaForm.nombre}
                 onChange={e => setCuentaForm(f => ({ ...f, nombre: e.target.value }))}
                 placeholder="Nombre de la cuenta" required
-                className="bg-white/5 border-[#00E5FF]/20 text-white mt-1" />
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-xs text-gray-400">Tipo *</Label>
+                <Label className="text-xs text-gray-600">Tipo *</Label>
                 <Select value={cuentaForm.tipo}
                   onValueChange={v => {
                     const nat = ['activo','costo','gasto'].includes(v) ? 'deudora' : 'acreedora';
                     setCuentaForm(f => ({ ...f, tipo: v as any, naturaleza: nat as any }));
                   }}>
-                  <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white mt-1">
+                  <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                  <SelectContent className="bg-white border-[#F97316]/30">
                     <SelectItem value="activo">Activo</SelectItem>
                     <SelectItem value="pasivo">Pasivo</SelectItem>
                     <SelectItem value="patrimonio">Patrimonio</SelectItem>
@@ -1921,13 +1975,13 @@ export default function Contabilidad() {
                 </Select>
               </div>
               <div>
-                <Label className="text-xs text-gray-400">Naturaleza</Label>
+                <Label className="text-xs text-gray-600">Naturaleza</Label>
                 <Select value={cuentaForm.naturaleza}
                   onValueChange={v => setCuentaForm(f => ({ ...f, naturaleza: v as any }))}>
-                  <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white mt-1">
+                  <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 mt-1">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                  <SelectContent className="bg-white border-[#F97316]/30">
                     <SelectItem value="deudora">Deudora</SelectItem>
                     <SelectItem value="acreedora">Acreedora</SelectItem>
                   </SelectContent>
@@ -1935,13 +1989,13 @@ export default function Contabilidad() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                 <input type="checkbox" checked={cuentaForm.es_grupo}
                   onChange={e => setCuentaForm(f => ({ ...f, es_grupo: e.target.checked }))}
                   className="rounded" />
                 Es cuenta de grupo (no acepta movimientos)
               </label>
-              <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                 <input type="checkbox" checked={cuentaForm.activa}
                   onChange={e => setCuentaForm(f => ({ ...f, activa: e.target.checked }))}
                   className="rounded" />
@@ -1951,11 +2005,11 @@ export default function Contabilidad() {
             <div className="flex gap-3 pt-2">
               <Button type="button" variant="outline"
                 onClick={() => { setShowCuentaModal(false); setEditCuenta(null); setCuentaForm(emptyCuentaForm()); }}
-                className="flex-1 border-[#00E5FF]/30 text-white">
+                className="flex-1 border-[#F97316]/30 text-gray-900">
                 Cancelar
               </Button>
               <Button type="submit"
-                className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+                className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316]">
                 {editCuenta?.id ? 'Actualizar' : 'Crear'} Cuenta
               </Button>
             </div>

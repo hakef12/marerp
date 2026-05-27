@@ -70,7 +70,7 @@ export const MODULOS_POR_ROL: Record<string, Modulo[]> = {
   ],
   cajero:     ['dashboard','pos','mesas','caja','cocina','facturacion'],
   bodeguero:  ['dashboard','inventario','produccion','transferencias'],
-  contador:   ['dashboard','facturacion','facturacion_config','contabilidad','bi'],
+  contador:   ['dashboard','facturacion','facturacion_config','contabilidad','bi','inventario'],
   cocinero:   ['dashboard','cocina'],
   rrhh:       ['dashboard','rrhh'],
   auditor:    ['dashboard','auditoria','bi','facturacion'],

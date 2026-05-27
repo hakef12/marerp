@@ -58,7 +58,7 @@ export function DeleteConfirmationModal({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="bg-[#0A1A2F] border-red-500/30 text-white max-w-md">
+      <DialogContent className="bg-white border-red-500/30 text-gray-900 max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
@@ -66,7 +66,7 @@ export function DeleteConfirmationModal({
             </div>
             <div>
               <DialogTitle className="text-xl text-red-500">{title}</DialogTitle>
-              <DialogDescription className="text-gray-400">
+              <DialogDescription className="text-gray-600">
                 {description}
               </DialogDescription>
             </div>
@@ -76,8 +76,8 @@ export function DeleteConfirmationModal({
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
           {/* Item a eliminar */}
           <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-            <p className="text-sm text-gray-400 mb-1">Estás a punto de eliminar:</p>
-            <p className="text-white font-semibold">{itemName}</p>
+            <p className="text-sm text-gray-600 mb-1">Estás a punto de eliminar:</p>
+            <p className="text-gray-900 font-semibold">{itemName}</p>
           </div>
 
           {/* Mensaje de advertencia personalizado */}
@@ -93,14 +93,14 @@ export function DeleteConfirmationModal({
           {/* Campo de contraseña */}
           <div className="space-y-2">
             <Label className="flex items-center gap-2">
-              <Lock className="w-4 h-4 text-[#00E5FF]" />
+              <Lock className="w-4 h-4 text-[#F97316]" />
               Confirma tu contraseña para continuar
             </Label>
             <Input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="bg-white/5 border-[#00E5FF]/20 text-white"
+              className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               placeholder="Ingresa tu contraseña"
               autoFocus
               required
@@ -112,7 +112,7 @@ export function DeleteConfirmationModal({
 
           {/* Advertencia final */}
           <div className="p-3 bg-red-500/5 border border-red-500/20 rounded">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-600">
               ⚠️ Esta acción quedará registrada en auditoría y no se puede deshacer.
             </p>
           </div>
@@ -131,7 +131,7 @@ export function DeleteConfirmationModal({
             <Button
               type="submit"
               disabled={isDeleting}
-              className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+              className="flex-1 bg-red-600 hover:bg-red-700 text-gray-900"
             >
               {isDeleting ? 'Eliminando...' : 'Confirmar Eliminación'}
             </Button>

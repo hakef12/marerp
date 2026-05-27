@@ -96,7 +96,7 @@ export function MovimientoModal({ open, onClose, onSuccess, productos, bodegas, 
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white max-w-xl">
+      <DialogContent className="bg-white border-[#F97316]/30 text-gray-900 max-w-xl">
         <DialogHeader>
           <DialogTitle>Nuevo Movimiento de Inventario</DialogTitle>
           <DialogDescription>Registra entradas, salidas o ajustes de stock.</DialogDescription>
@@ -113,10 +113,10 @@ export function MovimientoModal({ open, onClose, onSuccess, productos, bodegas, 
           <div className="space-y-1">
             <Label>Tipo de Movimiento *</Label>
             <Select value={form.tipo} onValueChange={v => setForm(f => ({ ...f, tipo: v }))}>
-              <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+              <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white">
+              <SelectContent className="bg-white border-[#F97316]/30 text-gray-900">
                 <SelectItem value="entrada">Entrada (Compra / Ingreso)</SelectItem>
                 <SelectItem value="salida">Salida (Consumo / Venta)</SelectItem>
                 <SelectItem value="ajuste">Ajuste de Inventario</SelectItem>
@@ -129,10 +129,10 @@ export function MovimientoModal({ open, onClose, onSuccess, productos, bodegas, 
           <div className="space-y-1">
             <Label>Producto *</Label>
             <Select value={form.producto_id} onValueChange={v => setForm(f => ({ ...f, producto_id: v }))}>
-              <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+              <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                 <SelectValue placeholder="Seleccionar producto..." />
               </SelectTrigger>
-              <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white max-h-60">
+              <SelectContent className="bg-white border-[#F97316]/30 text-gray-900 max-h-60">
                 {productos.map(p => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.nombre} {p.unidad_medida ? `(${p.unidad_medida})` : ''}
@@ -146,10 +146,10 @@ export function MovimientoModal({ open, onClose, onSuccess, productos, bodegas, 
           <div className="space-y-1">
             <Label>Bodega *</Label>
             <Select value={form.bodega_id} onValueChange={v => setForm(f => ({ ...f, bodega_id: v }))}>
-              <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+              <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                 <SelectValue placeholder="Seleccionar bodega..." />
               </SelectTrigger>
-              <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white">
+              <SelectContent className="bg-white border-[#F97316]/30 text-gray-900">
                 {bodegas.map(b => (
                   <SelectItem key={b.id} value={b.id}>{b.nombre}</SelectItem>
                 ))}
@@ -162,14 +162,14 @@ export function MovimientoModal({ open, onClose, onSuccess, productos, bodegas, 
             <Label>
               Cantidad *
               {productoSeleccionado?.unidad_medida && (
-                <span className="text-gray-400 font-normal ml-1">({productoSeleccionado.unidad_medida})</span>
+                <span className="text-gray-600 font-normal ml-1">({productoSeleccionado.unidad_medida})</span>
               )}
             </Label>
             <Input
               type="number" step="0.001" min="0"
               value={form.cantidad}
               onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
-              className="bg-white/5 border-[#00E5FF]/20 text-white"
+              className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               placeholder="0"
               required
             />
@@ -177,8 +177,8 @@ export function MovimientoModal({ open, onClose, onSuccess, productos, bodegas, 
 
           {/* Costo — solo para entrada */}
           {esEntrada && (
-            <div className="rounded-lg border border-[#00E5FF]/20 bg-[#00E5FF]/5 p-4 space-y-3">
-              <p className="text-xs text-[#00E5FF] font-semibold uppercase tracking-wide">Costo de la compra</p>
+            <div className="rounded-lg border border-[#F97316]/20 bg-[#F97316]/5 p-4 space-y-3">
+              <p className="text-xs text-[#F97316] font-semibold uppercase tracking-wide">Costo de la compra</p>
 
               <div className="space-y-1">
                 <Label>Costo Total de la Compra ($)</Label>
@@ -186,18 +186,18 @@ export function MovimientoModal({ open, onClose, onSuccess, productos, bodegas, 
                   type="number" step="0.01" min="0"
                   value={form.costo_total}
                   onChange={e => setForm(f => ({ ...f, costo_total: e.target.value }))}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   placeholder="Ej: 35.80"
                 />
-                <p className="text-xs text-gray-400">Total que pagaste al proveedor por esta cantidad</p>
+                <p className="text-xs text-gray-600">Total que pagaste al proveedor por esta cantidad</p>
               </div>
 
               {costoUnitario > 0 && (
-                <div className="flex items-center justify-between bg-[#00E5FF]/10 rounded px-3 py-2">
-                  <span className="text-sm text-gray-300">
+                <div className="flex items-center justify-between bg-[#F97316]/10 rounded px-3 py-2">
+                  <span className="text-sm text-gray-600">
                     Costo por {productoSeleccionado?.unidad_medida || 'unidad'}:
                   </span>
-                  <span className="text-[#00E5FF] font-bold text-lg">
+                  <span className="text-[#F97316] font-bold text-lg">
                     ${costoUnitario.toFixed(4)}
                   </span>
                 </div>
@@ -211,7 +211,7 @@ export function MovimientoModal({ open, onClose, onSuccess, productos, bodegas, 
             <Input
               value={form.referencia}
               onChange={e => setForm(f => ({ ...f, referencia: e.target.value }))}
-              className="bg-white/5 border-[#00E5FF]/20 text-white"
+              className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               placeholder="Ej: Factura 001-001-000123"
             />
           </div>
@@ -222,17 +222,17 @@ export function MovimientoModal({ open, onClose, onSuccess, productos, bodegas, 
             <Textarea
               value={form.observaciones}
               onChange={e => setForm(f => ({ ...f, observaciones: e.target.value }))}
-              className="bg-white/5 border-[#00E5FF]/20 text-white"
+              className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               rows={2}
               placeholder="Notas adicionales..."
             />
           </div>
 
           <div className="flex gap-3 pt-2">
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1 border-[#00E5FF]/20 text-gray-300">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1 border-[#F97316]/20 text-gray-600">
               Cancelar
             </Button>
-            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white font-bold">
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white font-bold">
               {isSubmitting ? 'Registrando...' : 'Registrar Movimiento'}
             </Button>
           </div>

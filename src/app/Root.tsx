@@ -16,8 +16,8 @@ export default function Root() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A1A2F] via-[#0F2640] to-[#1a3a52] flex items-center justify-center">
-        <div className="text-white text-xl">Cargando...</div>
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-gray-900 text-xl">Cargando...</div>
       </div>
     );
   }
@@ -27,7 +27,7 @@ export default function Root() {
   }
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-[#0A1A2F] via-[#0F2640] to-[#1a3a52] overflow-hidden">
+    <div className="flex h-screen bg-white overflow-hidden">
       <Sidebar />
       <main className="flex-1 overflow-auto">
         <Outlet />

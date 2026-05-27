@@ -173,39 +173,39 @@ export default function ConfiguracionFacturacion() {
     <div className="p-8 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-white mb-2">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
           Configuración de Facturación Electrónica
         </h1>
-        <p className="text-gray-400">
+        <p className="text-gray-600">
           Configure los datos del emisor y la firma digital para emitir comprobantes válidos ante el SRI Ecuador
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Datos del Emisor */}
-        <Card className="bg-[#0A1A2F]/50 border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
-            <CardTitle className="text-white">Datos del Emisor</CardTitle>
+            <CardTitle className="text-gray-900">Datos del Emisor</CardTitle>
             <CardDescription>Información del contribuyente que aparecerá en todos los comprobantes</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label className="text-gray-300">Razón Social *</Label>
+                <Label className="text-gray-600">Razón Social *</Label>
                 <Input value={config.razon_social} onChange={e => setConfig({ ...config, razon_social: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" required />
+                  className="bg-white border-[#F97316]/20 text-gray-900" required />
               </div>
               <div>
-                <Label className="text-gray-300">Nombre Comercial</Label>
+                <Label className="text-gray-600">Nombre Comercial</Label>
                 <Input value={config.nombre_comercial} onChange={e => setConfig({ ...config, nombre_comercial: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" placeholder="Si es diferente a razón social" />
+                  className="bg-white border-[#F97316]/20 text-gray-900" placeholder="Si es diferente a razón social" />
               </div>
               <div>
-                <Label className="text-gray-300">RUC * (13 dígitos)</Label>
+                <Label className="text-gray-600">RUC * (13 dígitos)</Label>
                 <Input
                   value={config.ruc}
                   onChange={e => setConfig({ ...config, ruc: e.target.value.replace(/\D/g, '').slice(0, 13) })}
-                  className={`bg-[#0A1A2F] text-white ${config.ruc && config.ruc.length !== 13 ? 'border-red-500' : 'border-[#00E5FF]/20'}`}
+                  className={`bg-white text-gray-900 ${config.ruc && config.ruc.length !== 13 ? 'border-red-500' : 'border-[#F97316]/20'}`}
                   maxLength={13}
                   inputMode="numeric"
                   required
@@ -216,33 +216,33 @@ export default function ConfiguracionFacturacion() {
                 )}
               </div>
               <div>
-                <Label className="text-gray-300">Teléfono</Label>
+                <Label className="text-gray-600">Teléfono</Label>
                 <Input value={config.telefono} onChange={e => setConfig({ ...config, telefono: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" placeholder="02-2000000" />
+                  className="bg-white border-[#F97316]/20 text-gray-900" placeholder="02-2000000" />
               </div>
               <div className="md:col-span-2">
-                <Label className="text-gray-300">Dirección Matriz *</Label>
+                <Label className="text-gray-600">Dirección Matriz *</Label>
                 <Input value={config.direccion_matriz} onChange={e => setConfig({ ...config, direccion_matriz: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" required />
+                  className="bg-white border-[#F97316]/20 text-gray-900" required />
               </div>
               <div className="md:col-span-2">
-                <Label className="text-gray-300">Dirección Establecimiento</Label>
+                <Label className="text-gray-600">Dirección Establecimiento</Label>
                 <Input value={config.direccion_establecimiento} onChange={e => setConfig({ ...config, direccion_establecimiento: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" placeholder="Si es diferente a la matriz" />
+                  className="bg-white border-[#F97316]/20 text-gray-900" placeholder="Si es diferente a la matriz" />
               </div>
               <div className="md:col-span-2">
-                <Label className="text-gray-300">Email para envío de comprobantes</Label>
+                <Label className="text-gray-600">Email para envío de comprobantes</Label>
                 <Input type="email" value={config.email} onChange={e => setConfig({ ...config, email: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" />
+                  className="bg-white border-[#F97316]/20 text-gray-900" />
               </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Configuración Tributaria */}
-        <Card className="bg-[#0A1A2F]/50 border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
-            <CardTitle className="text-white">Configuración Tributaria</CardTitle>
+            <CardTitle className="text-gray-900">Configuración Tributaria</CardTitle>
             <CardDescription>Información requerida por el SRI para los comprobantes electrónicos</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -250,56 +250,56 @@ export default function ConfiguracionFacturacion() {
               <label className="flex items-center space-x-3 cursor-pointer">
                 <input type="checkbox" checked={config.obligado_contabilidad}
                   onChange={e => setConfig({ ...config, obligado_contabilidad: e.target.checked })}
-                  className="w-4 h-4 rounded border-[#00E5FF]/20 accent-[#00E5FF]" />
-                <span className="text-gray-300">Obligado a llevar contabilidad</span>
+                  className="w-4 h-4 rounded border-[#F97316]/20 accent-[#F97316]" />
+                <span className="text-gray-600">Obligado a llevar contabilidad</span>
               </label>
               <label className="flex items-center space-x-3 cursor-pointer">
                 <input type="checkbox" checked={config.regimen_rimpe}
                   onChange={e => setConfig({ ...config, regimen_rimpe: e.target.checked })}
-                  className="w-4 h-4 rounded border-[#00E5FF]/20 accent-[#00E5FF]" />
-                <span className="text-gray-300">Contribuyente Régimen RIMPE</span>
+                  className="w-4 h-4 rounded border-[#F97316]/20 accent-[#F97316]" />
+                <span className="text-gray-600">Contribuyente Régimen RIMPE</span>
               </label>
               <div>
-                <Label className="text-gray-300">Contribuyente Especial N°</Label>
+                <Label className="text-gray-600">Contribuyente Especial N°</Label>
                 <Input value={config.contribuyente_especial} onChange={e => setConfig({ ...config, contribuyente_especial: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" placeholder="Dejar vacío si no aplica" />
+                  className="bg-white border-[#F97316]/20 text-gray-900" placeholder="Dejar vacío si no aplica" />
               </div>
               <div>
-                <Label className="text-gray-300">Agente de Retención N°</Label>
+                <Label className="text-gray-600">Agente de Retención N°</Label>
                 <Input value={config.agente_retencion} onChange={e => setConfig({ ...config, agente_retencion: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" placeholder="Dejar vacío si no aplica" />
+                  className="bg-white border-[#F97316]/20 text-gray-900" placeholder="Dejar vacío si no aplica" />
               </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Numeración */}
-        <Card className="bg-[#0A1A2F]/50 border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
-            <CardTitle className="text-white">Numeración de Comprobantes</CardTitle>
+            <CardTitle className="text-gray-900">Numeración de Comprobantes</CardTitle>
             <CardDescription>Código de establecimiento, punto de emisión y secuencial</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label className="text-gray-300">Código Establecimiento</Label>
+                <Label className="text-gray-600">Código Establecimiento</Label>
                 <Input value={config.codigo_establecimiento} onChange={e => setConfig({ ...config, codigo_establecimiento: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" maxLength={3} placeholder="001" />
+                  className="bg-white border-[#F97316]/20 text-gray-900" maxLength={3} placeholder="001" />
               </div>
               <div>
-                <Label className="text-gray-300">Punto de Emisión</Label>
+                <Label className="text-gray-600">Punto de Emisión</Label>
                 <Input value={config.punto_emision} onChange={e => setConfig({ ...config, punto_emision: e.target.value })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" maxLength={3} placeholder="001" />
+                  className="bg-white border-[#F97316]/20 text-gray-900" maxLength={3} placeholder="001" />
               </div>
               <div>
-                <Label className="text-gray-300">Secuencial Actual</Label>
+                <Label className="text-gray-600">Secuencial Actual</Label>
                 <Input type="number" value={config.secuencial_actual} onChange={e => setConfig({ ...config, secuencial_actual: parseInt(e.target.value) || 1 })}
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white" min={1} />
+                  className="bg-white border-[#F97316]/20 text-gray-900" min={1} />
               </div>
             </div>
-            <div className="bg-[#00E5FF]/10 border border-[#00E5FF]/20 rounded-lg p-4">
-              <p className="text-sm text-gray-300">
-                Próximo comprobante: <span className="text-[#00E5FF] font-bold font-mono">
+            <div className="bg-[#F97316]/10 border border-[#F97316]/20 rounded-lg p-4">
+              <p className="text-sm text-gray-600">
+                Próximo comprobante: <span className="text-[#F97316] font-bold font-mono">
                   {config.codigo_establecimiento}-{config.punto_emision}-{String(config.secuencial_actual).padStart(9, '0')}
                 </span>
               </p>
@@ -308,9 +308,9 @@ export default function ConfiguracionFacturacion() {
         </Card>
 
         {/* Ambiente SRI */}
-        <Card className="bg-[#0A1A2F]/50 border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
-            <CardTitle className="text-white">Ambiente SRI</CardTitle>
+            <CardTitle className="text-gray-900">Ambiente SRI</CardTitle>
             <CardDescription>Seleccione el ambiente de emisión</CardDescription>
           </CardHeader>
           <CardContent>
@@ -318,8 +318,8 @@ export default function ConfiguracionFacturacion() {
               {['pruebas', 'produccion'].map(amb => (
                 <label key={amb} className="flex items-center space-x-2 cursor-pointer">
                   <input type="radio" name="ambiente" value={amb} checked={config.ambiente === amb}
-                    onChange={() => setConfig({ ...config, ambiente: amb })} className="w-4 h-4 accent-[#00E5FF]" />
-                  <span className="text-gray-300 capitalize">{amb === 'pruebas' ? '🧪 Pruebas' : '🚀 Producción'}</span>
+                    onChange={() => setConfig({ ...config, ambiente: amb })} className="w-4 h-4 accent-[#F97316]" />
+                  <span className="text-gray-600 capitalize">{amb === 'pruebas' ? '🧪 Pruebas' : '🚀 Producción'}</span>
                 </label>
               ))}
             </div>
@@ -332,7 +332,7 @@ export default function ConfiguracionFacturacion() {
         {/* Botón guardar config */}
         <div className="flex justify-end">
           <Button type="submit" disabled={loading}
-            className="bg-gradient-to-r from-[#00E5FF] to-[#1e64a7] hover:from-[#00E5FF]/80 hover:to-[#1e64a7]/80 px-8">
+            className="bg-gradient-to-r from-[#F97316] to-[#C2410C] hover:from-[#F97316]/80 hover:to-[#C2410C]/80 px-8">
             <Save className="w-4 h-4 mr-2" />
             {loading ? 'Guardando...' : 'Guardar Configuración'}
           </Button>
@@ -340,10 +340,10 @@ export default function ConfiguracionFacturacion() {
       </form>
 
       {/* ── Diagnóstico de conexión SRI ── */}
-      <Card className="bg-[#0A1A2F]/50 border-[#00E5FF]/20">
+      <Card className="bg-white border-[#F97316]/20">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
-            <Wifi className="w-5 h-5 text-[#00E5FF]" />
+          <CardTitle className="text-gray-900 flex items-center gap-2">
+            <Wifi className="w-5 h-5 text-[#F97316]" />
             Diagnóstico de Conexión SRI
           </CardTitle>
           <CardDescription>
@@ -355,7 +355,7 @@ export default function ConfiguracionFacturacion() {
             type="button"
             onClick={testearConexionSRI}
             disabled={testLoading}
-            className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90"
+            className="bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90"
           >
             {testLoading
               ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Probando conexión...</>
@@ -368,8 +368,8 @@ export default function ConfiguracionFacturacion() {
               {/* Diagnóstico general */}
               <div className={`flex items-center gap-3 rounded-lg p-3 border ${
                 testResult.diagnostico?.startsWith('✅')
-                  ? 'bg-green-500/10 border-green-500/30 text-green-300'
-                  : 'bg-red-500/10 border-red-500/30 text-red-300'
+                  ? 'bg-green-50 border-green-300 text-green-700'
+                  : 'bg-red-50 border-red-300 text-red-600'
               }`}>
                 {testResult.diagnostico?.startsWith('✅')
                   ? <Wifi className="w-5 h-5 shrink-0" />
@@ -378,13 +378,13 @@ export default function ConfiguracionFacturacion() {
               </div>
 
               {/* Detalles técnicos */}
-              <div className="bg-[#060f1e] border border-[#00E5FF]/10 rounded-lg p-3 text-xs font-mono space-y-2">
+              <div className="bg-gray-50 border border-[#F97316]/10 rounded-lg p-3 text-xs font-mono space-y-2">
                 {testResult.wsdl_recepcion && (
                   <div>
                     <span className={`font-bold ${testResult.wsdl_recepcion.ok ? 'text-green-400' : 'text-red-400'}`}>
                       WSDL Recepción:
                     </span>
-                    <span className="text-gray-300 ml-2">
+                    <span className="text-gray-600 ml-2">
                       {testResult.wsdl_recepcion.ok
                         ? `HTTP ${testResult.wsdl_recepcion.status} — ${testResult.wsdl_recepcion.bytes} bytes`
                         : testResult.wsdl_recepcion.error}
@@ -396,7 +396,7 @@ export default function ConfiguracionFacturacion() {
                     <span className={`font-bold ${testResult.wsdl_autorizacion.ok ? 'text-green-400' : 'text-red-400'}`}>
                       WSDL Autorización:
                     </span>
-                    <span className="text-gray-300 ml-2">
+                    <span className="text-gray-600 ml-2">
                       {testResult.wsdl_autorizacion.ok
                         ? `HTTP ${testResult.wsdl_autorizacion.status} — ${testResult.wsdl_autorizacion.bytes} bytes`
                         : testResult.wsdl_autorizacion.error}
@@ -408,7 +408,7 @@ export default function ConfiguracionFacturacion() {
                     <span className={`font-bold ${testResult.soap_recepcion_test.sri_respondio ? 'text-green-400' : 'text-red-400'}`}>
                       SOAP Recepción:
                     </span>
-                    <span className="text-gray-300 ml-2">
+                    <span className="text-gray-600 ml-2">
                       {testResult.soap_recepcion_test.sri_respondio
                         ? `SRI respondió (recibida=${testResult.soap_recepcion_test.recibida}, devuelta=${testResult.soap_recepcion_test.devuelta})`
                         : `Sin respuesta — ${testResult.soap_recepcion_test.errores?.[0] || 'timeout'}`}
@@ -417,16 +417,16 @@ export default function ConfiguracionFacturacion() {
                 )}
                 {testResult.soap_recepcion_test?.rawResponse && (
                   <div className="mt-2">
-                    <span className="text-gray-400 font-bold">Respuesta raw SRI:</span>
-                    <pre className="text-gray-400 mt-1 whitespace-pre-wrap break-all text-[10px] max-h-40 overflow-auto">
+                    <span className="text-gray-600 font-bold">Respuesta raw SRI:</span>
+                    <pre className="text-gray-600 mt-1 whitespace-pre-wrap break-all text-[10px] max-h-40 overflow-auto">
                       {testResult.soap_recepcion_test.rawResponse}
                     </pre>
                   </div>
                 )}
                 {testResult.configuracion && (
-                  <div className="border-t border-[#00E5FF]/10 pt-2 mt-2">
-                    <span className="text-[#00E5FF] font-bold">Config:</span>
-                    <span className="text-gray-300 ml-2">
+                  <div className="border-t border-[#F97316]/10 pt-2 mt-2">
+                    <span className="text-[#F97316] font-bold">Config:</span>
+                    <span className="text-gray-600 ml-2">
                       RUC={testResult.configuracion.ruc_configurado ? '✓' : '✗'}
                       {' | '}cert={testResult.configuracion.tiene_certificado ? `✓ (${testResult.configuracion.cert_titular})` : '✗ sin certificado'}
                       {' | '}ambiente={testResult.configuracion.ambiente}
@@ -449,10 +449,10 @@ export default function ConfiguracionFacturacion() {
       </Card>
 
       {/* ── Firma Electrónica (fuera del form) ── */}
-      <Card className="bg-[#0A1A2F]/50 border-[#00E5FF]/20">
+      <Card className="bg-white border-[#F97316]/20">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
-            <KeyRound className="w-5 h-5 text-[#00E5FF]" />
+          <CardTitle className="text-gray-900 flex items-center gap-2">
+            <KeyRound className="w-5 h-5 text-[#F97316]" />
             Firma Electrónica Digital (P12 / PFX)
           </CardTitle>
           <CardDescription>
@@ -463,10 +463,10 @@ export default function ConfiguracionFacturacion() {
         <CardContent className="space-y-5">
 
           {/* HOW IT WORKS */}
-          <div className="bg-[#00E5FF]/5 border border-[#00E5FF]/20 rounded-lg p-4">
-            <p className="text-xs text-[#00E5FF] font-semibold mb-1">¿Cómo funciona para tu empresa?</p>
-            <p className="text-xs text-gray-300 leading-relaxed">
-              La contraseña de tu firma electrónica se ingresa <strong className="text-white">una sola vez aquí</strong>.
+          <div className="bg-[#F97316]/5 border border-[#F97316]/20 rounded-lg p-4">
+            <p className="text-xs text-[#F97316] font-semibold mb-1">¿Cómo funciona para tu empresa?</p>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              La contraseña de tu firma electrónica se ingresa <strong className="text-gray-900">una sola vez aquí</strong>.
               El servidor la guarda de forma segura y la usa automáticamente para firmar cada factura al momento de emitirla —
               sin necesidad de ingresarla de nuevo. Así el proceso es transparente para los cajeros y el sistema autoriza
               los comprobantes en tiempo real ante el SRI.
@@ -488,30 +488,30 @@ export default function ConfiguracionFacturacion() {
                   </p>
                   <div className="grid grid-cols-2 gap-x-8 gap-y-1 mt-2 text-sm">
                     <div>
-                      <span className="text-gray-400">Archivo: </span>
-                      <span className="text-white">{certInfo.nombre}</span>
+                      <span className="text-gray-600">Archivo: </span>
+                      <span className="text-gray-900">{certInfo.nombre}</span>
                     </div>
                     <div>
-                      <span className="text-gray-400">Titular: </span>
-                      <span className="text-white">{certInfo.info.titular}</span>
+                      <span className="text-gray-600">Titular: </span>
+                      <span className="text-gray-900">{certInfo.info.titular}</span>
                     </div>
                     <div>
-                      <span className="text-gray-400">Emisor: </span>
-                      <span className="text-gray-300">{certInfo.info.emisor}</span>
+                      <span className="text-gray-600">Emisor: </span>
+                      <span className="text-gray-600">{certInfo.info.emisor}</span>
                     </div>
                     <div>
-                      <span className="text-gray-400">Válido hasta: </span>
+                      <span className="text-gray-600">Válido hasta: </span>
                       <span className={certInfo.info.vigente ? 'text-green-400' : 'text-red-400'}>
                         {formatDate(certInfo.info.valido_hasta)}
                       </span>
                     </div>
                     <div>
-                      <span className="text-gray-400">Válido desde: </span>
-                      <span className="text-gray-300">{formatDate(certInfo.info.valido_desde)}</span>
+                      <span className="text-gray-600">Válido desde: </span>
+                      <span className="text-gray-600">{formatDate(certInfo.info.valido_desde)}</span>
                     </div>
                     <div>
-                      <span className="text-gray-400">Cargado: </span>
-                      <span className="text-gray-300">{formatDate(certInfo.subido_en)}</span>
+                      <span className="text-gray-600">Cargado: </span>
+                      <span className="text-gray-600">{formatDate(certInfo.subido_en)}</span>
                     </div>
                   </div>
                 </div>
@@ -529,20 +529,20 @@ export default function ConfiguracionFacturacion() {
           {/* Upload section */}
           <div className="space-y-4">
             <div>
-              <Label className="text-gray-300 mb-2 block">
+              <Label className="text-gray-600 mb-2 block">
                 {certInfo ? 'Actualizar certificado' : 'Cargar certificado (.p12 / .pfx)'}
               </Label>
-              <label className="flex items-center justify-center w-full px-4 py-5 border-2 border-dashed border-[#00E5FF]/20 rounded-lg cursor-pointer hover:border-[#00E5FF]/50 transition-colors group">
+              <label className="flex items-center justify-center w-full px-4 py-5 border-2 border-dashed border-[#F97316]/20 rounded-lg cursor-pointer hover:border-[#F97316]/50 transition-colors group">
                 <div className="text-center">
-                  <Upload className="mx-auto h-8 w-8 text-gray-400 group-hover:text-[#00E5FF] transition-colors mb-2" />
+                  <Upload className="mx-auto h-8 w-8 text-gray-600 group-hover:text-[#F97316] transition-colors mb-2" />
                   {selectedFile ? (
-                    <p className="text-[#00E5FF] font-medium">{selectedFile.name}</p>
+                    <p className="text-[#F97316] font-medium">{selectedFile.name}</p>
                   ) : (
                     <>
-                      <p className="text-sm text-gray-400">
-                        <span className="text-[#00E5FF]">Haz clic</span> o arrastra el archivo aquí
+                      <p className="text-sm text-gray-600">
+                        <span className="text-[#F97316]">Haz clic</span> o arrastra el archivo aquí
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">Formatos: .p12 · .pfx</p>
+                      <p className="text-xs text-gray-600 mt-1">Formatos: .p12 · .pfx</p>
                     </>
                   )}
                 </div>
@@ -552,17 +552,17 @@ export default function ConfiguracionFacturacion() {
             </div>
 
             <div>
-              <Label className="text-gray-300 mb-2 block">Contraseña del certificado</Label>
+              <Label className="text-gray-600 mb-2 block">Contraseña del certificado</Label>
               <div className="relative">
                 <Input
                   type={showPassword ? 'text' : 'password'}
                   value={certPassword}
                   onChange={e => setCertPassword(e.target.value)}
                   placeholder="Contraseña de la firma electrónica"
-                  className="bg-[#0A1A2F] border-[#00E5FF]/20 text-white pr-10"
+                  className="bg-white border-[#F97316]/20 text-gray-900 pr-10"
                 />
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-900">
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
@@ -579,12 +579,12 @@ export default function ConfiguracionFacturacion() {
           </div>
 
           {/* Help text */}
-          <div className="bg-[#0A1A2F]/60 border border-[#00E5FF]/10 rounded-lg p-4 text-xs text-gray-400 space-y-1">
-            <p className="font-semibold text-gray-300 mb-2">ℹ️ Sobre la firma electrónica</p>
-            <p>• El certificado debe ser emitido por el <strong className="text-white">Banco Central del Ecuador (BCE)</strong> o una entidad certificadora autorizada (Security Data, ANF, etc.).</p>
+          <div className="bg-white border border-[#F97316]/10 rounded-lg p-4 text-xs text-gray-600 space-y-1">
+            <p className="font-semibold text-gray-600 mb-2">ℹ️ Sobre la firma electrónica</p>
+            <p>• El certificado debe ser emitido por el <strong className="text-gray-900">Banco Central del Ecuador (BCE)</strong> o una entidad certificadora autorizada (Security Data, ANF, etc.).</p>
             <p>• El RUC del certificado debe coincidir con el RUC configurado como emisor.</p>
             <p>• El certificado se almacena de forma segura en el servidor y nunca se expone al cliente.</p>
-            <p>• Para ambiente de <strong className="text-white">Producción</strong>, primero debe completar el proceso de homologación con el SRI.</p>
+            <p>• Para ambiente de <strong className="text-gray-900">Producción</strong>, primero debe completar el proceso de homologación con el SRI.</p>
           </div>
         </CardContent>
       </Card>

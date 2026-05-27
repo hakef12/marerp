@@ -74,7 +74,7 @@ function MesaCard({ mesa, onClick }: { mesa: Mesa; onClick: () => void }) {
       <div className={`text-3xl font-black ${cfg.color}`}>{mesa.numero}</div>
 
       {/* Zona */}
-      <div className="text-gray-500 text-[10px] font-medium uppercase tracking-wider">{mesa.zona}</div>
+      <div className="text-gray-600 text-[10px] font-medium uppercase tracking-wider">{mesa.zona}</div>
 
       {/* Estado */}
       <div className={`flex items-center gap-1 ${cfg.color} text-xs font-semibold`}>
@@ -86,20 +86,20 @@ function MesaCard({ mesa, onClick }: { mesa: Mesa; onClick: () => void }) {
       {mesa.estado !== 'libre' && (
         <div className="mt-1 space-y-0.5 w-full">
           {mesa.mesero_nombre && (
-            <p className="text-gray-400 text-[10px] truncate text-center">{mesa.mesero_nombre}</p>
+            <p className="text-gray-600 text-[10px] truncate text-center">{mesa.mesero_nombre}</p>
           )}
           {(mesa.minutos_ocupada ?? 0) > 0 && (
-            <p className={`text-[10px] text-center font-semibold ${(mesa.minutos_ocupada ?? 0) > 60 ? 'text-orange-400' : 'text-gray-400'}`}>
+            <p className={`text-[10px] text-center font-semibold ${(mesa.minutos_ocupada ?? 0) > 60 ? 'text-orange-400' : 'text-gray-600'}`}>
               ⏱ {formatTiempo(mesa.minutos_ocupada ?? 0)}
             </p>
           )}
           {mesa.consumo_acumulado > 0 && (
-            <p className="text-[#00E5FF] text-[11px] text-center font-bold">
+            <p className="text-[#F97316] text-[11px] text-center font-bold">
               ${mesa.consumo_acumulado.toFixed(2)}
             </p>
           )}
           {mesa.personas > 0 && (
-            <p className="text-gray-500 text-[10px] text-center">👥 {mesa.personas}</p>
+            <p className="text-gray-600 text-[10px] text-center">👥 {mesa.personas}</p>
           )}
         </div>
       )}
@@ -248,8 +248,8 @@ export default function Mesas() {
       {/* ── Header ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-1">Plano de Mesas</h1>
-          <p className="text-gray-400 text-sm">Vista en tiempo real · se actualiza cada 30 s</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-1">Plano de Mesas</h1>
+          <p className="text-gray-600 text-sm">Vista en tiempo real · se actualiza cada 30 s</p>
         </div>
         <div className="flex items-center gap-2">
           <ExportButtons
@@ -291,8 +291,8 @@ export default function Mesas() {
             )}
           />
           <button onClick={fetchMesas} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-[#00E5FF]/20 text-gray-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-40">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#00E5FF]' : ''}`} />
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-50 border border-[#F97316]/20 text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-all disabled:opacity-40">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#F97316]' : ''}`} />
             <span className="text-sm">Actualizar</span>
           </button>
         </div>
@@ -305,12 +305,12 @@ export default function Mesas() {
           { label: 'Ocupadas', val: ocupada, color: 'text-red-400',    bg: 'bg-red-500/10'    },
           { label: 'Reservadas',val:reservada,color:'text-yellow-400', bg: 'bg-yellow-500/10' },
           { label: 'Esp. Cuenta',val:espera, color: 'text-blue-400',   bg: 'bg-blue-500/10'   },
-          { label: 'Consumo en curso', val: `$${consumoTotal.toFixed(2)}`, color: 'text-[#00E5FF]', bg: 'bg-[#00E5FF]/10' },
+          { label: 'Consumo en curso', val: `$${consumoTotal.toFixed(2)}`, color: 'text-[#F97316]', bg: 'bg-[#F97316]/10' },
         ].map(k => (
           <Card key={k.label} className={`${k.bg} border-0`}>
             <CardContent className="p-3 text-center">
               <p className={`text-2xl font-bold ${k.color}`}>{k.val}</p>
-              <p className="text-gray-500 text-xs mt-0.5">{k.label}</p>
+              <p className="text-gray-600 text-xs mt-0.5">{k.label}</p>
             </CardContent>
           </Card>
         ))}
@@ -327,7 +327,7 @@ export default function Mesas() {
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
                 estadoFiltro === estado
                   ? `${cfg.border} ${cfg.bg} ${cfg.color}`
-                  : 'border-white/10 text-gray-500 hover:border-white/20 hover:text-gray-400'
+                  : 'border-gray-100 text-gray-600 hover:border-gray-200 hover:text-gray-600'
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
@@ -340,16 +340,16 @@ export default function Mesas() {
         <select
           value={zonaFiltro}
           onChange={e => setZonaFiltro(e.target.value)}
-          className="ml-auto px-3 py-1.5 bg-[#0A1A2F]/60 border border-[#00E5FF]/20 text-white rounded-lg text-sm focus:outline-none focus:border-[#00E5FF]"
+          className="ml-auto px-3 py-1.5 bg-white border border-[#F97316]/20 text-gray-900 rounded-lg text-sm focus:outline-none focus:border-[#F97316]"
         >
-          {zonas.map(z => <option key={z} value={z} className="bg-[#0A1A2F]">{z === 'todas' ? 'Todas las zonas' : z}</option>)}
+          {zonas.map(z => <option key={z} value={z} className="bg-white">{z === 'todas' ? 'Todas las zonas' : z}</option>)}
         </select>
       </div>
 
       {/* ── Grid de mesas ──────────────────────────────────── */}
       {loading ? (
         <div className="flex justify-center py-20">
-          <div className="w-10 h-10 border-2 border-[#00E5FF]/30 border-t-[#00E5FF] rounded-full animate-spin" />
+          <div className="w-10 h-10 border-2 border-[#F97316]/30 border-t-[#F97316] rounded-full animate-spin" />
         </div>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3">
@@ -361,7 +361,7 @@ export default function Mesas() {
             />
           ))}
           {mesasFiltradas.length === 0 && (
-            <div className="col-span-full text-center py-16 text-gray-500">
+            <div className="col-span-full text-center py-16 text-gray-600">
               <Utensils className="w-12 h-12 mx-auto mb-3 opacity-40" />
               <p>No hay mesas con el filtro seleccionado</p>
             </div>
@@ -371,15 +371,15 @@ export default function Mesas() {
 
       {/* ── Modal: Acción sobre mesa ────────────────────────── */}
       {selected && modal === 'accion' && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-sm bg-[#0A1A2F]/98 border-[#00E5FF]/40 shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-sm bg-white border-[#F97316]/40 shadow-2xl">
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2 className="text-white text-xl font-bold">Mesa {selected.numero}</h2>
-                  <p className="text-gray-400 text-sm">{selected.zona} · Cap. {selected.capacidad}</p>
+                  <h2 className="text-gray-900 text-xl font-bold">Mesa {selected.numero}</h2>
+                  <p className="text-gray-600 text-sm">{selected.zona} · Cap. {selected.capacidad}</p>
                 </div>
-                <button onClick={() => { setModal(null); setSelected(null); }} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white">
+                <button onClick={() => { setModal(null); setSelected(null); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600 hover:text-gray-900">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -390,16 +390,16 @@ export default function Mesas() {
                 <span className={`font-semibold text-sm ${ESTADO_CONFIG[selected.estado].color}`}>
                   {ESTADO_CONFIG[selected.estado].label}
                 </span>
-                {selected.mesero_nombre && <span className="text-gray-400 text-xs ml-auto">{selected.mesero_nombre}</span>}
+                {selected.mesero_nombre && <span className="text-gray-600 text-xs ml-auto">{selected.mesero_nombre}</span>}
               </div>
 
               {/* Info si está ocupada */}
               {selected.estado !== 'libre' && (
-                <div className="bg-white/5 rounded-lg p-3 mb-4 space-y-1 text-sm">
-                  {(selected.minutos_ocupada ?? 0) > 0 && <div className="flex justify-between text-gray-400"><span>Tiempo</span><span className={`font-medium ${(selected.minutos_ocupada ?? 0) > 60 ? 'text-orange-400' : 'text-white'}`}>{formatTiempo(selected.minutos_ocupada ?? 0)}</span></div>}
-                  {selected.personas > 0 && <div className="flex justify-between text-gray-400"><span>Personas</span><span className="text-white font-medium">{selected.personas}</span></div>}
-                  {selected.consumo_acumulado > 0 && <div className="flex justify-between text-gray-400"><span>Consumo</span><span className="text-[#00E5FF] font-bold">${selected.consumo_acumulado.toFixed(2)}</span></div>}
-                  {selected.nota && <div className="text-gray-500 text-xs italic">📝 {selected.nota}</div>}
+                <div className="bg-gray-50 rounded-lg p-3 mb-4 space-y-1 text-sm">
+                  {(selected.minutos_ocupada ?? 0) > 0 && <div className="flex justify-between text-gray-600"><span>Tiempo</span><span className={`font-medium ${(selected.minutos_ocupada ?? 0) > 60 ? 'text-orange-400' : 'text-gray-900'}`}>{formatTiempo(selected.minutos_ocupada ?? 0)}</span></div>}
+                  {selected.personas > 0 && <div className="flex justify-between text-gray-600"><span>Personas</span><span className="text-gray-900 font-medium">{selected.personas}</span></div>}
+                  {selected.consumo_acumulado > 0 && <div className="flex justify-between text-gray-600"><span>Consumo</span><span className="text-[#F97316] font-bold">${selected.consumo_acumulado.toFixed(2)}</span></div>}
+                  {selected.nota && <div className="text-gray-600 text-xs italic">📝 {selected.nota}</div>}
                 </div>
               )}
 
@@ -407,7 +407,7 @@ export default function Mesas() {
               <div className="space-y-2">
                 {/* ── Mesa LIBRE ────────────────────────────── */}
                 {selected.estado === 'libre' && <>
-                  <Button className="w-full bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90" onClick={() => setModal('ocupar')}>
+                  <Button className="w-full bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90" onClick={() => setModal('ocupar')}>
                     <Users className="w-4 h-4 mr-2" /> Ocupar Mesa
                   </Button>
                   <Button variant="outline" className="w-full border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10" onClick={() => setModal('reservar')}>
@@ -424,7 +424,7 @@ export default function Mesas() {
                   >
                     <DollarSign className="w-5 h-5 mr-2" /> Cobrar Mesa
                   </Button>
-                  <Button className="w-full bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20" onClick={irAlPOS}>
+                  <Button className="w-full bg-[#F97316]/10 text-[#F97316] border border-[#F97316]/30 hover:bg-[#F97316]/20" onClick={irAlPOS}>
                     <Coffee className="w-4 h-4 mr-2" /> Agregar productos (POS)
                   </Button>
                   <Button variant="outline" className="w-full border-purple-500/40 text-purple-400 hover:bg-purple-500/10" onClick={() => { setFMesero(''); setModal('transferir'); }}>
@@ -457,7 +457,7 @@ export default function Mesas() {
 
                 {/* ── Mesa RESERVADA ─────────────────────────── */}
                 {selected.estado === 'reservada' && <>
-                  <Button className="w-full bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90" onClick={() => setModal('ocupar')}>
+                  <Button className="w-full bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90" onClick={() => setModal('ocupar')}>
                     <Users className="w-4 h-4 mr-2" /> Convertir a Ocupada
                   </Button>
                   <Button variant="outline" className="w-full border-red-500/40 text-red-400 hover:bg-red-500/10" onClick={handleLiberar}>
@@ -472,28 +472,28 @@ export default function Mesas() {
 
       {/* ── Modal: Ocupar ──────────────────────────────────── */}
       {selected && modal === 'ocupar' && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-sm bg-[#0A1A2F]/98 border-[#00E5FF]/40 shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-sm bg-white border-[#F97316]/40 shadow-2xl">
             <CardContent className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-white text-lg font-bold">Ocupar Mesa {selected.numero}</h2>
-                <button onClick={() => setModal('accion')} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400"><X className="w-4 h-4" /></button>
+                <h2 className="text-gray-900 text-lg font-bold">Ocupar Mesa {selected.numero}</h2>
+                <button onClick={() => setModal('accion')} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600"><X className="w-4 h-4" /></button>
               </div>
               <div>
-                <Label className="text-gray-300 mb-1.5 block">Mesero</Label>
-                <Input value={fMesero} onChange={e => setFMesero(e.target.value)} placeholder="Nombre del mesero" className="bg-white/5 border-[#00E5FF]/20 text-white" />
+                <Label className="text-gray-600 mb-1.5 block">Mesero</Label>
+                <Input value={fMesero} onChange={e => setFMesero(e.target.value)} placeholder="Nombre del mesero" className="bg-gray-50 border-[#F97316]/20 text-gray-900" />
               </div>
               <div>
-                <Label className="text-gray-300 mb-1.5 block">Personas</Label>
-                <Input type="number" min="1" value={fPersonas} onChange={e => setFPersonas(e.target.value)} className="bg-white/5 border-[#00E5FF]/20 text-white" />
+                <Label className="text-gray-600 mb-1.5 block">Personas</Label>
+                <Input type="number" min="1" value={fPersonas} onChange={e => setFPersonas(e.target.value)} className="bg-gray-50 border-[#F97316]/20 text-gray-900" />
               </div>
               <div>
-                <Label className="text-gray-300 mb-1.5 block">Nota (opcional)</Label>
-                <Input value={fNota} onChange={e => setFNota(e.target.value)} placeholder="Ej: cumpleaños, alérgico a mariscos..." className="bg-white/5 border-[#00E5FF]/20 text-white" />
+                <Label className="text-gray-600 mb-1.5 block">Nota (opcional)</Label>
+                <Input value={fNota} onChange={e => setFNota(e.target.value)} placeholder="Ej: cumpleaños, alérgico a mariscos..." className="bg-gray-50 border-[#F97316]/20 text-gray-900" />
               </div>
               <div className="flex gap-3 pt-2">
-                <Button variant="outline" className="flex-1 border-gray-600 text-gray-400" onClick={() => setModal('accion')}>Cancelar</Button>
-                <Button className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]" onClick={handleOcupar}>Confirmar</Button>
+                <Button variant="outline" className="flex-1 border-gray-600 text-gray-600" onClick={() => setModal('accion')}>Cancelar</Button>
+                <Button className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316]" onClick={handleOcupar}>Confirmar</Button>
               </div>
             </CardContent>
           </Card>
@@ -502,20 +502,20 @@ export default function Mesas() {
 
       {/* ── Modal: Transferir ─────────────────────────────── */}
       {selected && modal === 'transferir' && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-sm bg-[#0A1A2F]/98 border-[#00E5FF]/40 shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-sm bg-white border-[#F97316]/40 shadow-2xl">
             <CardContent className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-white text-lg font-bold">Transferir Mesa {selected.numero}</h2>
-                <button onClick={() => setModal('accion')} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400"><X className="w-4 h-4" /></button>
+                <h2 className="text-gray-900 text-lg font-bold">Transferir Mesa {selected.numero}</h2>
+                <button onClick={() => setModal('accion')} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600"><X className="w-4 h-4" /></button>
               </div>
-              <p className="text-gray-400 text-sm">Actualmente asignada a: <span className="text-white font-medium">{selected.mesero_nombre || 'Sin asignar'}</span></p>
+              <p className="text-gray-600 text-sm">Actualmente asignada a: <span className="text-gray-900 font-medium">{selected.mesero_nombre || 'Sin asignar'}</span></p>
               <div>
-                <Label className="text-gray-300 mb-1.5 block">Nuevo mesero</Label>
-                <Input value={fMesero} onChange={e => setFMesero(e.target.value)} placeholder="Nombre del nuevo mesero" className="bg-white/5 border-[#00E5FF]/20 text-white" autoFocus />
+                <Label className="text-gray-600 mb-1.5 block">Nuevo mesero</Label>
+                <Input value={fMesero} onChange={e => setFMesero(e.target.value)} placeholder="Nombre del nuevo mesero" className="bg-gray-50 border-[#F97316]/20 text-gray-900" autoFocus />
               </div>
               <div className="flex gap-3 pt-2">
-                <Button variant="outline" className="flex-1 border-gray-600 text-gray-400" onClick={() => setModal('accion')}>Cancelar</Button>
+                <Button variant="outline" className="flex-1 border-gray-600 text-gray-600" onClick={() => setModal('accion')}>Cancelar</Button>
                 <Button className="flex-1 bg-gradient-to-r from-purple-600 to-purple-400" onClick={handleTransferir}>Transferir</Button>
               </div>
             </CardContent>
@@ -525,23 +525,23 @@ export default function Mesas() {
 
       {/* ── Modal: Reservar ───────────────────────────────── */}
       {selected && modal === 'reservar' && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-sm bg-[#0A1A2F]/98 border-[#00E5FF]/40 shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-sm bg-white border-[#F97316]/40 shadow-2xl">
             <CardContent className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-white text-lg font-bold">Reservar Mesa {selected.numero}</h2>
-                <button onClick={() => setModal('accion')} className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400"><X className="w-4 h-4" /></button>
+                <h2 className="text-gray-900 text-lg font-bold">Reservar Mesa {selected.numero}</h2>
+                <button onClick={() => setModal('accion')} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600"><X className="w-4 h-4" /></button>
               </div>
               <div>
-                <Label className="text-gray-300 mb-1.5 block">Personas</Label>
-                <Input type="number" min="1" value={fPersonas} onChange={e => setFPersonas(e.target.value)} className="bg-white/5 border-[#00E5FF]/20 text-white" />
+                <Label className="text-gray-600 mb-1.5 block">Personas</Label>
+                <Input type="number" min="1" value={fPersonas} onChange={e => setFPersonas(e.target.value)} className="bg-gray-50 border-[#F97316]/20 text-gray-900" />
               </div>
               <div>
-                <Label className="text-gray-300 mb-1.5 block">Nota / Cliente</Label>
-                <Input value={fNota} onChange={e => setFNota(e.target.value)} placeholder="Ej: Reserva de María García" className="bg-white/5 border-[#00E5FF]/20 text-white" />
+                <Label className="text-gray-600 mb-1.5 block">Nota / Cliente</Label>
+                <Input value={fNota} onChange={e => setFNota(e.target.value)} placeholder="Ej: Reserva de María García" className="bg-gray-50 border-[#F97316]/20 text-gray-900" />
               </div>
               <div className="flex gap-3 pt-2">
-                <Button variant="outline" className="flex-1 border-gray-600 text-gray-400" onClick={() => setModal('accion')}>Cancelar</Button>
+                <Button variant="outline" className="flex-1 border-gray-600 text-gray-600" onClick={() => setModal('accion')}>Cancelar</Button>
                 <Button className="flex-1 bg-gradient-to-r from-yellow-600 to-yellow-400" onClick={handleReservar}>Reservar</Button>
               </div>
             </CardContent>

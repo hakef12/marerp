@@ -101,8 +101,8 @@ export default function Dashboard() {
       {/* ── Header ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-1">Dashboard</h1>
-          <p className="text-gray-400 text-sm">
+          <h1 className="text-3xl font-bold text-gray-900 mb-1">Dashboard</h1>
+          <p className="text-gray-600 text-sm">
             {lastUpdate
               ? `Actualizado: ${lastUpdate.toLocaleTimeString('es-EC')}`
               : 'Cargando métricas...'}
@@ -129,9 +129,9 @@ export default function Dashboard() {
           <button
             onClick={fetchData}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-[#00E5FF]/20 text-gray-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-40"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-50 border border-[#F97316]/20 text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-all disabled:opacity-40"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#00E5FF]' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#F97316]' : ''}`} />
             <span className="text-sm">Actualizar</span>
           </button>
         </div>
@@ -149,69 +149,69 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
 
         {/* Ventas hoy */}
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20 hover:border-[#00E5FF]/40 transition-all">
+        <Card className="bg-white border-[#F97316]/20 hover:border-[#F97316]/40 transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Ventas Hoy</CardTitle>
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#1e64a7] to-[#00E5FF] flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-white" />
+            <CardTitle className="text-sm font-medium text-gray-600">Ventas Hoy</CardTitle>
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#C2410C] to-[#F97316] flex items-center justify-center">
+              <DollarSign className="w-5 h-5 text-gray-900" />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white mb-1">
+            <div className="text-3xl font-bold text-gray-900 mb-1">
               {loading ? '—' : `$${fmt(data?.ventas.hoy.monto ?? 0)}`}
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-600">
               {loading ? '' : `${data?.ventas.hoy.cantidad ?? 0} transacciones`}
             </p>
           </CardContent>
         </Card>
 
         {/* Ventas semana */}
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20 hover:border-[#00E5FF]/40 transition-all">
+        <Card className="bg-white border-[#F97316]/20 hover:border-[#F97316]/40 transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Ventas Semana</CardTitle>
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#7B61FF] to-[#00E5FF] flex items-center justify-center">
-              <ShoppingCart className="w-5 h-5 text-white" />
+            <CardTitle className="text-sm font-medium text-gray-600">Ventas Semana</CardTitle>
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#FB923C] to-[#F97316] flex items-center justify-center">
+              <ShoppingCart className="w-5 h-5 text-gray-900" />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white mb-1">
+            <div className="text-3xl font-bold text-gray-900 mb-1">
               {loading ? '—' : `$${fmt(data?.ventas.semana.monto ?? 0)}`}
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-600">
               {loading ? '' : `${data?.ventas.semana.cantidad ?? 0} transacciones`}
             </p>
           </CardContent>
         </Card>
 
         {/* Inventario */}
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20 hover:border-[#00E5FF]/40 transition-all">
+        <Card className="bg-white border-[#F97316]/20 hover:border-[#F97316]/40 transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Productos en Stock</CardTitle>
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#00E5FF] to-[#1e64a7] flex items-center justify-center">
-              <Package className="w-5 h-5 text-white" />
+            <CardTitle className="text-sm font-medium text-gray-600">Productos en Stock</CardTitle>
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#F97316] to-[#C2410C] flex items-center justify-center">
+              <Package className="w-5 h-5 text-gray-900" />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white mb-1">
+            <div className="text-3xl font-bold text-gray-900 mb-1">
               {loading ? '—' : (data?.inventario.total_productos ?? 0)}
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-600">
               {loading ? '' : `Valor: $${fmt(data?.inventario.valor_total ?? 0)}`}
             </p>
           </CardContent>
         </Card>
 
         {/* Alertas */}
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20 hover:border-[#00E5FF]/40 transition-all">
+        <Card className="bg-white border-[#F97316]/20 hover:border-[#F97316]/40 transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Alertas Stock</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Alertas Stock</CardTitle>
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center">
-              <AlertCircle className="w-5 h-5 text-white" />
+              <AlertCircle className="w-5 h-5 text-gray-900" />
             </div>
           </CardHeader>
           <CardContent>
-            <div className={`text-3xl font-bold mb-1 ${(data?.inventario.stock_bajo ?? 0) > 0 ? 'text-orange-400' : 'text-white'}`}>
+            <div className={`text-3xl font-bold mb-1 ${(data?.inventario.stock_bajo ?? 0) > 0 ? 'text-orange-400' : 'text-gray-900'}`}>
               {loading ? '—' : (data?.inventario.stock_bajo ?? 0)}
             </div>
             <p className="text-xs text-orange-400/80">Productos con stock bajo</p>
@@ -223,38 +223,38 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         {/* Gráfica de ventas últimos 7 días */}
-        <Card className="lg:col-span-2 bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="lg:col-span-2 bg-white border-[#F97316]/20">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-[#00E5FF]" />
+            <CardTitle className="text-gray-900 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-[#F97316]" />
               Ventas últimos 7 días
             </CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
               <div className="h-[280px] flex items-center justify-center">
-                <div className="w-8 h-8 border-2 border-[#00E5FF]/30 border-t-[#00E5FF] rounded-full animate-spin" />
+                <div className="w-8 h-8 border-2 border-[#F97316]/30 border-t-[#F97316] rounded-full animate-spin" />
               </div>
             ) : chartData.length === 0 || chartData.every(d => d.ventas === 0) ? (
-              <div className="h-[280px] flex flex-col items-center justify-center text-gray-500">
+              <div className="h-[280px] flex flex-col items-center justify-center text-gray-600">
                 <BarChart3 className="w-12 h-12 mb-3 opacity-40" />
                 <p className="text-sm">Sin ventas registradas esta semana</p>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#00E5FF15" />
-                  <XAxis dataKey="dia" stroke="#ffffff40" tick={{ fill: '#ffffff60', fontSize: 12 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="dia" stroke="#e5e7eb" tick={{ fill: '#6b7280', fontSize: 12 }} />
                   <YAxis
-                    stroke="#ffffff40"
-                    tick={{ fill: '#ffffff60', fontSize: 12 }}
+                    stroke="#e5e7eb"
+                    tick={{ fill: '#6b7280', fontSize: 12 }}
                     tickFormatter={v => `$${v}`}
                   />
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#0A1A2F', border: '1px solid #00E5FF30', borderRadius: '8px', color: '#fff' }}
+                    contentStyle={{ backgroundColor: '#0C0C0C', border: '1px solid #F9731630', borderRadius: '8px', color: '#fff' }}
                     formatter={(value: any) => [`$${fmt(value)}`, 'Ventas']}
                   />
-                  <Bar dataKey="ventas" fill="#00E5FF" radius={[6, 6, 0, 0]} isAnimationActive={false} />
+                  <Bar dataKey="ventas" fill="#F97316" radius={[6, 6, 0, 0]} isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -262,10 +262,10 @@ export default function Dashboard() {
         </Card>
 
         {/* Estado cocina */}
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <ChefHat className="w-5 h-5 text-[#00E5FF]" />
+            <CardTitle className="text-gray-900 flex items-center gap-2">
+              <ChefHat className="w-5 h-5 text-[#F97316]" />
               Cocina en vivo
             </CardTitle>
           </CardHeader>
@@ -274,17 +274,17 @@ export default function Dashboard() {
               <p className="text-yellow-400 text-4xl font-bold">
                 {loading ? '—' : (data?.cocina.comandas_pendientes ?? 0)}
               </p>
-              <p className="text-gray-400 text-sm mt-1">Comandas pendientes</p>
+              <p className="text-gray-600 text-sm mt-1">Comandas pendientes</p>
             </div>
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 text-center">
               <p className="text-blue-400 text-4xl font-bold">
                 {loading ? '—' : (data?.cocina.comandas_en_preparacion ?? 0)}
               </p>
-              <p className="text-gray-400 text-sm mt-1">En preparación</p>
+              <p className="text-gray-600 text-sm mt-1">En preparación</p>
             </div>
             <div className="text-center">
-              <p className="text-gray-500 text-xs">Ventas del mes</p>
-              <p className="text-white text-xl font-bold mt-0.5">
+              <p className="text-gray-600 text-xs">Ventas del mes</p>
+              <p className="text-gray-900 text-xl font-bold mt-0.5">
                 {loading ? '—' : `$${fmt(data?.ventas.mes.monto ?? 0)}`}
               </p>
               <p className="text-gray-600 text-xs">{data?.ventas.mes.cantidad ?? 0} transacciones</p>
@@ -297,36 +297,36 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
         {/* Top Productos */}
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <ShoppingCart className="w-5 h-5 text-[#00E5FF]" />
+            <CardTitle className="text-gray-900 flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5 text-[#F97316]" />
               Top Productos (30 días)
             </CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
               <div className="flex justify-center py-8">
-                <div className="w-8 h-8 border-2 border-[#00E5FF]/30 border-t-[#00E5FF] rounded-full animate-spin" />
+                <div className="w-8 h-8 border-2 border-[#F97316]/30 border-t-[#F97316] rounded-full animate-spin" />
               </div>
             ) : topProductos.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-600">
                 <Package className="w-10 h-10 mx-auto mb-3 opacity-40" />
                 <p className="text-sm">Aún no hay ventas registradas</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {topProductos.map((p, i) => (
-                  <div key={`prod-${i}`} className="flex items-center gap-3 p-3 rounded-lg bg-white/5 hover:bg-white/8 transition-colors">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#1e64a7] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
-                      <span className="text-white font-bold text-xs">#{i + 1}</span>
+                  <div key={`prod-${i}`} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#C2410C] to-[#F97316] flex items-center justify-center flex-shrink-0">
+                      <span className="text-gray-900 font-bold text-xs">#{i + 1}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{p.nombre}</p>
-                      <p className="text-gray-500 text-xs">{p.cantidad} unidades</p>
+                      <p className="text-gray-900 text-sm font-medium truncate">{p.nombre}</p>
+                      <p className="text-gray-600 text-xs">{p.cantidad} unidades</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-[#00E5FF] text-sm font-semibold">${fmt(p.monto)}</p>
+                      <p className="text-[#F97316] text-sm font-semibold">${fmt(p.monto)}</p>
                     </div>
                   </div>
                 ))}
@@ -336,9 +336,9 @@ export default function Dashboard() {
         </Card>
 
         {/* Alertas stock bajo */}
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
+            <CardTitle className="text-gray-900 flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-orange-400" />
               Alertas de Stock Bajo
             </CardTitle>
@@ -346,10 +346,10 @@ export default function Dashboard() {
           <CardContent>
             {loading ? (
               <div className="flex justify-center py-8">
-                <div className="w-8 h-8 border-2 border-[#00E5FF]/30 border-t-[#00E5FF] rounded-full animate-spin" />
+                <div className="w-8 h-8 border-2 border-[#F97316]/30 border-t-[#F97316] rounded-full animate-spin" />
               </div>
             ) : alertasStock.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-600">
                 <Package className="w-10 h-10 mx-auto mb-3 opacity-40" />
                 <p className="text-sm text-green-400">✓ Todos los productos con stock suficiente</p>
               </div>
@@ -361,8 +361,8 @@ export default function Dashboard() {
                       <AlertCircle className="w-4 h-4 text-orange-400" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{a.nombre}</p>
-                      <p className="text-gray-500 text-xs">Mínimo: {a.stock_minimo}</p>
+                      <p className="text-gray-900 text-sm font-medium truncate">{a.nombre}</p>
+                      <p className="text-gray-600 text-xs">Mínimo: {a.stock_minimo}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-orange-400 text-lg font-bold">{a.stock_actual}</p>

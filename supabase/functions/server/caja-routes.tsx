@@ -225,10 +225,12 @@ export function setupCajaRoutes(app: any, authMiddleware: any) {
           items: [{ codigo: '6.2.05', debito: montoNum }, { codigo: '1.1.01', credito: montoNum }],
         });
       } else if (tipo === 'retiro') {
+        // 3.2.01 = Retiros del propietario (distribución de patrimonio, no utilidades)
+        // 3.1.03 era incorrecto — los retiros no son utilidades retenidas
         await registrarAsientoAutomatico(auth.empresaId, {
           tipo: 'retiro_caja', descripcion: descripcion || 'Retiro de caja',
           referencia: referencia || movimiento.id, fecha: fechaHoy,
-          items: [{ codigo: '3.1.03', debito: montoNum }, { codigo: '1.1.01', credito: montoNum }],
+          items: [{ codigo: '3.2.01', debito: montoNum, descripcion: 'Retiro del propietario' }, { codigo: '1.1.01', credito: montoNum, descripcion: 'Salida de caja' }],
         });
       } else if (tipo === 'ingreso_manual') {
         await registrarAsientoAutomatico(auth.empresaId, {

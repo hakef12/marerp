@@ -2,43 +2,43 @@
 
 :root {
   --font-size: 16px;
-  --background: #0A1A2F;
-  --foreground: #ffffff;
-  --card: #0A1A2F;
-  --card-foreground: #ffffff;
-  --popover: #0A1A2F;
-  --popover-foreground: #ffffff;
-  --primary: #00E5FF;
-  --primary-foreground: #0A1A2F;
-  --secondary: #1e64a7;
+  --background: #ffffff;
+  --foreground: #111111;
+  --card: #ffffff;
+  --card-foreground: #111111;
+  --popover: #ffffff;
+  --popover-foreground: #111111;
+  --primary: #F97316;
+  --primary-foreground: #0C0C0C;
+  --secondary: #C2410C;
   --secondary-foreground: #ffffff;
-  --muted: #0F2640;
+  --muted: #f5f5f5;
   --muted-foreground: #a0aec0;
-  --accent: #7B61FF;
-  --accent-foreground: #ffffff;
+  --accent: #FB923C;
+  --accent-foreground: #111111;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: rgba(0, 229, 255, 0.2);
-  --input: transparent;
-  --input-background: rgba(255, 255, 255, 0.05);
-  --switch-background: #1e64a7;
+  --border: rgba(249, 115, 22, 0.2);
+  --input: rgba(249, 115, 22, 0.25);
+  --input-background: #f9fafb;
+  --switch-background: #C2410C;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: #00E5FF;
-  --chart-1: #00E5FF;
-  --chart-2: #7B61FF;
-  --chart-3: #1e64a7;
-  --chart-4: #0A1A2F;
+  --ring: #F97316;
+  --chart-1: #F97316;
+  --chart-2: #FB923C;
+  --chart-3: #C2410C;
+  --chart-4: #0C0C0C;
   --chart-5: #00ffc8;
   --radius: 0.75rem;
-  --sidebar: #0A1A2F;
-  --sidebar-foreground: #ffffff;
-  --sidebar-primary: #00E5FF;
-  --sidebar-primary-foreground: #0A1A2F;
-  --sidebar-accent: #1e64a7;
+  --sidebar: #F5F3EF;
+  --sidebar-foreground: #111111;
+  --sidebar-primary: #F97316;
+  --sidebar-primary-foreground: #0C0C0C;
+  --sidebar-accent: #C2410C;
   --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(0, 229, 255, 0.2);
-  --sidebar-ring: #00E5FF;
+  --sidebar-border: rgba(249, 115, 22, 0.2);
+  --sidebar-ring: #F97316;
 }
 
 .dark {
@@ -186,7 +186,7 @@
   /* Firefox */
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(0, 229, 255, 0.3) transparent;
+    scrollbar-color: rgba(249, 115, 22, 0.35) transparent;
   }
   
   /* Webkit (Chrome, Safari, Edge) */
@@ -200,12 +200,12 @@
   }
   
   ::-webkit-scrollbar-thumb {
-    background: rgba(0, 229, 255, 0.25);
+    background: rgba(249, 115, 22, 0.25);
     border-radius: 3px;
   }
   
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 229, 255, 0.4);
+    background: rgba(249, 115, 22, 0.5);
   }
   
   ::-webkit-scrollbar-corner {

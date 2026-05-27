@@ -82,35 +82,35 @@ export default function Suscripcion() {
     <div className="p-6 space-y-6 min-h-full">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Suscripción</h1>
-        <p className="text-gray-400 text-sm mt-1">Administra tu plan y los módulos activos de tu empresa</p>
+        <h1 className="text-2xl font-bold text-gray-900">Suscripción</h1>
+        <p className="text-gray-600 text-sm mt-1">Administra tu plan y los módulos activos de tu empresa</p>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* LEFT — Current Plan Card */}
         <div className="xl:col-span-1 space-y-5">
           {/* Plan Card */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+          <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6">
             <div className="flex items-center gap-4 mb-4">
               <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${planColor} flex items-center justify-center shadow-lg`}>
-                <PlanIcon className="w-7 h-7 text-white" />
+                <PlanIcon className="w-7 h-7 text-gray-900" />
               </div>
               <div>
-                <p className="text-gray-400 text-xs uppercase tracking-wider">Plan actual</p>
-                <h2 className="text-white font-bold text-xl capitalize">{planActual}</h2>
+                <p className="text-gray-600 text-xs uppercase tracking-wider">Plan actual</p>
+                <h2 className="text-gray-900 font-bold text-xl capitalize">{planActual}</h2>
               </div>
             </div>
 
             <div className="flex items-center gap-2 mb-5 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-lg">
               <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
-              <span className="text-green-300 text-sm font-medium">Plan activo</span>
+              <span className="text-green-700 text-sm font-medium">Plan activo</span>
             </div>
 
             <div className="space-y-2">
-              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-3">Incluye</p>
+              <p className="text-gray-600 text-xs font-semibold uppercase tracking-wider mb-3">Incluye</p>
               {planFeatures.map((f, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                  <CheckCircle className="w-4 h-4 text-[#00E5FF] mt-0.5 flex-shrink-0" />
+                <div key={i} className="flex items-start gap-2 text-sm text-gray-600">
+                  <CheckCircle className="w-4 h-4 text-[#F97316] mt-0.5 flex-shrink-0" />
                   <span>{f}</span>
                 </div>
               ))}
@@ -118,16 +118,16 @@ export default function Suscripcion() {
           </div>
 
           {/* Module Usage */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+          <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-white font-semibold">Módulos activos</h3>
-              <span className="text-[#00E5FF] font-bold text-lg">{activeModules}<span className="text-gray-500 text-sm font-normal">/{moduleStats.length}</span></span>
+              <h3 className="text-gray-900 font-semibold">Módulos activos</h3>
+              <span className="text-[#F97316] font-bold text-lg">{activeModules}<span className="text-gray-600 text-sm font-normal">/{moduleStats.length}</span></span>
             </div>
             <div className="space-y-2.5">
               {moduleStats.map(({ label, icon: Icon, active }) => (
                 <div key={label} className="flex items-center gap-3">
-                  <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${active ? 'bg-[#00E5FF]/15' : 'bg-white/5'}`}>
-                    <Icon className={`w-3.5 h-3.5 ${active ? 'text-[#00E5FF]' : 'text-gray-600'}`} />
+                  <div className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${active ? 'bg-[#F97316]/15' : 'bg-gray-50'}`}>
+                    <Icon className={`w-3.5 h-3.5 ${active ? 'text-[#F97316]' : 'text-gray-600'}`} />
                   </div>
                   <span className={`text-sm flex-1 ${active ? 'text-gray-200' : 'text-gray-600'}`}>{label}</span>
                   {active
@@ -139,21 +139,21 @@ export default function Suscripcion() {
           </div>
 
           {/* Billing Note */}
-          <div className="bg-[#1e64a7]/10 border border-[#1e64a7]/30 rounded-xl p-4 flex gap-3">
-            <Clock className="w-5 h-5 text-[#00E5FF] flex-shrink-0 mt-0.5" />
+          <div className="bg-[#C2410C]/10 border border-[#C2410C]/30 rounded-xl p-4 flex gap-3">
+            <Clock className="w-5 h-5 text-[#F97316] flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-white text-sm font-medium">Facturación mensual</p>
-              <p className="text-gray-400 text-xs mt-1">Para cambios de plan, cancelaciones o facturación personalizada comunícate con nuestro equipo de soporte.</p>
+              <p className="text-gray-900 text-sm font-medium">Facturación mensual</p>
+              <p className="text-gray-600 text-xs mt-1">Para cambios de plan, cancelaciones o facturación personalizada comunícate con nuestro equipo de soporte.</p>
             </div>
           </div>
         </div>
 
         {/* RIGHT — Plan Selector */}
         <div className="xl:col-span-2">
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 h-full">
+          <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6 h-full">
             <div className="flex items-center gap-2 mb-6">
-              <RefreshCw className="w-5 h-5 text-[#00E5FF]" />
-              <h3 className="text-white font-semibold text-lg">Cambiar plan</h3>
+              <RefreshCw className="w-5 h-5 text-[#F97316]" />
+              <h3 className="text-gray-900 font-semibold text-lg">Cambiar plan</h3>
             </div>
 
             <PlanSelector
@@ -165,13 +165,13 @@ export default function Suscripcion() {
               {successMsg && (
                 <div className="flex items-start gap-2 px-4 py-3 bg-green-500/10 border border-green-500/20 rounded-lg">
                   <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-green-300 text-sm">{successMsg}</p>
+                  <p className="text-green-700 text-sm">{successMsg}</p>
                 </div>
               )}
               {errorMsg && (
                 <div className="flex items-start gap-2 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-lg">
                   <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-red-300 text-sm">{errorMsg}</p>
+                  <p className="text-red-600 text-sm">{errorMsg}</p>
                 </div>
               )}
 
@@ -180,8 +180,8 @@ export default function Suscripcion() {
                 disabled={upgrading || selectedPlan === planActual}
                 className={`w-full py-3 font-semibold text-base transition-all duration-200 ${
                   selectedPlan === planActual
-                    ? 'bg-white/10 text-gray-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90 text-white shadow-lg shadow-[#00E5FF]/20'
+                    ? 'bg-gray-100 text-gray-600 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90 text-white shadow-lg shadow-[#F97316]/20'
                 }`}
               >
                 {upgrading ? (
@@ -196,7 +196,7 @@ export default function Suscripcion() {
                 )}
               </Button>
 
-              <p className="text-gray-500 text-xs text-center">
+              <p className="text-gray-600 text-xs text-center">
                 Al solicitar el cambio, nuestro equipo se pondrá en contacto dentro de las próximas 24 horas hábiles.
               </p>
             </div>

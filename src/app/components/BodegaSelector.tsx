@@ -6,10 +6,10 @@ import { useBodega, type Bodega } from '../context/BodegaContext';
 const ROLES_CON_ACCESO = ['admin', 'gerente', 'super_admin', 'bodeguero', 'cajero', 'cocinero'];
 
 const TIPO_BADGE: Record<string, string> = {
-  produccion:  'bg-orange-500/20 text-orange-300 border border-orange-500/40',
-  principal:   'bg-orange-500/20 text-orange-300 border border-orange-500/40',
-  sucursal:    'bg-blue-500/20 text-blue-300 border border-blue-500/40',
-  restaurante: 'bg-blue-500/20 text-blue-300 border border-blue-500/40',
+  produccion:  'bg-orange-100 text-orange-700 border border-orange-300',
+  principal:   'bg-orange-100 text-orange-700 border border-orange-300',
+  sucursal:    'bg-blue-100 text-blue-700 border border-blue-300',
+  restaurante: 'bg-blue-100 text-blue-700 border border-blue-300',
 };
 
 const TIPO_LABEL: Record<string, string> = {
@@ -47,40 +47,40 @@ export function BodegaSelector() {
 
   return (
     <div className="px-4 py-2" ref={ref}>
-      <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1 font-semibold flex items-center gap-1">
+      <p className="text-[10px] text-gray-600 uppercase tracking-widest mb-1 font-semibold flex items-center gap-1">
         {bodegaBloqueada && <Lock className="w-2.5 h-2.5 text-yellow-500" />}
         {bodegaBloqueada ? 'Mi sucursal' : 'Bodega activa'}
       </p>
       <button
         onClick={() => !bodegaBloqueada && setOpen(v => !v)}
-        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0A1A2F] border transition-all duration-200 ${
+        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-white border transition-all duration-200 ${
           bodegaBloqueada
             ? 'border-yellow-500/20 cursor-default'
-            : 'border-[#00E5FF]/20 text-white hover:border-[#00E5FF]/50 cursor-pointer'
+            : 'border-[#F97316]/20 text-gray-900 hover:border-[#F97316]/50 cursor-pointer'
         }`}
       >
-        <Warehouse className={`w-4 h-4 flex-shrink-0 ${bodegaBloqueada ? 'text-yellow-400' : 'text-[#00E5FF]'}`} />
-        <span className="flex-1 text-left text-sm truncate font-medium text-white">
+        <Warehouse className={`w-4 h-4 flex-shrink-0 ${bodegaBloqueada ? 'text-yellow-400' : 'text-[#F97316]'}`} />
+        <span className="flex-1 text-left text-sm truncate font-medium text-gray-900">
           {loading ? 'Cargando...' : (bodegaActiva?.nombre ?? 'Seleccionar')}
         </span>
         {bodegaBloqueada
           ? <Lock className="w-3 h-3 text-yellow-500 flex-shrink-0" />
-          : <ChevronDown className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+          : <ChevronDown className={`w-3.5 h-3.5 text-gray-600 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
         }
       </button>
 
       {open && !bodegaBloqueada && (
-        <div className="mt-1 rounded-xl bg-[#0A1A2F] border border-[#00E5FF]/20 shadow-2xl shadow-black/60 overflow-hidden z-50">
+        <div className="mt-1 rounded-xl bg-white border border-[#F97316]/20 shadow-2xl shadow-black/60 overflow-hidden z-50">
           {bodegas.map(b => (
             <button
               key={b.id}
               onClick={() => handleSelect(b)}
-              className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[#00E5FF]/5 transition-colors text-left border-b border-white/5 last:border-0"
+              className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-[#F97316]/5 transition-colors text-left border-b border-gray-100 last:border-0"
             >
-              <Check className={`w-3.5 h-3.5 flex-shrink-0 ${bodegaActiva?.id === b.id ? 'text-[#00E5FF]' : 'opacity-0'}`} />
+              <Check className={`w-3.5 h-3.5 flex-shrink-0 ${bodegaActiva?.id === b.id ? 'text-[#F97316]' : 'opacity-0'}`} />
               <div className="flex-1 min-w-0">
-                <p className="text-white text-xs font-medium truncate">{b.nombre}</p>
-                <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold ${TIPO_BADGE[b.tipo] ?? 'bg-gray-500/20 text-gray-300 border border-gray-500/40'}`}>
+                <p className="text-gray-900 text-xs font-medium truncate">{b.nombre}</p>
+                <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold ${TIPO_BADGE[b.tipo] ?? 'bg-gray-500/20 text-gray-600 border border-gray-500/40'}`}>
                   {TIPO_LABEL[b.tipo] ?? b.tipo}
                 </span>
               </div>

@@ -32,11 +32,11 @@ const STEPS: Step[] = [
     id: 'welcome',
     group: 'Inicio',
     icon: Sparkles,
-    iconBg: 'from-[#00E5FF]/20 to-[#1e64a7]/20',
-    iconColor: 'text-[#00E5FF]',
+    iconBg: 'from-[#F97316]/20 to-[#C2410C]/20',
+    iconColor: 'text-[#F97316]',
     badge: 'Bienvenida',
-    badgeColor: 'bg-[#00E5FF]/15 text-[#00E5FF]',
-    title: 'Bienvenido a MAR ERP',
+    badgeColor: 'bg-[#F97316]/15 text-[#F97316]',
+    title: 'Bienvenido a M.A.R Cocina Local',
     subtitle: 'Sistema de gestión empresarial para restaurantes y negocios de alimentos',
     features: [
       { icon: Zap, text: 'Todo integrado: ventas, inventario, cocina, contabilidad y RRHH en una sola plataforma' },
@@ -50,10 +50,10 @@ const STEPS: Step[] = [
     id: 'dashboard',
     group: 'Inicio',
     icon: LayoutDashboard,
-    iconBg: 'from-[#00E5FF]/20 to-[#1e64a7]/20',
-    iconColor: 'text-[#00E5FF]',
+    iconBg: 'from-[#F97316]/20 to-[#C2410C]/20',
+    iconColor: 'text-[#F97316]',
     badge: 'Dashboard',
-    badgeColor: 'bg-[#00E5FF]/15 text-[#00E5FF]',
+    badgeColor: 'bg-[#F97316]/15 text-[#F97316]',
     title: 'Panel de Control Central',
     subtitle: 'Vista 360° de tu negocio en tiempo real',
     features: [
@@ -264,7 +264,7 @@ const STEPS: Step[] = [
     badge: '¡Listo!',
     badgeColor: 'bg-green-500/15 text-green-400',
     title: '¡Ya conoces todo el sistema!',
-    subtitle: 'Estás listo para comenzar a usar MAR ERP en tu negocio',
+    subtitle: 'Estás listo para comenzar a usar M.A.R Cocina Local en tu negocio',
     features: [
       { icon: Play, text: 'Empieza por configurar tu empresa en Configuración → Datos de la empresa' },
       { icon: Package, text: 'Luego carga tus productos e insumos en el módulo de Inventario' },
@@ -345,45 +345,45 @@ export default function OnboardingWizard({ forceOpen = false, onClose }: Onboard
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       {/* Overlay */}
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/70"
         onClick={skip}
       />
 
       {/* Card */}
-      <div className="relative w-full max-w-2xl bg-gradient-to-br from-[#0A1A2F] to-[#0d2240] border border-[#00E5FF]/20 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden">
+      <div className="relative w-full max-w-2xl bg-white border border-[#F97316]/20 rounded-2xl shadow-2xl shadow-black/20 overflow-hidden">
 
         {/* Barra de progreso superior */}
-        <div className="h-1 bg-white/5">
+        <div className="h-1 bg-gray-50">
           <div
-            className="h-full bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] transition-all duration-500 ease-out"
+            className="h-full bg-gradient-to-r from-[#C2410C] to-[#F97316] transition-all duration-500 ease-out"
             style={{ width: `${((step + 1) / total) * 100}%` }}
           />
         </div>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           {/* Grupos de navegación */}
           <div className="flex items-center gap-1">
             {GROUPS.map((g, i) => (
               <div key={g} className="flex items-center gap-1">
                 <span className={`text-xs font-medium transition-colors ${
-                  i === groupIndex ? 'text-[#00E5FF]' :
-                  i < groupIndex ? 'text-white/40' : 'text-white/20'
+                  i === groupIndex ? 'text-[#F97316]' :
+                  i < groupIndex ? 'text-gray-900/40' : 'text-gray-900/20'
                 }`}>
                   {g}
                 </span>
                 {i < GROUPS.length - 1 && (
-                  <ChevronRight className={`w-3 h-3 ${i < groupIndex ? 'text-white/40' : 'text-white/15'}`} />
+                  <ChevronRight className={`w-3 h-3 ${i < groupIndex ? 'text-gray-900/40' : 'text-gray-900/15'}`} />
                 )}
               </div>
             ))}
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-500">{step + 1} / {total}</span>
+            <span className="text-xs text-gray-600">{step + 1} / {total}</span>
             <button
               onClick={skip}
-              className="text-gray-500 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5"
+              className="text-gray-600 hover:text-gray-900 transition-colors p-1 rounded-lg hover:bg-gray-50"
               title="Saltar tour"
             >
               <X className="w-4 h-4" />
@@ -405,15 +405,15 @@ export default function OnboardingWizard({ forceOpen = false, onClose }: Onboard
           <div className="p-8">
             {/* Icono + badge */}
             <div className="flex items-start gap-5 mb-6">
-              <div className={`flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br ${current.iconBg} border border-white/10 flex items-center justify-center shadow-lg`}>
+              <div className={`flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br ${current.iconBg} border border-gray-100 flex items-center justify-center shadow-lg`}>
                 <Icon className={`w-8 h-8 ${current.iconColor}`} />
               </div>
               <div className="flex-1 pt-1">
                 <span className={`inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full mb-2 ${current.badgeColor}`}>
                   {current.badge}
                 </span>
-                <h2 className="text-2xl font-black text-white leading-tight">{current.title}</h2>
-                <p className="text-gray-400 text-sm mt-1">{current.subtitle}</p>
+                <h2 className="text-2xl font-black text-gray-900 leading-tight">{current.title}</h2>
+                <p className="text-gray-600 text-sm mt-1">{current.subtitle}</p>
               </div>
             </div>
 
@@ -422,11 +422,11 @@ export default function OnboardingWizard({ forceOpen = false, onClose }: Onboard
               {current.features.map((feat, i) => {
                 const FIcon = feat.icon;
                 return (
-                  <div key={i} className="flex items-start gap-3 bg-white/3 rounded-xl px-4 py-3 border border-white/5 hover:border-white/10 transition-colors">
+                  <div key={i} className="flex items-start gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100 hover:border-gray-100 transition-colors">
                     <div className={`flex-shrink-0 w-7 h-7 rounded-lg bg-gradient-to-br ${current.iconBg} flex items-center justify-center mt-0.5`}>
                       <FIcon className={`w-3.5 h-3.5 ${current.iconColor}`} />
                     </div>
-                    <p className="text-gray-300 text-sm leading-relaxed">{feat.text}</p>
+                    <p className="text-gray-600 text-sm leading-relaxed">{feat.text}</p>
                   </div>
                 );
               })}
@@ -434,16 +434,16 @@ export default function OnboardingWizard({ forceOpen = false, onClose }: Onboard
 
             {/* Tip */}
             {current.tip && (
-              <div className="flex items-start gap-3 bg-[#00E5FF]/5 border border-[#00E5FF]/20 rounded-xl px-4 py-3">
-                <Sparkles className="w-4 h-4 text-[#00E5FF] flex-shrink-0 mt-0.5" />
-                <p className="text-[#00E5FF]/80 text-xs leading-relaxed">{current.tip}</p>
+              <div className="flex items-start gap-3 bg-[#F97316]/5 border border-[#F97316]/20 rounded-xl px-4 py-3">
+                <Sparkles className="w-4 h-4 text-[#F97316] flex-shrink-0 mt-0.5" />
+                <p className="text-[#F97316]/80 text-xs leading-relaxed">{current.tip}</p>
               </div>
             )}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-8 py-4 border-t border-white/5 bg-white/2">
+        <div className="flex items-center justify-between px-8 py-4 border-t border-gray-100 bg-gray-50">
           {/* Puntos de navegación */}
           <div className="flex items-center gap-1.5">
             {STEPS.map((_, i) => (
@@ -452,10 +452,10 @@ export default function OnboardingWizard({ forceOpen = false, onClose }: Onboard
                 onClick={() => goTo(i, i > step ? 'forward' : 'back')}
                 className={`rounded-full transition-all duration-300 ${
                   i === step
-                    ? 'w-5 h-2 bg-[#00E5FF]'
+                    ? 'w-5 h-2 bg-[#F97316]'
                     : i < step
-                    ? 'w-2 h-2 bg-[#00E5FF]/40'
-                    : 'w-2 h-2 bg-white/15'
+                    ? 'w-2 h-2 bg-[#F97316]/40'
+                    : 'w-2 h-2 bg-gray-200'
                 }`}
                 title={STEPS[i].title}
               />
@@ -467,7 +467,7 @@ export default function OnboardingWizard({ forceOpen = false, onClose }: Onboard
             {!isFirst && (
               <button
                 onClick={prev}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-white/5 transition-all"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-all"
               >
                 <ChevronLeft className="w-4 h-4" /> Anterior
               </button>
@@ -476,7 +476,7 @@ export default function OnboardingWizard({ forceOpen = false, onClose }: Onboard
             {isFirst && (
               <button
                 onClick={skip}
-                className="px-4 py-2 rounded-xl text-sm text-gray-500 hover:text-gray-300 transition-colors"
+                className="px-4 py-2 rounded-xl text-sm text-gray-600 hover:text-gray-600 transition-colors"
               >
                 Saltar
               </button>
@@ -485,7 +485,7 @@ export default function OnboardingWizard({ forceOpen = false, onClose }: Onboard
             {!isLast ? (
               <button
                 onClick={next}
-                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20 hover:shadow-[#00E5FF]/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20 hover:shadow-[#F97316]/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
               >
                 {step === 0 ? 'Comenzar tour' : 'Siguiente'}
                 <ChevronRight className="w-4 h-4" />
@@ -493,7 +493,7 @@ export default function OnboardingWizard({ forceOpen = false, onClose }: Onboard
             ) : (
               <button
                 onClick={finish}
-                className="flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-bold bg-gradient-to-r from-green-600 to-emerald-500 text-white shadow-lg shadow-green-500/20 hover:shadow-green-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                className="flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-bold bg-gradient-to-r from-green-600 to-emerald-500 text-gray-900 shadow-lg shadow-green-500/20 hover:shadow-green-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
               >
                 <Check className="w-4 h-4" />
                 ¡Empezar ahora!

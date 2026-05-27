@@ -60,6 +60,9 @@ const PLAN_CONTABLE_ECUADOR = [
   { codigo: '3.1.02', nombre: 'Reserva Legal (10%)', tipo: 'patrimonio', nivel: 3, naturaleza: 'acreedora', es_grupo: false },
   { codigo: '3.1.03', nombre: 'Utilidades Retenidas', tipo: 'patrimonio', nivel: 3, naturaleza: 'acreedora', es_grupo: false },
   { codigo: '3.1.04', nombre: 'Utilidad del Ejercicio', tipo: 'patrimonio', nivel: 3, naturaleza: 'acreedora', es_grupo: false },
+  { codigo: '3.2', nombre: 'RETIROS Y DIVIDENDOS', tipo: 'patrimonio', nivel: 2, naturaleza: 'deudora', es_grupo: true },
+  { codigo: '3.2.01', nombre: 'Retiros del Propietario', tipo: 'patrimonio', nivel: 3, naturaleza: 'deudora', es_grupo: false },
+  { codigo: '3.2.02', nombre: 'Dividendos Pagados', tipo: 'patrimonio', nivel: 3, naturaleza: 'deudora', es_grupo: false },
   // INGRESOS
   { codigo: '4', nombre: 'INGRESOS', tipo: 'ingreso', nivel: 1, naturaleza: 'acreedora', es_grupo: true },
   { codigo: '4.1', nombre: 'INGRESOS OPERACIONALES', tipo: 'ingreso', nivel: 2, naturaleza: 'acreedora', es_grupo: true },
@@ -272,27 +275,63 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
     }
   });
 
-  // Inicializar Plan Contable Ecuador
+  // Inicializar / Sincronizar Plan Contable Ecuador
   app.post("/server/contabilidad/cuentas/inicializar", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
+    const db = getDB();
     try {
-      const existentes = await obtenerCuentas(auth.empresaId);
-      if (existentes.length > 0) {
-        return c.json({ message: 'El catálogo ya tiene cuentas', total: existentes.length });
-      }
-      const cuentas = PLAN_CONTABLE_ECUADOR.map((ct) => ({
-        ...ct,
+      // Leer directamente de SQL (sin fallback KV para evitar false-empty)
+      const { data: existentesRaw, error: readErr } = await db
+        .from('cuentas_contables')
+        .select('codigo')
+        .eq('empresa_id', auth.empresaId);
+      if (readErr) throw new Error(`Error al leer plan contable: ${readErr.message} | ${readErr.details}`);
+
+      const existentes = existentesRaw || [];
+
+      // Mapeador seguro — columnas reales de cuentas_contables (verificadas):
+      // id, empresa_id, codigo, nombre, tipo, subtipo, saldo_actual,
+      // activa, created_at, updated_at, es_grupo, nivel
+      // NOTA: naturaleza NO existe como columna — se deriva del tipo en runtime
+      const toSafeRow = (ct: any) => ({
         id: crypto.randomUUID(),
         empresa_id: auth.empresaId,
+        codigo: ct.codigo,
+        nombre: ct.nombre,
+        tipo: ct.tipo,
+        es_grupo: ct.es_grupo ?? false,
         activa: true,
+        nivel: ct.nivel ?? (ct.codigo ? ct.codigo.split('.').length : 3),
         created_at: new Date().toISOString(),
-      }));
-      // Bulk insert into SQL (guardarCuenta upserts one at a time — use bulk for performance)
-      const { error: insErr } = await getDB().from('cuentas_contables')
-        .upsert(cuentas.map((ct: any) => ({ ...ct, empresa_id: auth.empresaId })), { onConflict: 'id' });
-      if (insErr) throw insErr;
+        updated_at: new Date().toISOString(),
+      });
+
+      if (existentes.length > 0) {
+        // Sincronización: agregar solo cuentas faltantes
+        const codigosExistentes = new Set(existentes.map((row: any) => row.codigo));
+        const faltantes = PLAN_CONTABLE_ECUADOR.filter((ct) => !codigosExistentes.has(ct.codigo));
+        if (faltantes.length === 0) {
+          return c.json({ message: 'El catálogo ya está completo y actualizado', total: existentes.length });
+        }
+        const nuevas = faltantes.map(toSafeRow);
+        const { error: syncErr } = await db.from('cuentas_contables').insert(nuevas);
+        if (syncErr) throw new Error(`Error al sincronizar: ${syncErr.message} | ${syncErr.details}`);
+        return c.json({
+          message: `Plan Contable sincronizado: ${faltantes.length} cuenta(s) agregada(s)`,
+          agregadas: faltantes.map((f) => f.codigo),
+          total: existentes.length + faltantes.length,
+        });
+      }
+
+      // Inicialización completa — upsert por (empresa_id, codigo) para evitar duplicados
+      const cuentas = PLAN_CONTABLE_ECUADOR.map(toSafeRow);
+      const { error: insErr } = await db
+        .from('cuentas_contables')
+        .upsert(cuentas, { onConflict: 'empresa_id,codigo' });
+      if (insErr) throw new Error(`Error al inicializar: ${insErr.message} | ${insErr.details}`);
       return c.json({ message: 'Plan Contable NEC Ecuador inicializado', total: cuentas.length });
     } catch (e: any) {
+      console.error('[Contabilidad] inicializar error:', e?.message);
       return c.json({ error: e.message }, 500);
     }
   });
@@ -302,17 +341,36 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
   app.get("/server/contabilidad/asientos", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
-      const { fecha_inicio, fecha_fin, estado, tipo } = c.req.query() as any;
-      let asientos = await obtenerAsientos(auth.empresaId);
-      if (fecha_inicio) asientos = asientos.filter((a: any) => a.fecha >= fecha_inicio);
-      if (fecha_fin) asientos = asientos.filter((a: any) => a.fecha <= fecha_fin);
-      if (estado) asientos = asientos.filter((a: any) => a.estado === estado);
-      if (tipo) asientos = asientos.filter((a: any) => a.tipo === tipo);
-      asientos.sort((a: any, b: any) => {
-        const fc = b.fecha.localeCompare(a.fecha);
-        return fc !== 0 ? fc : (b.numero || '').localeCompare(a.numero || '');
+      const db = getDB();
+      const { fecha_inicio, fecha_fin, estado, tipo, page = '1', limit = '50' } = c.req.query() as any;
+
+      const pageNum  = Math.max(1, parseInt(page)  || 1);
+      const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 50));
+      const from = (pageNum - 1) * limitNum;
+      const to   = from + limitNum - 1;
+
+      let q = db.from('asientos_contables')
+        .select('*', { count: 'exact' })
+        .eq('empresa_id', auth.empresaId)
+        .order('fecha',  { ascending: false })
+        .order('numero', { ascending: false })
+        .range(from, to);
+
+      if (fecha_inicio) q = q.gte('fecha', fecha_inicio);
+      if (fecha_fin)    q = q.lte('fecha', fecha_fin);
+      if (estado)       q = q.eq('estado', estado);
+      if (tipo)         q = q.eq('tipo', tipo);
+
+      const { data, error, count } = await q;
+      if (error) throw error;
+
+      return c.json({
+        asientos: data || [],
+        total:    count || 0,
+        page:     pageNum,
+        limit:    limitNum,
+        pages:    Math.ceil((count || 0) / limitNum),
       });
-      return c.json({ asientos });
     } catch (e: any) {
       return c.json({ error: e.message }, 500);
     }

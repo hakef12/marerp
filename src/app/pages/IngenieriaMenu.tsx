@@ -152,15 +152,15 @@ export default function IngenieriaMenu() {
     : matriz.filter(p => p.categoria_boston === categoriaFiltro);
 
   return (
-    <div className="p-6 space-y-6 bg-gradient-to-br from-[#0A1A2F] via-[#0F2640] to-[#1a3a52] min-h-screen">
+    <div className="p-6 space-y-6 bg-white min-h-screen">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <ChefHat className="w-8 h-8 text-[#00E5FF]" />
+          <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+            <ChefHat className="w-8 h-8 text-[#F97316]" />
             Ingeniería de Menú
           </h1>
-          <p className="text-gray-400 mt-1">
+          <p className="text-gray-600 mt-1">
             Análisis estratégico de rentabilidad y popularidad (Matriz Boston)
           </p>
         </div>
@@ -206,7 +206,7 @@ export default function IngenieriaMenu() {
           <select
             value={periodoAnterior}
             onChange={(e) => setPeriodoAnterior(Number(e.target.value))}
-            className="px-4 py-2 bg-[#0A1A2F] border border-[#00E5FF]/30 rounded-lg text-white"
+            className="px-4 py-2 bg-white border border-[#F97316]/30 rounded-lg text-gray-900"
           >
             <option value={7}>Últimos 7 días</option>
             <option value={30}>Últimos 30 días</option>
@@ -215,7 +215,7 @@ export default function IngenieriaMenu() {
           <Button
             onClick={cargarMatriz}
             disabled={isLoading}
-            className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]"
+            className="bg-gradient-to-r from-[#C2410C] to-[#F97316]"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             Actualizar
@@ -226,55 +226,55 @@ export default function IngenieriaMenu() {
       {/* Métricas Generales */}
       {metricas && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="bg-[#0A1A2F]/80 border-green-500/30">
+          <Card className="bg-white border-green-500/30">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm text-gray-400 flex items-center gap-2">
+              <CardTitle className="text-sm text-gray-600 flex items-center gap-2">
                 <Star className="w-4 h-4 text-green-400" fill="currentColor" />
                 Estrellas
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-green-400">{metricas.estrellas}</p>
-              <p className="text-xs text-gray-500 mt-1">Alta popularidad, Alta rentabilidad</p>
+              <p className="text-xs text-gray-600 mt-1">Alta popularidad, Alta rentabilidad</p>
             </CardContent>
           </Card>
 
-          <Card className="bg-[#0A1A2F]/80 border-orange-500/30">
+          <Card className="bg-white border-orange-500/30">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm text-gray-400 flex items-center gap-2">
+              <CardTitle className="text-sm text-gray-600 flex items-center gap-2">
                 <Zap className="w-4 h-4 text-orange-400" />
                 Caballos de Batalla
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-orange-400">{metricas.caballos_batalla}</p>
-              <p className="text-xs text-gray-500 mt-1">Alta popularidad, Baja rentabilidad</p>
+              <p className="text-xs text-gray-600 mt-1">Alta popularidad, Baja rentabilidad</p>
             </CardContent>
           </Card>
 
-          <Card className="bg-[#0A1A2F]/80 border-blue-500/30">
+          <Card className="bg-white border-blue-500/30">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm text-gray-400 flex items-center gap-2">
+              <CardTitle className="text-sm text-gray-600 flex items-center gap-2">
                 <HelpCircle className="w-4 h-4 text-blue-400" />
                 Enigmas
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-blue-400">{metricas.enigmas}</p>
-              <p className="text-xs text-gray-500 mt-1">Baja popularidad, Alta rentabilidad</p>
+              <p className="text-xs text-gray-600 mt-1">Baja popularidad, Alta rentabilidad</p>
             </CardContent>
           </Card>
 
-          <Card className="bg-[#0A1A2F]/80 border-red-500/30">
+          <Card className="bg-white border-red-500/30">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm text-gray-400 flex items-center gap-2">
+              <CardTitle className="text-sm text-gray-600 flex items-center gap-2">
                 <XCircle className="w-4 h-4 text-red-400" />
                 Perros
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-red-400">{metricas.perros}</p>
-              <p className="text-xs text-gray-500 mt-1">Baja popularidad, Baja rentabilidad</p>
+              <p className="text-xs text-gray-600 mt-1">Baja popularidad, Baja rentabilidad</p>
             </CardContent>
           </Card>
         </div>
@@ -282,13 +282,13 @@ export default function IngenieriaMenu() {
 
       {/* Alertas de Costos */}
       {alertas.length > 0 && (
-        <Card className="bg-[#0A1A2F]/80 border-red-500/50">
+        <Card className="bg-white border-red-500/50">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
+            <CardTitle className="text-gray-900 flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-400" />
               Alertas de Variación de Costos ({alertas.length})
             </CardTitle>
-            <CardDescription className="text-gray-400">
+            <CardDescription className="text-gray-600">
               Platos con costos superiores al 40% del precio de venta
             </CardDescription>
           </CardHeader>
@@ -305,9 +305,9 @@ export default function IngenieriaMenu() {
                 >
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="font-semibold text-white">{alerta.plato}</p>
-                      <p className="text-sm text-gray-400 mt-1">{alerta.mensaje}</p>
-                      <p className="text-xs text-gray-500 mt-2">
+                      <p className="font-semibold text-gray-900">{alerta.plato}</p>
+                      <p className="text-sm text-gray-600 mt-1">{alerta.mensaje}</p>
+                      <p className="text-xs text-gray-600 mt-2">
                         💡 {alerta.recomendacion}
                       </p>
                     </div>
@@ -327,7 +327,7 @@ export default function IngenieriaMenu() {
 
       {/* Tabs: Matriz y Análisis */}
       <Tabs defaultValue="matriz" className="w-full">
-        <TabsList className="bg-[#0A1A2F]/50 border border-[#00E5FF]/20">
+        <TabsList className="bg-white border border-[#F97316]/20">
           <TabsTrigger value="matriz">Matriz Boston</TabsTrigger>
           <TabsTrigger value="detalles">Análisis Detallado</TabsTrigger>
         </TabsList>
@@ -339,7 +339,7 @@ export default function IngenieriaMenu() {
             <Button
               variant={categoriaFiltro === 'todas' ? 'default' : 'outline'}
               onClick={() => setCategoriaFiltro('todas')}
-              className={categoriaFiltro === 'todas' ? 'bg-[#00E5FF]' : ''}
+              className={categoriaFiltro === 'todas' ? 'bg-[#F97316]' : ''}
             >
               Todos ({matriz.length})
             </Button>
@@ -382,13 +382,13 @@ export default function IngenieriaMenu() {
             {matrizFiltrada.map((plato) => (
               <Card
                 key={plato.plato_id}
-                className="bg-[#0A1A2F]/80 hover:bg-[#0A1A2F] transition-all"
+                className="bg-white hover:bg-white transition-all"
                 style={{ borderColor: plato.color + '40' }}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <CardTitle className="text-white text-lg flex items-center gap-2">
+                      <CardTitle className="text-gray-900 text-lg flex items-center gap-2">
                         {getIconoCategoria(plato.categoria_boston)}
                         {plato.nombre}
                       </CardTitle>
@@ -408,33 +408,33 @@ export default function IngenieriaMenu() {
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <p className="text-gray-400">Ventas</p>
-                      <p className="text-white font-semibold">{plato.cantidad_vendida} uds</p>
+                      <p className="text-gray-600">Ventas</p>
+                      <p className="text-gray-900 font-semibold">{plato.cantidad_vendida} uds</p>
                     </div>
                     <div>
-                      <p className="text-gray-400">Ingresos</p>
-                      <p className="text-white font-semibold">${plato.ingresos_totales.toFixed(2)}</p>
+                      <p className="text-gray-600">Ingresos</p>
+                      <p className="text-gray-900 font-semibold">${plato.ingresos_totales.toFixed(2)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-400">Precio</p>
-                      <p className="text-white font-semibold">${plato.precio.toFixed(2)}</p>
+                      <p className="text-gray-600">Precio</p>
+                      <p className="text-gray-900 font-semibold">${plato.precio.toFixed(2)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-400">Costo</p>
-                      <p className="text-white font-semibold">${plato.costo_unitario.toFixed(2)}</p>
+                      <p className="text-gray-600">Costo</p>
+                      <p className="text-gray-900 font-semibold">${plato.costo_unitario.toFixed(2)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-400">Margen Unit.</p>
+                      <p className="text-gray-600">Margen Unit.</p>
                       <p className="text-green-400 font-semibold">${plato.margen_contribucion.toFixed(2)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-400">Margen %</p>
+                      <p className="text-gray-600">Margen %</p>
                       <p className="text-green-400 font-semibold">{plato.porcentaje_margen.toFixed(1)}%</p>
                     </div>
                   </div>
 
                   <div className="pt-3 border-t border-gray-700">
-                    <p className="text-xs text-gray-400 leading-relaxed">
+                    <p className="text-xs text-gray-600 leading-relaxed">
                       {plato.recomendacion}
                     </p>
                   </div>
@@ -453,9 +453,19 @@ export default function IngenieriaMenu() {
           </div>
 
           {matrizFiltrada.length === 0 && (
-            <Card className="bg-[#0A1A2F]/80">
-              <CardContent className="py-12 text-center">
-                <p className="text-gray-400">No hay platos en esta categoría</p>
+            <Card className="bg-white border-[#F97316]/20">
+              <CardContent className="py-12 text-center space-y-3">
+                <ChefHat className="w-12 h-12 text-gray-300 mx-auto" />
+                {matriz.length === 0 ? (
+                  <>
+                    <p className="text-gray-900 font-semibold">No hay recetas registradas</p>
+                    <p className="text-gray-600 text-sm">
+                      Crea recetas en <strong>Cocina → Fichas Técnicas</strong> con su precio de venta para ver el análisis BCG aquí.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-gray-600">No hay platos en esta categoría para el período seleccionado</p>
+                )}
               </CardContent>
             </Card>
           )}
@@ -463,10 +473,10 @@ export default function IngenieriaMenu() {
 
         {/* Análisis Detallado */}
         <TabsContent value="detalles" className="space-y-4">
-          <Card className="bg-[#0A1A2F]/80">
+          <Card className="bg-white">
             <CardHeader>
-              <CardTitle className="text-white">Resumen Financiero</CardTitle>
-              <CardDescription className="text-gray-400">
+              <CardTitle className="text-gray-900">Resumen Financiero</CardTitle>
+              <CardDescription className="text-gray-600">
                 Período: {metricas?.periodo.inicio.split('T')[0]} a {metricas?.periodo.fin.split('T')[0]}
               </CardDescription>
             </CardHeader>
@@ -474,17 +484,17 @@ export default function IngenieriaMenu() {
               {metricas && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
-                    <p className="text-gray-400 mb-2">Total Ventas (unidades)</p>
-                    <p className="text-3xl font-bold text-white">{metricas.total_ventas}</p>
+                    <p className="text-gray-600 mb-2">Total Ventas (unidades)</p>
+                    <p className="text-3xl font-bold text-gray-900">{metricas.total_ventas}</p>
                   </div>
                   <div>
-                    <p className="text-gray-400 mb-2">Total Ingresos</p>
-                    <p className="text-3xl font-bold text-[#00E5FF]">${metricas.total_ingresos.toFixed(2)}</p>
+                    <p className="text-gray-600 mb-2">Total Ingresos</p>
+                    <p className="text-3xl font-bold text-[#F97316]">${metricas.total_ingresos.toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-400 mb-2">Margen Total</p>
+                    <p className="text-gray-600 mb-2">Margen Total</p>
                     <p className="text-3xl font-bold text-green-400">${metricas.total_margen.toFixed(2)}</p>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-gray-600 mt-1">
                       {metricas.promedio_margen_porcentaje}% promedio
                     </p>
                   </div>
@@ -494,10 +504,10 @@ export default function IngenieriaMenu() {
           </Card>
 
           {/* Guía de Acción */}
-          <Card className="bg-[#0A1A2F]/80">
+          <Card className="bg-white">
             <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
-                <FileText className="w-5 h-5 text-[#00E5FF]" />
+              <CardTitle className="text-gray-900 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-[#F97316]" />
                 Guía de Acción Estratégica
               </CardTitle>
             </CardHeader>
@@ -507,7 +517,7 @@ export default function IngenieriaMenu() {
                   <Star className="w-5 h-5 text-green-400 flex-shrink-0 mt-1" fill="currentColor" />
                   <div>
                     <p className="font-semibold text-green-400">Estrellas (Stars)</p>
-                    <p className="text-sm text-gray-300 mt-1">
+                    <p className="text-sm text-gray-600 mt-1">
                       ✅ <strong>Mantener:</strong> Ubicar en zonas destacadas del menú físico y digital<br />
                       ✅ Asegurar calidad consistente y disponibilidad de ingredientes<br />
                       ✅ Considerar aumentar precios gradualmente (tienen demanda establecida)
@@ -519,7 +529,7 @@ export default function IngenieriaMenu() {
                   <Zap className="w-5 h-5 text-orange-400 flex-shrink-0 mt-1" />
                   <div>
                     <p className="font-semibold text-orange-400">Caballos de Batalla (Plowhorses)</p>
-                    <p className="text-sm text-gray-300 mt-1">
+                    <p className="text-sm text-gray-600 mt-1">
                       🔧 <strong>Reingeniería:</strong> Revisar porciones para reducir costos<br />
                       🔧 Buscar proveedores alternativos más económicos<br />
                       🔧 Considerar ajuste de precio (+5-10%) o reformular receta
@@ -531,7 +541,7 @@ export default function IngenieriaMenu() {
                   <HelpCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-1" />
                   <div>
                     <p className="font-semibold text-blue-400">Enigmas (Puzzles)</p>
-                    <p className="text-sm text-gray-300 mt-1">
+                    <p className="text-sm text-gray-600 mt-1">
                       📣 <strong>Promocionar:</strong> Usar CRM para enviar cupones de descuento<br />
                       📣 Capacitar al personal para sugerir activamente estos platos<br />
                       📣 Colocar en posiciones estratégicas del menú (primero o último)
@@ -543,7 +553,7 @@ export default function IngenieriaMenu() {
                   <XCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-1" />
                   <div>
                     <p className="font-semibold text-red-400">Perros (Dogs)</p>
-                    <p className="text-sm text-gray-300 mt-1">
+                    <p className="text-sm text-gray-600 mt-1">
                       ❌ <strong>Evaluar Eliminación:</strong> Considerar reemplazar del menú<br />
                       ❌ Liberar espacio en inventario para productos más rentables<br />
                       ❌ Si se mantiene, promover agresivamente o discontinuar

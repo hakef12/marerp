@@ -54,7 +54,7 @@ const PLANES = [
 
 function getPlanBadge(planTipo: string) {
   const plan = PLANES.find(p => p.codigo === planTipo);
-  return plan ? plan.badge : 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+  return plan ? plan.badge : 'bg-gray-500/20 text-gray-600 border-gray-500/30';
 }
 
 function getPlanNombre(planTipo: string) {
@@ -124,17 +124,17 @@ function GestionModal({ empresa, onClose, onSave, token, projectId }: GestionMod
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-[#0A1A2F] border border-[#00E5FF]/30 rounded-2xl w-full max-w-lg shadow-2xl shadow-[#00E5FF]/10">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+      <div className="bg-white border border-[#F97316]/30 rounded-2xl w-full max-w-lg shadow-2xl shadow-[#F97316]/10">
         {/* Header */}
-        <div className="p-6 border-b border-[#00E5FF]/20">
+        <div className="p-6 border-b border-[#F97316]/20">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#7B61FF] to-[#00E5FF] flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FB923C] to-[#F97316] flex items-center justify-center">
+              <Building2 className="w-5 h-5 text-gray-900" />
             </div>
             <div>
-              <h2 className="text-white font-bold text-lg">{empresa.nombre}</h2>
-              <p className="text-gray-400 text-sm">RUC: {empresa.ruc_nit}</p>
+              <h2 className="text-gray-900 font-bold text-lg">{empresa.nombre}</h2>
+              <p className="text-gray-600 text-sm">RUC: {empresa.ruc_nit}</p>
             </div>
           </div>
         </div>
@@ -143,7 +143,7 @@ function GestionModal({ empresa, onClose, onSave, token, projectId }: GestionMod
         <div className="p-6 space-y-6">
           {/* Selector de plan */}
           <div>
-            <Label className="text-gray-300 mb-3 block">Plan de Suscripción</Label>
+            <Label className="text-gray-600 mb-3 block">Plan de Suscripción</Label>
             <div className="grid grid-cols-2 gap-3">
               {PLANES.map((plan) => {
                 const Icon = plan.icon;
@@ -154,19 +154,19 @@ function GestionModal({ empresa, onClose, onSave, token, projectId }: GestionMod
                     onClick={() => setPlanSeleccionado(plan.codigo)}
                     className={`relative p-4 rounded-xl border-2 text-left transition-all ${
                       isSelected
-                        ? 'border-[#00E5FF] bg-[#00E5FF]/10 scale-[1.02]'
-                        : 'border-white/10 bg-white/5 hover:border-white/20'
+                        ? 'border-[#F97316] bg-[#F97316]/10 scale-[1.02]'
+                        : 'border-gray-100 bg-gray-50 hover:border-gray-200'
                     }`}
                   >
                     {isSelected && (
-                      <CheckCircle className="absolute top-2 right-2 w-4 h-4 text-[#00E5FF]" />
+                      <CheckCircle className="absolute top-2 right-2 w-4 h-4 text-[#F97316]" />
                     )}
                     <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${plan.color} flex items-center justify-center mb-2`}>
-                      <Icon className="w-4 h-4 text-white" />
+                      <Icon className="w-4 h-4 text-gray-900" />
                     </div>
-                    <p className="text-white font-semibold text-sm">{plan.nombre}</p>
-                    <p className="text-gray-400 text-xs">{plan.modulos}</p>
-                    <p className="text-[#00E5FF] font-bold text-sm mt-1">${plan.precio}/mes</p>
+                    <p className="text-gray-900 font-semibold text-sm">{plan.nombre}</p>
+                    <p className="text-gray-600 text-xs">{plan.modulos}</p>
+                    <p className="text-[#F97316] font-bold text-sm mt-1">${plan.precio}/mes</p>
                   </button>
                 );
               })}
@@ -175,7 +175,7 @@ function GestionModal({ empresa, onClose, onSave, token, projectId }: GestionMod
 
           {/* Fecha de expiración */}
           <div>
-            <Label htmlFor="fecha-exp" className="text-gray-300 mb-2 block flex items-center gap-2">
+            <Label htmlFor="fecha-exp" className="text-gray-600 mb-2 block flex items-center gap-2">
               <Calendar className="w-4 h-4" /> Fecha de expiración del plan
             </Label>
             <Input
@@ -183,24 +183,24 @@ function GestionModal({ empresa, onClose, onSave, token, projectId }: GestionMod
               type="date"
               value={fechaExpiracion}
               onChange={(e) => setFechaExpiracion(e.target.value)}
-              className="bg-white/5 border-[#00E5FF]/20 text-white"
+              className="bg-gray-50 border-[#F97316]/20 text-gray-900"
             />
           </div>
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-[#00E5FF]/20 flex gap-3">
+        <div className="p-6 border-t border-[#F97316]/20 flex gap-3">
           <Button
             variant="outline"
             onClick={onClose}
-            className="flex-1 border-gray-600 text-gray-400 hover:bg-white/5"
+            className="flex-1 border-gray-600 text-gray-600 hover:bg-gray-50"
           >
             Cancelar
           </Button>
           <Button
             onClick={guardar}
             disabled={loading}
-            className="flex-1 bg-gradient-to-r from-[#7B61FF] to-[#00E5FF] text-white hover:opacity-90"
+            className="flex-1 bg-gradient-to-r from-[#FB923C] to-[#F97316] text-white hover:opacity-90"
           >
             {loading ? 'Guardando...' : 'Guardar cambios'}
           </Button>
@@ -257,6 +257,16 @@ export default function SuperAdmin() {
       setResultadoReparacion({ tipo: 'inspeccion', data });
     } catch (e: any) {
       toast.error('Error al inspeccionar KV: ' + e.message);
+    } finally { setReparando(null); }
+  };
+
+  const ejecutarColumnasSql = async (eid: string) => {
+    setReparando('columnas-' + eid);
+    try {
+      const data = await callAdmin(projectId, `/admin/columnas-sql`);
+      setResultadoReparacion({ tipo: 'columnas_sql', data });
+    } catch (e: any) {
+      toast.error('Error al consultar columnas SQL: ' + e.message);
     } finally { setReparando(null); }
   };
 
@@ -351,11 +361,11 @@ export default function SuperAdmin() {
   if (user?.rol !== 'super_admin') {
     return (
       <div className="flex items-center justify-center h-full">
-        <Card className="bg-[#0A1A2F]/80 border-red-500/30 max-w-md">
+        <Card className="bg-white border-red-500/30 max-w-md">
           <CardContent className="p-12 text-center">
             <Shield className="w-16 h-16 text-red-400 mx-auto mb-4" />
-            <h2 className="text-white text-2xl font-bold mb-2">Acceso Denegado</h2>
-            <p className="text-gray-400">Solo Super Administradores pueden acceder a este módulo</p>
+            <h2 className="text-gray-900 text-2xl font-bold mb-2">Acceso Denegado</h2>
+            <p className="text-gray-600">Solo Super Administradores pueden acceder a este módulo</p>
           </CardContent>
         </Card>
       </div>
@@ -367,16 +377,16 @@ export default function SuperAdmin() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-1 flex items-center gap-3">
-            <Settings className="w-8 h-8 text-[#7B61FF]" />
+          <h1 className="text-3xl font-bold text-gray-900 mb-1 flex items-center gap-3">
+            <Settings className="w-8 h-8 text-[#FB923C]" />
             Panel Super Administrador
           </h1>
-          <p className="text-gray-400">Gestión global de empresas y planes</p>
+          <p className="text-gray-600">Gestión global de empresas y planes</p>
         </div>
         <Button
           onClick={() => fetchEmpresas(projectId)}
           variant="outline"
-          className="border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10 gap-2"
+          className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10 gap-2"
         >
           <RefreshCw className="w-4 h-4" /> Actualizar
         </Button>
@@ -384,14 +394,14 @@ export default function SuperAdmin() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-br from-[#7B61FF]/20 to-[#00E5FF]/20 border-[#7B61FF]/30">
+        <Card className="bg-gradient-to-br from-[#FB923C]/20 to-[#F97316]/20 border-[#FB923C]/30">
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-[#7B61FF]/20 flex items-center justify-center">
-              <Building2 className="w-6 h-6 text-[#7B61FF]" />
+            <div className="w-12 h-12 rounded-xl bg-[#FB923C]/20 flex items-center justify-center">
+              <Building2 className="w-6 h-6 text-[#FB923C]" />
             </div>
             <div>
-              <p className="text-gray-400 text-xs">Total Empresas</p>
-              <p className="text-2xl font-bold text-white">{stats?.total_empresas ?? '—'}</p>
+              <p className="text-gray-600 text-xs">Total Empresas</p>
+              <p className="text-2xl font-bold text-gray-900">{stats?.total_empresas ?? '—'}</p>
             </div>
           </CardContent>
         </Card>
@@ -401,7 +411,7 @@ export default function SuperAdmin() {
               <Activity className="w-6 h-6 text-green-400" />
             </div>
             <div>
-              <p className="text-gray-400 text-xs">Activas</p>
+              <p className="text-gray-600 text-xs">Activas</p>
               <p className="text-2xl font-bold text-green-400">{stats?.empresas_activas ?? '—'}</p>
             </div>
           </CardContent>
@@ -412,19 +422,19 @@ export default function SuperAdmin() {
               <XCircle className="w-6 h-6 text-orange-400" />
             </div>
             <div>
-              <p className="text-gray-400 text-xs">Suspendidas</p>
+              <p className="text-gray-600 text-xs">Suspendidas</p>
               <p className="text-2xl font-bold text-orange-400">{stats?.empresas_suspendidas ?? '—'}</p>
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-[#00E5FF]/20 to-blue-500/20 border-[#00E5FF]/30">
+        <Card className="bg-gradient-to-br from-[#F97316]/20 to-blue-500/20 border-[#F97316]/30">
           <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-[#00E5FF]/20 flex items-center justify-center">
-              <Users className="w-6 h-6 text-[#00E5FF]" />
+            <div className="w-12 h-12 rounded-xl bg-[#F97316]/20 flex items-center justify-center">
+              <Users className="w-6 h-6 text-[#F97316]" />
             </div>
             <div>
-              <p className="text-gray-400 text-xs">Total Usuarios</p>
-              <p className="text-2xl font-bold text-white">{stats?.total_usuarios ?? '—'}</p>
+              <p className="text-gray-600 text-xs">Total Usuarios</p>
+              <p className="text-2xl font-bold text-gray-900">{stats?.total_usuarios ?? '—'}</p>
             </div>
           </CardContent>
         </Card>
@@ -437,14 +447,14 @@ export default function SuperAdmin() {
             const count = stats.por_plan[plan.codigo] || 0;
             const Icon = plan.icon;
             return (
-              <Card key={plan.codigo} className="bg-[#0A1A2F]/60 border-white/10">
+              <Card key={plan.codigo} className="bg-white border-gray-100">
                 <CardContent className="p-3 flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${plan.color} flex items-center justify-center flex-shrink-0`}>
-                    <Icon className="w-4 h-4 text-white" />
+                    <Icon className="w-4 h-4 text-gray-900" />
                   </div>
                   <div>
-                    <p className="text-gray-400 text-xs">{plan.nombre}</p>
-                    <p className="text-white font-bold">{count} empresa{count !== 1 ? 's' : ''}</p>
+                    <p className="text-gray-600 text-xs">{plan.nombre}</p>
+                    <p className="text-gray-900 font-bold">{count} empresa{count !== 1 ? 's' : ''}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -454,42 +464,42 @@ export default function SuperAdmin() {
       )}
 
       {/* Tabla de empresas */}
-      <Card className="bg-[#0A1A2F]/60 border-[#00E5FF]/20">
+      <Card className="bg-white border-[#F97316]/20">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-[#00E5FF]" />
+          <CardTitle className="text-gray-900 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-[#F97316]" />
             Gestión de Empresas
           </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-12 text-gray-400">Cargando empresas...</div>
+            <div className="text-center py-12 text-gray-600">Cargando empresas...</div>
           ) : empresas.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">No hay empresas registradas</div>
+            <div className="text-center py-12 text-gray-600">No hay empresas registradas</div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="border-[#00E5FF]/20 hover:bg-transparent">
-                    <TableHead className="text-gray-400">Empresa</TableHead>
-                    <TableHead className="text-gray-400">RUC / NIT</TableHead>
-                    <TableHead className="text-gray-400">Plan</TableHead>
-                    <TableHead className="text-gray-400">Estado</TableHead>
-                    <TableHead className="text-gray-400">Registro</TableHead>
-                    <TableHead className="text-gray-400">Expiración</TableHead>
-                    <TableHead className="text-gray-400 text-right">Acciones</TableHead>
+                  <TableRow className="border-[#F97316]/20 hover:bg-transparent">
+                    <TableHead className="text-gray-600">Empresa</TableHead>
+                    <TableHead className="text-gray-600">RUC / NIT</TableHead>
+                    <TableHead className="text-gray-600">Plan</TableHead>
+                    <TableHead className="text-gray-600">Estado</TableHead>
+                    <TableHead className="text-gray-600">Registro</TableHead>
+                    <TableHead className="text-gray-600">Expiración</TableHead>
+                    <TableHead className="text-gray-600 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {empresas.map((empresa) => (
-                    <TableRow key={empresa.id} className="border-[#00E5FF]/10 hover:bg-white/5">
+                    <TableRow key={empresa.id} className="border-[#F97316]/10 hover:bg-gray-50">
                       <TableCell>
                         <div>
-                          <p className="text-white font-medium">{empresa.nombre}</p>
-                          <p className="text-gray-500 text-xs">{empresa.email}</p>
+                          <p className="text-gray-900 font-medium">{empresa.nombre}</p>
+                          <p className="text-gray-600 text-xs">{empresa.email}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="text-gray-400 font-mono text-sm">{empresa.ruc_nit}</TableCell>
+                      <TableCell className="text-gray-600 font-mono text-sm">{empresa.ruc_nit}</TableCell>
                       <TableCell>
                         <Badge className={`capitalize ${getPlanBadge(empresa.plan_tipo)}`}>
                           {getPlanNombre(empresa.plan_tipo)}
@@ -506,7 +516,7 @@ export default function SuperAdmin() {
                           {empresa.estado === 'activo' ? '● Activa' : '● Suspendida'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-gray-400 text-sm">
+                      <TableCell className="text-gray-600 text-sm">
                         {new Date(empresa.fecha_registro).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-sm">
@@ -514,7 +524,7 @@ export default function SuperAdmin() {
                           <span className={
                             new Date(empresa.fecha_expiracion) < new Date()
                               ? 'text-red-400'
-                              : 'text-gray-400'
+                              : 'text-gray-600'
                           }>
                             {new Date(empresa.fecha_expiracion).toLocaleDateString()}
                           </span>
@@ -528,7 +538,7 @@ export default function SuperAdmin() {
                           <Button
                             size="sm"
                             onClick={() => setEmpresaSeleccionada(empresa)}
-                            className="bg-[#7B61FF]/20 text-[#7B61FF] border border-[#7B61FF]/30 hover:bg-[#7B61FF]/30 text-xs"
+                            className="bg-[#FB923C]/20 text-[#FB923C] border border-[#FB923C]/30 hover:bg-[#FB923C]/30 text-xs"
                           >
                             Gestionar
                           </Button>
@@ -569,7 +579,7 @@ export default function SuperAdmin() {
           <CardTitle className="text-red-400 flex items-center gap-2">
             🛠️ Herramientas de Recuperación de Datos
           </CardTitle>
-          <p className="text-gray-400 text-sm">
+          <p className="text-gray-600 text-sm">
             Los datos originales en KV están intactos. Restauración completa: productos, recetas, ventas, compras, clientes, proveedores y bodegas.
           </p>
         </CardHeader>
@@ -579,11 +589,11 @@ export default function SuperAdmin() {
             <Button
               onClick={ejecutarDiagnostico}
               disabled={!!reparando || !projectId}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-gray-900"
             >
               {reparando === 'diagnostico' ? '⏳ Analizando...' : '🔍 Paso 1: Diagnóstico'}
             </Button>
-            <span className="text-gray-400 text-xs">Detecta qué empresas tienen datos en KV</span>
+            <span className="text-gray-600 text-xs">Detecta qué empresas tienen datos en KV</span>
           </div>
 
           {/* Paso 2: Por empresa */}
@@ -596,29 +606,37 @@ export default function SuperAdmin() {
                   if (total === 0) return null;
                   const empresaInfo = empresas.find(e => e.id === eid);
                   return (
-                    <div key={eid} className="flex flex-col gap-2 bg-white/5 rounded-lg p-3">
+                    <div key={eid} className="flex flex-col gap-2 bg-gray-50 rounded-lg p-3">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="text-white font-medium text-sm">
-                            {empresaInfo?.nombre || 'Empresa'} — <span className="text-gray-400 text-xs">{eid.substring(0,8)}...</span>
+                          <div className="text-gray-900 font-medium text-sm">
+                            {empresaInfo?.nombre || 'Empresa'} — <span className="text-gray-600 text-xs">{eid.substring(0,8)}...</span>
                           </div>
-                          <div className="text-xs text-gray-400 mt-1">
+                          <div className="text-xs text-gray-600 mt-1">
                             {datos.productos} productos · {datos.recetas} recetas · {datos.ventas} ventas · {datos.compras} compras
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <Button
                             onClick={() => ejecutarInspeccion(eid)}
                             disabled={!!reparando}
-                            className="bg-yellow-700 hover:bg-yellow-800 text-white text-xs"
+                            className="bg-yellow-700 hover:bg-yellow-800 text-gray-900 text-xs"
                             size="sm"
                           >
-                            {reparando === 'inspeccion-' + eid ? '⏳...' : '🔬 Inspeccionar'}
+                            {reparando === 'inspeccion-' + eid ? '⏳...' : '🔬 Inspeccionar KV'}
+                          </Button>
+                          <Button
+                            onClick={() => ejecutarColumnasSql(eid)}
+                            disabled={!!reparando}
+                            className="bg-blue-700 hover:bg-blue-800 text-gray-900 text-xs"
+                            size="sm"
+                          >
+                            {reparando === 'columnas-' + eid ? '⏳...' : '📋 Columnas SQL'}
                           </Button>
                           <Button
                             onClick={() => ejecutarRestaurar(eid)}
                             disabled={!!reparando}
-                            className="bg-green-700 hover:bg-green-800 text-white text-xs"
+                            className="bg-green-700 hover:bg-green-800 text-gray-900 text-xs"
                             size="sm"
                           >
                             {reparando === 'restaurar-' + eid ? '⏳ Restaurando...' : '♻️ Restaurar TODO'}
@@ -634,10 +652,10 @@ export default function SuperAdmin() {
                             if (!info || info.total === 0) return null;
                             return (
                               <div key={tabla} className="bg-black/30 rounded px-2 py-1">
-                                <span className="text-gray-300">{tabla} ({info.total}):</span>{' '}
+                                <span className="text-gray-600">{tabla} ({info.total}):</span>{' '}
                                 <span className="text-green-400">{info.campos_muestra?.join(', ') || '—'}</span>
                                 {info.muestra?.[0] && (
-                                  <div className="text-gray-500 mt-0.5">
+                                  <div className="text-gray-600 mt-0.5">
                                     precio: <span className={info.muestra[0].precio || info.muestra[0].precio_venta ? 'text-green-400' : 'text-red-400'}>
                                       {info.muestra[0].precio_venta ?? info.muestra[0].precio ?? '(vacío)'}
                                     </span>
@@ -659,7 +677,7 @@ export default function SuperAdmin() {
           {/* Resultado */}
           {resultadoReparacion && (
             <div className="bg-black/40 rounded-lg p-4 text-xs font-mono text-green-300 max-h-96 overflow-auto">
-              <div className="text-gray-400 mb-2">
+              <div className="text-gray-600 mb-2">
                 Resultado — {resultadoReparacion.tipo}
                 {resultadoReparacion.empresa ? ` (${resultadoReparacion.empresa.substring(0,8)}...)` : ''}:
               </div>
@@ -672,7 +690,7 @@ export default function SuperAdmin() {
                   ))}
                 </div>
               )}
-              <pre className="text-gray-400 text-[10px]">{JSON.stringify(resultadoReparacion.data, null, 2)}</pre>
+              <pre className="text-gray-600 text-[10px]">{JSON.stringify(resultadoReparacion.data, null, 2)}</pre>
             </div>
           )}
         </CardContent>

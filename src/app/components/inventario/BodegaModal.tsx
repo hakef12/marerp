@@ -121,7 +121,7 @@ export function BodegaModal({ open, onClose, onSuccess, bodega, token }: BodegaM
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white max-w-lg">
+      <DialogContent className="bg-white border-[#F97316]/30 text-gray-900 max-w-lg">
         <DialogHeader>
           <DialogTitle>{bodega ? 'Editar Bodega' : 'Nueva Bodega'}</DialogTitle>
           <DialogDescription>
@@ -136,7 +136,7 @@ export function BodegaModal({ open, onClose, onSuccess, bodega, token }: BodegaM
               <Input
                 value={formData.codigo}
                 onChange={(e) => setFormData({ ...formData, codigo: e.target.value })}
-                className="bg-white/5 border-[#00E5FF]/20 text-white"
+                className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 placeholder="Ej: BOD001"
                 required
               />
@@ -145,10 +145,10 @@ export function BodegaModal({ open, onClose, onSuccess, bodega, token }: BodegaM
             <div className="space-y-2">
               <Label>Tipo</Label>
               <Select value={formData.tipo} onValueChange={(value) => setFormData({ ...formData, tipo: value })}>
-                <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+                <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                <SelectContent className="bg-white border-[#F97316]/30">
                   <SelectItem value="principal">Principal</SelectItem>
                   <SelectItem value="sucursal">Sucursal</SelectItem>
                   <SelectItem value="cocina">Cocina</SelectItem>
@@ -163,7 +163,7 @@ export function BodegaModal({ open, onClose, onSuccess, bodega, token }: BodegaM
             <Input
               value={formData.nombre}
               onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-              className="bg-white/5 border-[#00E5FF]/20 text-white"
+              className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               placeholder="Ej: Bodega Central"
               required
             />
@@ -174,7 +174,7 @@ export function BodegaModal({ open, onClose, onSuccess, bodega, token }: BodegaM
             <Textarea
               value={formData.direccion}
               onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
-              className="bg-white/5 border-[#00E5FF]/20 text-white"
+              className="bg-gray-50 border-[#F97316]/20 text-gray-900"
               placeholder="Dirección de la bodega"
               rows={2}
             />
@@ -195,7 +195,7 @@ export function BodegaModal({ open, onClose, onSuccess, bodega, token }: BodegaM
             <Button 
               type="submit" 
               disabled={isSubmitting}
-              className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]"
+              className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316]"
             >
               {isSubmitting ? 'Guardando...' : bodega ? 'Actualizar' : 'Crear Bodega'}
             </Button>

@@ -478,11 +478,11 @@ export default function TalentoHumano() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
-            <Users className="w-8 h-8 text-[#00E5FF]" />
+          <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
+            <Users className="w-8 h-8 text-[#F97316]" />
             Talento Humano
           </h1>
-          <p className="text-gray-400">Gestión integral de recursos humanos</p>
+          <p className="text-gray-600">Gestión integral de recursos humanos</p>
         </div>
         <ExportButtons
           variant="compact"
@@ -517,63 +517,63 @@ export default function TalentoHumano() {
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Empleados Activos</CardTitle>
-            <Users className="w-5 h-5 text-[#00E5FF]" />
+            <CardTitle className="text-sm font-medium text-gray-600">Empleados Activos</CardTitle>
+            <Users className="w-5 h-5 text-[#F97316]" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">{metricas?.empleados_activos || 0}</div>
-            <p className="text-xs text-gray-400">Total en nómina</p>
+            <div className="text-3xl font-bold text-gray-900">{metricas?.empleados_activos || 0}</div>
+            <p className="text-xs text-gray-600">Total en nómina</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Salario Promedio</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Salario Promedio</CardTitle>
             <DollarSign className="w-5 h-5 text-green-400" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-400">
               ${metricas?.salario_promedio ? metricas.salario_promedio.toFixed(0) : '0'}
             </div>
-            <p className="text-xs text-gray-400">Por empleado</p>
+            <p className="text-xs text-gray-600">Por empleado</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Vacantes Abiertas</CardTitle>
-            <Briefcase className="w-5 h-5 text-[#7B61FF]" />
+            <CardTitle className="text-sm font-medium text-gray-600">Vacantes Abiertas</CardTitle>
+            <Briefcase className="w-5 h-5 text-[#FB923C]" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">{metricas?.vacantes_abiertas || 0}</div>
-            <p className="text-xs text-gray-400">En reclutamiento</p>
+            <div className="text-3xl font-bold text-gray-900">{metricas?.vacantes_abiertas || 0}</div>
+            <p className="text-xs text-gray-600">En reclutamiento</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Clima Laboral</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Clima Laboral</CardTitle>
             <Heart className="w-5 h-5 text-pink-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">
+            <div className="text-3xl font-bold text-gray-900">
               {metricas?.clima_laboral ? (metricas.clima_laboral * 20).toFixed(0) : '0'}%
             </div>
-            <p className="text-xs text-gray-400">Satisfacción</p>
+            <p className="text-xs text-gray-600">Satisfacción</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Tabs de Navegación */}
-      <div className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 rounded-xl shadow-lg border border-[#00E5FF]/20 p-2 flex gap-2 overflow-x-auto">
+      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-lg border border-[#F97316]/20 p-2 flex gap-2 overflow-x-auto">
         <button
           onClick={() => setView('empleados')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'empleados'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <Users className="w-5 h-5" /> Empleados
@@ -582,8 +582,8 @@ export default function TalentoHumano() {
           onClick={() => setView('reclutamiento')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'reclutamiento'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <Briefcase className="w-5 h-5" /> Reclutamiento
@@ -592,8 +592,8 @@ export default function TalentoHumano() {
           onClick={() => setView('evaluaciones')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'evaluaciones'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <Award className="w-5 h-5" /> Evaluaciones
@@ -602,8 +602,8 @@ export default function TalentoHumano() {
           onClick={() => setView('capacitacion')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'capacitacion'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <GraduationCap className="w-5 h-5" /> Capacitación
@@ -612,8 +612,8 @@ export default function TalentoHumano() {
           onClick={() => setView('clima')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'clima'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <Heart className="w-5 h-5" /> Clima Laboral
@@ -622,8 +622,8 @@ export default function TalentoHumano() {
           onClick={() => setView('nomina')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'nomina'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <DollarSign className="w-5 h-5" /> Nómina
@@ -632,16 +632,16 @@ export default function TalentoHumano() {
 
       {/* VISTA: EMPLEADOS */}
       {view === 'empleados' && (
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
             <div className="flex justify-between items-center">
-              <CardTitle className="text-white flex items-center gap-2">
-                <Users className="w-5 h-5 text-[#00E5FF]" />
+              <CardTitle className="text-gray-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-[#F97316]" />
                 Directorio de Empleados
               </CardTitle>
               <Button
                 onClick={() => setShowEmpleadoModal(true)}
-                className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90"
+                className="bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90"
               >
                 <UserPlus className="w-4 h-4 mr-2" />
                 Nuevo Empleado
@@ -652,20 +652,20 @@ export default function TalentoHumano() {
             <div className="overflow-x-auto scroll-top">
               <Table>
                 <TableHeader>
-                  <TableRow className="border-[#00E5FF]/20 hover:bg-transparent">
-                    <TableHead className="text-gray-400">Nombre</TableHead>
-                    <TableHead className="text-gray-400">Email</TableHead>
-                    <TableHead className="text-gray-400">Cargo</TableHead>
-                    <TableHead className="text-gray-400">Departamento</TableHead>
-                    <TableHead className="text-gray-400">Fecha Ingreso</TableHead>
-                    <TableHead className="text-gray-400">Salario</TableHead>
-                    <TableHead className="text-gray-400">Estado</TableHead>
+                  <TableRow className="border-[#F97316]/20 hover:bg-transparent">
+                    <TableHead className="text-gray-600">Nombre</TableHead>
+                    <TableHead className="text-gray-600">Email</TableHead>
+                    <TableHead className="text-gray-600">Cargo</TableHead>
+                    <TableHead className="text-gray-600">Departamento</TableHead>
+                    <TableHead className="text-gray-600">Fecha Ingreso</TableHead>
+                    <TableHead className="text-gray-600">Salario</TableHead>
+                    <TableHead className="text-gray-600">Estado</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {empleados.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-gray-400 py-12">
+                      <TableCell colSpan={7} className="text-center text-gray-600 py-12">
                         <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
                         <p>No hay empleados registrados</p>
                         <p className="text-sm mt-2">Agrega empleados para comenzar</p>
@@ -673,22 +673,22 @@ export default function TalentoHumano() {
                     </TableRow>
                   ) : (
                     empleados.map((empleado) => (
-                      <TableRow key={empleado.id} className="border-[#00E5FF]/10 hover:bg-white/5">
-                        <TableCell className="text-white font-medium">{empleado.nombre_completo}</TableCell>
-                        <TableCell className="text-gray-300">{empleado.email}</TableCell>
-                        <TableCell className="text-gray-400">{empleado.cargo || 'N/A'}</TableCell>
-                        <TableCell className="text-gray-400">{empleado.departamento || 'Sin asignar'}</TableCell>
-                        <TableCell className="text-gray-400">
+                      <TableRow key={empleado.id} className="border-[#F97316]/10 hover:bg-gray-50">
+                        <TableCell className="text-gray-900 font-medium">{empleado.nombre_completo}</TableCell>
+                        <TableCell className="text-gray-600">{empleado.email}</TableCell>
+                        <TableCell className="text-gray-600">{empleado.cargo || 'N/A'}</TableCell>
+                        <TableCell className="text-gray-600">{empleado.departamento || 'Sin asignar'}</TableCell>
+                        <TableCell className="text-gray-600">
                           {new Date(empleado.fecha_ingreso).toLocaleDateString()}
                         </TableCell>
-                        <TableCell className="text-[#00E5FF] font-medium">
+                        <TableCell className="text-[#F97316] font-medium">
                           ${empleado.salario_base ? empleado.salario_base.toLocaleString() : 'N/A'}
                         </TableCell>
                         <TableCell>
                           <Badge className={
                             empleado.estado === 'activo'
                               ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                              : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                              : 'bg-gray-500/20 text-gray-600 border-gray-500/30'
                           }>
                             {empleado.estado}
                           </Badge>
@@ -706,16 +706,16 @@ export default function TalentoHumano() {
       {/* VISTA: RECLUTAMIENTO */}
       {view === 'reclutamiento' && (
         <div className="space-y-6">
-          <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardHeader>
               <div className="flex justify-between items-center">
-                <CardTitle className="text-white flex items-center gap-2">
-                  <Briefcase className="w-5 h-5 text-[#7B61FF]" />
+                <CardTitle className="text-gray-900 flex items-center gap-2">
+                  <Briefcase className="w-5 h-5 text-[#FB923C]" />
                   Vacantes Activas
                 </CardTitle>
                 <Button
                   onClick={() => setShowVacanteModal(true)}
-                  className="bg-gradient-to-r from-[#7B61FF] to-[#9D7FFF] hover:opacity-90"
+                  className="bg-gradient-to-r from-[#FB923C] to-[#FB923C] hover:opacity-90"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Nueva Vacante
@@ -726,29 +726,29 @@ export default function TalentoHumano() {
               {vacantes.length === 0 ? (
                 <div className="text-center py-12">
                   <Briefcase className="w-12 h-12 mx-auto mb-3 opacity-50 text-gray-600" />
-                  <p className="text-gray-400">No hay vacantes publicadas</p>
-                  <p className="text-sm mt-2 text-gray-500">Crea una vacante para comenzar el reclutamiento</p>
+                  <p className="text-gray-600">No hay vacantes publicadas</p>
+                  <p className="text-sm mt-2 text-gray-600">Crea una vacante para comenzar el reclutamiento</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {vacantes.map((vacante) => (
-                    <div key={vacante.id} className="p-4 rounded-lg bg-white/5 border border-[#00E5FF]/20">
+                    <div key={vacante.id} className="p-4 rounded-lg bg-gray-50 border border-[#F97316]/20">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <h3 className="text-white font-bold">{vacante.titulo}</h3>
-                          <p className="text-gray-400 text-sm">{vacante.departamento}</p>
+                          <h3 className="text-gray-900 font-bold">{vacante.titulo}</h3>
+                          <p className="text-gray-600 text-sm">{vacante.departamento}</p>
                         </div>
                         <Badge className={
                           vacante.estado === 'abierta'
                             ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                            : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                            : 'bg-gray-500/20 text-gray-600 border-gray-500/30'
                         }>
                           {vacante.estado}
                         </Badge>
                       </div>
-                      <p className="text-gray-300 text-sm mb-3">{vacante.descripcion}</p>
+                      <p className="text-gray-600 text-sm mb-3">{vacante.descripcion}</p>
                       {(vacante.salario_min || vacante.salario_max) && (
-                        <p className="text-[#00E5FF] text-sm font-medium">
+                        <p className="text-[#F97316] text-sm font-medium">
                           Salario: ${vacante.salario_min?.toLocaleString()} - ${vacante.salario_max?.toLocaleString()}
                         </p>
                       )}
@@ -763,10 +763,10 @@ export default function TalentoHumano() {
 
       {/* VISTA: EVALUACIONES */}
       {view === 'evaluaciones' && (
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
             <div className="flex justify-between items-center">
-              <CardTitle className="text-white flex items-center gap-2">
+              <CardTitle className="text-gray-900 flex items-center gap-2">
                 <Award className="w-5 h-5 text-yellow-400" />
                 Evaluaciones de Desempeño
               </CardTitle>
@@ -783,26 +783,26 @@ export default function TalentoHumano() {
             {evaluaciones.length === 0 ? (
               <div className="text-center py-12">
                 <Award className="w-12 h-12 mx-auto mb-3 opacity-50 text-gray-600" />
-                <p className="text-gray-400">No hay evaluaciones registradas</p>
-                <p className="text-sm mt-2 text-gray-500">Crea evaluaciones para medir el desempeño</p>
+                <p className="text-gray-600">No hay evaluaciones registradas</p>
+                <p className="text-sm mt-2 text-gray-600">Crea evaluaciones para medir el desempeño</p>
               </div>
             ) : (
               <div className="overflow-x-auto scroll-top">
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-[#00E5FF]/20 hover:bg-transparent">
-                      <TableHead className="text-gray-400">Empleado</TableHead>
-                      <TableHead className="text-gray-400">Período</TableHead>
-                      <TableHead className="text-gray-400">Calificación</TableHead>
-                      <TableHead className="text-gray-400">Estado</TableHead>
-                      <TableHead className="text-gray-400">Fecha</TableHead>
+                    <TableRow className="border-[#F97316]/20 hover:bg-transparent">
+                      <TableHead className="text-gray-600">Empleado</TableHead>
+                      <TableHead className="text-gray-600">Período</TableHead>
+                      <TableHead className="text-gray-600">Calificación</TableHead>
+                      <TableHead className="text-gray-600">Estado</TableHead>
+                      <TableHead className="text-gray-600">Fecha</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {evaluaciones.map((evaluacion) => (
-                      <TableRow key={evaluacion.id} className="border-[#00E5FF]/10 hover:bg-white/5">
-                        <TableCell className="text-white">{evaluacion.empleado_nombre}</TableCell>
-                        <TableCell className="text-gray-400">{evaluacion.periodo}</TableCell>
+                      <TableRow key={evaluacion.id} className="border-[#F97316]/10 hover:bg-gray-50">
+                        <TableCell className="text-gray-900">{evaluacion.empleado_nombre}</TableCell>
+                        <TableCell className="text-gray-600">{evaluacion.periodo}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <div className="text-yellow-400 font-bold">{evaluacion.calificacion}/5</div>
@@ -827,7 +827,7 @@ export default function TalentoHumano() {
                             {evaluacion.estado}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-gray-400">
+                        <TableCell className="text-gray-600">
                           {new Date(evaluacion.created_at).toLocaleDateString()}
                         </TableCell>
                       </TableRow>
@@ -842,16 +842,16 @@ export default function TalentoHumano() {
 
       {/* VISTA: CAPACITACIÓN */}
       {view === 'capacitacion' && (
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
             <div className="flex justify-between items-center">
-              <CardTitle className="text-white flex items-center gap-2">
-                <GraduationCap className="w-5 h-5 text-[#00E5FF]" />
+              <CardTitle className="text-gray-900 flex items-center gap-2">
+                <GraduationCap className="w-5 h-5 text-[#F97316]" />
                 Programas de Capacitación
               </CardTitle>
               <Button
                 onClick={() => setShowCapacitacionModal(true)}
-                className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90"
+                className="bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Nueva Capacitación
@@ -862,18 +862,18 @@ export default function TalentoHumano() {
             {capacitaciones.length === 0 ? (
               <div className="text-center py-12">
                 <GraduationCap className="w-12 h-12 mx-auto mb-3 opacity-50 text-gray-600" />
-                <p className="text-gray-400">No hay capacitaciones programadas</p>
-                <p className="text-sm mt-2 text-gray-500">Programa capacitaciones para desarrollar tu equipo</p>
+                <p className="text-gray-600">No hay capacitaciones programadas</p>
+                <p className="text-sm mt-2 text-gray-600">Programa capacitaciones para desarrollar tu equipo</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {capacitaciones.map((capacitacion) => (
-                  <div key={capacitacion.id} className="p-4 rounded-lg bg-white/5 border border-[#00E5FF]/20">
+                  <div key={capacitacion.id} className="p-4 rounded-lg bg-gray-50 border border-[#F97316]/20">
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <h3 className="text-white font-bold">{capacitacion.titulo}</h3>
+                        <h3 className="text-gray-900 font-bold">{capacitacion.titulo}</h3>
                         {capacitacion.instructor && (
-                          <p className="text-gray-400 text-sm">Instructor: {capacitacion.instructor}</p>
+                          <p className="text-gray-600 text-sm">Instructor: {capacitacion.instructor}</p>
                         )}
                       </div>
                       <Badge className={
@@ -886,12 +886,12 @@ export default function TalentoHumano() {
                         {capacitacion.estado}
                       </Badge>
                     </div>
-                    <p className="text-gray-300 text-sm mb-3">{capacitacion.descripcion}</p>
+                    <p className="text-gray-600 text-sm mb-3">{capacitacion.descripcion}</p>
                     <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-400">
+                      <span className="text-gray-600">
                         {new Date(capacitacion.fecha_inicio).toLocaleDateString()} - {new Date(capacitacion.fecha_fin).toLocaleDateString()}
                       </span>
-                      <span className="text-[#00E5FF]">
+                      <span className="text-[#F97316]">
                         {capacitacion.participantes?.length || 0} participantes
                       </span>
                     </div>
@@ -907,21 +907,21 @@ export default function TalentoHumano() {
       {view === 'clima' && (
         <div className="space-y-6">
           {/* Encuesta individual */}
-          <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
+              <CardTitle className="text-gray-900 flex items-center gap-2">
                 <Heart className="w-5 h-5 text-pink-400" />
                 Encuesta de Clima Laboral
               </CardTitle>
-              <p className="text-gray-400 text-sm">Califique cada aspecto del 1 (muy malo) al 5 (excelente)</p>
+              <p className="text-gray-600 text-sm">Califique cada aspecto del 1 (muy malo) al 5 (excelente)</p>
             </CardHeader>
             <CardContent>
               {!encuestaEnviada ? (
                 <div className="space-y-6">
                   {PREGUNTAS_CLIMA.map((pregunta, idx) => (
-                    <div key={idx} className="p-4 rounded-lg bg-white/5 border border-[#00E5FF]/10">
-                      <p className="text-white font-medium mb-3">
-                        <span className="text-[#00E5FF] mr-2">{idx + 1}.</span>
+                    <div key={idx} className="p-4 rounded-lg bg-gray-50 border border-[#F97316]/10">
+                      <p className="text-gray-900 font-medium mb-3">
+                        <span className="text-[#F97316] mr-2">{idx + 1}.</span>
                         {pregunta}
                       </p>
                       <div className="flex gap-3 flex-wrap">
@@ -935,7 +935,7 @@ export default function TalentoHumano() {
                               className={`flex flex-col items-center gap-1 cursor-pointer px-3 py-2 rounded-lg border transition-all ${
                                 selected
                                   ? 'border-pink-400 bg-pink-500/20'
-                                  : 'border-white/10 hover:border-white/30 hover:bg-white/5'
+                                  : 'border-gray-100 hover:border-white/30 hover:bg-gray-50'
                               }`}
                             >
                               <input
@@ -951,8 +951,8 @@ export default function TalentoHumano() {
                               <span className={`text-2xl ${starColors[val - 1]}`}>
                                 {val === 1 ? '😞' : val === 2 ? '😕' : val === 3 ? '😐' : val === 4 ? '🙂' : '😄'}
                               </span>
-                              <span className={`text-xs font-bold ${selected ? 'text-pink-300' : 'text-gray-400'}`}>{val}</span>
-                              <span className={`text-xs ${selected ? 'text-white' : 'text-gray-500'}`}>{labels[val - 1]}</span>
+                              <span className={`text-xs font-bold ${selected ? 'text-pink-300' : 'text-gray-600'}`}>{val}</span>
+                              <span className={`text-xs ${selected ? 'text-gray-900' : 'text-gray-600'}`}>{labels[val - 1]}</span>
                             </label>
                           );
                         })}
@@ -976,20 +976,20 @@ export default function TalentoHumano() {
                       <div className="text-6xl mb-4">
                         {resultadosEncuesta.color === 'green' ? '🌟' : resultadosEncuesta.color === 'yellow' ? '⚠️' : '🚨'}
                       </div>
-                      <h3 className="text-2xl font-bold text-white mb-2">
+                      <h3 className="text-2xl font-bold text-gray-900 mb-2">
                         Resultado: <span className={
                           resultadosEncuesta.color === 'green' ? 'text-green-400' :
                           resultadosEncuesta.color === 'yellow' ? 'text-yellow-400' : 'text-red-400'
                         }>{resultadosEncuesta.nivel}</span>
                       </h3>
-                      <p className="text-gray-400 mb-6">
-                        Tu promedio: <span className="text-white font-bold">{resultadosEncuesta.promedio.toFixed(2)}</span> / 5.00
+                      <p className="text-gray-600 mb-6">
+                        Tu promedio: <span className="text-gray-900 font-bold">{resultadosEncuesta.promedio.toFixed(2)}</span> / 5.00
                       </p>
                       <div className="max-w-md mx-auto mb-6">
-                        <div className="flex justify-between text-xs text-gray-400 mb-1">
+                        <div className="flex justify-between text-xs text-gray-600 mb-1">
                           <span>1</span><span>5</span>
                         </div>
-                        <div className="h-5 bg-white/10 rounded-full overflow-hidden">
+                        <div className="h-5 bg-gray-100 rounded-full overflow-hidden">
                           <div
                             className={`h-full rounded-full transition-all duration-700 ${
                               resultadosEncuesta.color === 'green'
@@ -1021,13 +1021,13 @@ export default function TalentoHumano() {
           </Card>
 
           {/* Resultados agregados */}
-          <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-[#00E5FF]" />
+              <CardTitle className="text-gray-900 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-[#F97316]" />
                 Resultados Agregados del Equipo
               </CardTitle>
-              <p className="text-gray-400 text-sm">
+              <p className="text-gray-600 text-sm">
                 Basado en {encuestaEnviada ? 4 : 3} respuestas anónimas
               </p>
             </CardHeader>
@@ -1041,10 +1041,10 @@ export default function TalentoHumano() {
                   return (
                     <div key={idx} className="space-y-1">
                       <div className="flex justify-between items-center">
-                        <p className="text-gray-300 text-sm">{idx + 1}. {pregunta}</p>
-                        <span className="text-white font-bold text-sm ml-4 shrink-0">{promQ.toFixed(1)}/5</span>
+                        <p className="text-gray-600 text-sm">{idx + 1}. {pregunta}</p>
+                        <span className="text-gray-900 font-bold text-sm ml-4 shrink-0">{promQ.toFixed(1)}/5</span>
                       </div>
-                      <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full ${
                             promQ >= 4 ? 'bg-green-400' : promQ >= 3 ? 'bg-yellow-400' : 'bg-red-400'
@@ -1055,10 +1055,10 @@ export default function TalentoHumano() {
                     </div>
                   );
                 })}
-                <div className="mt-6 p-4 rounded-lg bg-white/5 border border-[#00E5FF]/20 flex items-center justify-between">
+                <div className="mt-6 p-4 rounded-lg bg-gray-50 border border-[#F97316]/20 flex items-center justify-between">
                   <div>
-                    <p className="text-gray-400 text-sm">Promedio general del equipo</p>
-                    <p className="text-2xl font-bold text-white">{promedioAgregado.toFixed(2)} / 5.00</p>
+                    <p className="text-gray-600 text-sm">Promedio general del equipo</p>
+                    <p className="text-2xl font-bold text-gray-900">{promedioAgregado.toFixed(2)} / 5.00</p>
                   </div>
                   <div className={`text-3xl px-4 py-2 rounded-lg font-bold ${
                     promedioAgregado >= 4 ? 'bg-green-500/20 text-green-400' :
@@ -1076,29 +1076,29 @@ export default function TalentoHumano() {
 
       {/* VISTA: NÓMINA */}
       {view === 'nomina' && (
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-gray-900 flex items-center gap-2">
                   <DollarSign className="w-5 h-5 text-green-400" />
                   Calculadora de Nómina — Ecuador
                 </CardTitle>
-                <p className="text-gray-400 text-sm mt-1">
+                <p className="text-gray-600 text-sm mt-1">
                   IESS personal 9.45% · IESS patronal 11.15% · SBU 2024: $460
                 </p>
               </div>
               <div className="flex gap-2">
                 <Button
                   onClick={exportarCSV}
-                  className="bg-green-700 hover:bg-green-600 text-white"
+                  className="bg-green-700 hover:bg-green-600 text-gray-900"
                 >
                   <Download className="w-4 h-4 mr-2" />
                   Exportar CSV
                 </Button>
                 <Button
                   onClick={() => window.print()}
-                  className="bg-[#1e64a7] hover:bg-[#1e64a7]/80 text-white"
+                  className="bg-[#C2410C] hover:bg-[#C2410C]/80 text-white"
                 >
                   <Printer className="w-4 h-4 mr-2" />
                   Imprimir Rol
@@ -1110,19 +1110,19 @@ export default function TalentoHumano() {
             {empleados.filter((e) => e.estado === 'activo').length === 0 ? (
               <div className="text-center py-12">
                 <DollarSign className="w-12 h-12 mx-auto mb-3 opacity-50 text-gray-600" />
-                <p className="text-gray-400">No hay empleados activos para calcular nómina</p>
+                <p className="text-gray-600">No hay empleados activos para calcular nómina</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-[#00E5FF]/20">
+                    <tr className="border-b border-[#F97316]/20">
                       {[
                         'Empleado', 'Cargo', 'Sal. Base', 'Hrs. Extra', 'Otros Ing.',
                         'Sal. Bruto', 'IESS Pers.', 'IESS Patr.*', 'Neto a Pagar',
                         'Prov. 13°', 'Prov. 14°', 'Prov. Vac.', 'Costo Empresa',
                       ].map((h) => (
-                        <th key={h} className="text-left text-gray-400 font-medium px-2 py-3 whitespace-nowrap">
+                        <th key={h} className="text-left text-gray-600 font-medium px-2 py-3 whitespace-nowrap">
                           {h}
                         </th>
                       ))}
@@ -1149,10 +1149,10 @@ export default function TalentoHumano() {
                         totales.provision_vacaciones += n.provision_vacaciones;
                         totales.costo_total_empresa += n.costo_total_empresa;
                         return (
-                          <tr key={emp.id} className="border-b border-[#00E5FF]/10 hover:bg-white/5">
-                            <td className="px-2 py-3 text-white font-medium whitespace-nowrap">{emp.nombre_completo}</td>
-                            <td className="px-2 py-3 text-gray-400 whitespace-nowrap">{emp.cargo || '—'}</td>
-                            <td className="px-2 py-3 text-[#00E5FF] whitespace-nowrap">${emp.salario_base.toFixed(2)}</td>
+                          <tr key={emp.id} className="border-b border-[#F97316]/10 hover:bg-gray-50">
+                            <td className="px-2 py-3 text-gray-900 font-medium whitespace-nowrap">{emp.nombre_completo}</td>
+                            <td className="px-2 py-3 text-gray-600 whitespace-nowrap">{emp.cargo || '—'}</td>
+                            <td className="px-2 py-3 text-[#F97316] whitespace-nowrap">${emp.salario_base.toFixed(2)}</td>
                             <td className="px-2 py-2 whitespace-nowrap">
                               <input
                                 type="number"
@@ -1165,7 +1165,7 @@ export default function TalentoHumano() {
                                     [emp.id]: { ...extras, horas_extras: parseFloat(ev.target.value) || 0 },
                                   }))
                                 }
-                                className="w-20 bg-white/10 border border-[#00E5FF]/20 text-white rounded px-2 py-1 text-sm focus:outline-none focus:border-[#00E5FF]/60"
+                                className="w-20 bg-gray-100 border border-[#F97316]/20 text-gray-900 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#F97316]/60"
                               />
                             </td>
                             <td className="px-2 py-2 whitespace-nowrap">
@@ -1180,42 +1180,42 @@ export default function TalentoHumano() {
                                     [emp.id]: { ...extras, otros_ingresos: parseFloat(ev.target.value) || 0 },
                                   }))
                                 }
-                                className="w-24 bg-white/10 border border-[#00E5FF]/20 text-white rounded px-2 py-1 text-sm focus:outline-none focus:border-[#00E5FF]/60"
+                                className="w-24 bg-gray-100 border border-[#F97316]/20 text-gray-900 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#F97316]/60"
                               />
                             </td>
-                            <td className="px-2 py-3 text-white whitespace-nowrap">${n.salario_bruto.toFixed(2)}</td>
+                            <td className="px-2 py-3 text-gray-900 whitespace-nowrap">${n.salario_bruto.toFixed(2)}</td>
                             <td className="px-2 py-3 text-red-400 whitespace-nowrap">-${n.iess_personal.toFixed(2)}</td>
                             <td className="px-2 py-3 text-orange-400 whitespace-nowrap">${n.iess_patronal.toFixed(2)}</td>
                             <td className="px-2 py-3 text-green-400 font-bold whitespace-nowrap">${n.neto_pagar.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-300 whitespace-nowrap">${n.provision_decimoTercero.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-300 whitespace-nowrap">${n.provision_decimoCuarto.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-300 whitespace-nowrap">${n.provision_vacaciones.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-[#00E5FF] font-bold whitespace-nowrap">${n.costo_total_empresa.toFixed(2)}</td>
+                            <td className="px-2 py-3 text-gray-600 whitespace-nowrap">${n.provision_decimoTercero.toFixed(2)}</td>
+                            <td className="px-2 py-3 text-gray-600 whitespace-nowrap">${n.provision_decimoCuarto.toFixed(2)}</td>
+                            <td className="px-2 py-3 text-gray-600 whitespace-nowrap">${n.provision_vacaciones.toFixed(2)}</td>
+                            <td className="px-2 py-3 text-[#F97316] font-bold whitespace-nowrap">${n.costo_total_empresa.toFixed(2)}</td>
                           </tr>
                         );
                       });
                       return (
                         <>
                           {rows}
-                          <tr className="border-t-2 border-[#00E5FF]/40 bg-white/5 font-bold">
-                            <td className="px-2 py-3 text-[#00E5FF]" colSpan={2}>TOTALES</td>
-                            <td className="px-2 py-3 text-[#00E5FF]">${totales.salario_base.toFixed(2)}</td>
+                          <tr className="border-t-2 border-[#F97316]/40 bg-gray-50 font-bold">
+                            <td className="px-2 py-3 text-[#F97316]" colSpan={2}>TOTALES</td>
+                            <td className="px-2 py-3 text-[#F97316]">${totales.salario_base.toFixed(2)}</td>
                             <td className="px-2 py-3" colSpan={2} />
-                            <td className="px-2 py-3 text-white">${totales.salario_bruto.toFixed(2)}</td>
+                            <td className="px-2 py-3 text-gray-900">${totales.salario_bruto.toFixed(2)}</td>
                             <td className="px-2 py-3 text-red-400">-${totales.iess_personal.toFixed(2)}</td>
                             <td className="px-2 py-3 text-orange-400">${totales.iess_patronal.toFixed(2)}</td>
                             <td className="px-2 py-3 text-green-400">${totales.neto_pagar.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-300">${totales.provision_decimoTercero.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-300">${totales.provision_decimoCuarto.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-300">${totales.provision_vacaciones.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-[#00E5FF]">${totales.costo_total_empresa.toFixed(2)}</td>
+                            <td className="px-2 py-3 text-gray-600">${totales.provision_decimoTercero.toFixed(2)}</td>
+                            <td className="px-2 py-3 text-gray-600">${totales.provision_decimoCuarto.toFixed(2)}</td>
+                            <td className="px-2 py-3 text-gray-600">${totales.provision_vacaciones.toFixed(2)}</td>
+                            <td className="px-2 py-3 text-[#F97316]">${totales.costo_total_empresa.toFixed(2)}</td>
                           </tr>
                         </>
                       );
                     })()}
                   </tbody>
                 </table>
-                <p className="text-gray-500 text-xs mt-3">
+                <p className="text-gray-600 text-xs mt-3">
                   * IESS Patronal (11.15%) es informativo — no se descuenta del empleado; es el aporte a cargo de la empresa.
                 </p>
               </div>
@@ -1227,87 +1227,87 @@ export default function TalentoHumano() {
       {/* MODAL: NUEVO EMPLEADO */}
       {showEmpleadoModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0A1A2F] border border-[#00E5FF]/30 rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white border border-[#F97316]/30 rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-white">Nuevo Empleado</h2>
-              <button onClick={() => setShowEmpleadoModal(false)} className="text-gray-400 hover:text-white">
+              <h2 className="text-2xl font-bold text-gray-900">Nuevo Empleado</h2>
+              <button onClick={() => setShowEmpleadoModal(false)} className="text-gray-600 hover:text-gray-900">
                 <X className="w-6 h-6" />
               </button>
             </div>
             <form onSubmit={crearEmpleado} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-white">Nombre Completo</Label>
+                  <Label className="text-gray-900">Nombre Completo</Label>
                   <Input
                     required
                     value={formEmpleado.nombre_completo || ''}
                     onChange={(e) => setFormEmpleado({ ...formEmpleado, nombre_completo: e.target.value })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
                 <div>
-                  <Label className="text-white">Email</Label>
+                  <Label className="text-gray-900">Email</Label>
                   <Input
                     type="email"
                     required
                     value={formEmpleado.email || ''}
                     onChange={(e) => setFormEmpleado({ ...formEmpleado, email: e.target.value })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
                 <div>
-                  <Label className="text-white">Teléfono</Label>
+                  <Label className="text-gray-900">Teléfono</Label>
                   <Input
                     value={formEmpleado.telefono || ''}
                     onChange={(e) => setFormEmpleado({ ...formEmpleado, telefono: e.target.value })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
                 <div>
-                  <Label className="text-white">Cargo</Label>
+                  <Label className="text-gray-900">Cargo</Label>
                   <Input
                     value={formEmpleado.cargo || ''}
                     onChange={(e) => setFormEmpleado({ ...formEmpleado, cargo: e.target.value })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
                 <div>
-                  <Label className="text-white">Departamento</Label>
+                  <Label className="text-gray-900">Departamento</Label>
                   <Input
                     value={formEmpleado.departamento || ''}
                     onChange={(e) => setFormEmpleado({ ...formEmpleado, departamento: e.target.value })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
                 <div>
-                  <Label className="text-white">Fecha de Ingreso</Label>
+                  <Label className="text-gray-900">Fecha de Ingreso</Label>
                   <Input
                     type="date"
                     value={formEmpleado.fecha_ingreso || ''}
                     onChange={(e) => setFormEmpleado({ ...formEmpleado, fecha_ingreso: e.target.value })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
                 <div>
-                  <Label className="text-white">Salario Base</Label>
+                  <Label className="text-gray-900">Salario Base</Label>
                   <Input
                     type="number"
                     required
                     value={formEmpleado.salario_base || ''}
                     onChange={(e) => setFormEmpleado({ ...formEmpleado, salario_base: parseFloat(e.target.value) })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
                 <div>
-                  <Label className="text-white">Estado</Label>
+                  <Label className="text-gray-900">Estado</Label>
                   <Select
                     value={formEmpleado.estado || 'activo'}
                     onValueChange={(value: any) => setFormEmpleado({ ...formEmpleado, estado: value })}
                   >
-                    <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+                    <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                    <SelectContent className="bg-white border-[#F97316]/30">
                       <SelectItem value="activo">Activo</SelectItem>
                       <SelectItem value="inactivo">Inactivo</SelectItem>
                     </SelectContent>
@@ -1319,11 +1319,11 @@ export default function TalentoHumano() {
                   type="button"
                   variant="outline"
                   onClick={() => setShowEmpleadoModal(false)}
-                  className="border-gray-600 text-gray-400 hover:bg-gray-800"
+                  className="border-gray-600 text-gray-600 hover:bg-gray-800"
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+                <Button type="submit" className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
                   Crear Empleado
                 </Button>
               </div>
@@ -1335,67 +1335,67 @@ export default function TalentoHumano() {
       {/* MODAL: NUEVA VACANTE */}
       {showVacanteModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0A1A2F] border border-[#00E5FF]/30 rounded-xl p-6 w-full max-w-2xl">
+          <div className="bg-white border border-[#F97316]/30 rounded-xl p-6 w-full max-w-2xl">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-white">Nueva Vacante</h2>
-              <button onClick={() => setShowVacanteModal(false)} className="text-gray-400 hover:text-white">
+              <h2 className="text-2xl font-bold text-gray-900">Nueva Vacante</h2>
+              <button onClick={() => setShowVacanteModal(false)} className="text-gray-600 hover:text-gray-900">
                 <X className="w-6 h-6" />
               </button>
             </div>
             <form onSubmit={crearVacante} className="space-y-4">
               <div>
-                <Label className="text-white">Título del Puesto</Label>
+                <Label className="text-gray-900">Título del Puesto</Label>
                 <Input
                   required
                   value={formVacante.titulo || ''}
                   onChange={(e) => setFormVacante({ ...formVacante, titulo: e.target.value })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
               <div>
-                <Label className="text-white">Departamento</Label>
+                <Label className="text-gray-900">Departamento</Label>
                 <Input
                   required
                   value={formVacante.departamento || ''}
                   onChange={(e) => setFormVacante({ ...formVacante, departamento: e.target.value })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
               <div>
-                <Label className="text-white">Descripción</Label>
+                <Label className="text-gray-900">Descripción</Label>
                 <textarea
                   required
                   value={formVacante.descripcion || ''}
                   onChange={(e) => setFormVacante({ ...formVacante, descripcion: e.target.value })}
-                  className="w-full bg-white/5 border border-[#00E5FF]/20 text-white rounded-lg p-2 min-h-[100px]"
+                  className="w-full bg-gray-50 border border-[#F97316]/20 text-gray-900 rounded-lg p-2 min-h-[100px]"
                 />
               </div>
               <div>
-                <Label className="text-white">Requisitos</Label>
+                <Label className="text-gray-900">Requisitos</Label>
                 <textarea
                   required
                   value={formVacante.requisitos || ''}
                   onChange={(e) => setFormVacante({ ...formVacante, requisitos: e.target.value })}
-                  className="w-full bg-white/5 border border-[#00E5FF]/20 text-white rounded-lg p-2 min-h-[100px]"
+                  className="w-full bg-gray-50 border border-[#F97316]/20 text-gray-900 rounded-lg p-2 min-h-[100px]"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-white">Salario Mínimo</Label>
+                  <Label className="text-gray-900">Salario Mínimo</Label>
                   <Input
                     type="number"
                     value={formVacante.salario_min || ''}
                     onChange={(e) => setFormVacante({ ...formVacante, salario_min: parseFloat(e.target.value) })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
                 <div>
-                  <Label className="text-white">Salario Máximo</Label>
+                  <Label className="text-gray-900">Salario Máximo</Label>
                   <Input
                     type="number"
                     value={formVacante.salario_max || ''}
                     onChange={(e) => setFormVacante({ ...formVacante, salario_max: parseFloat(e.target.value) })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
               </div>
@@ -1404,11 +1404,11 @@ export default function TalentoHumano() {
                   type="button"
                   variant="outline"
                   onClick={() => setShowVacanteModal(false)}
-                  className="border-gray-600 text-gray-400 hover:bg-gray-800"
+                  className="border-gray-600 text-gray-600 hover:bg-gray-800"
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" className="bg-gradient-to-r from-[#7B61FF] to-[#9D7FFF]">
+                <Button type="submit" className="bg-gradient-to-r from-[#FB923C] to-[#FB923C]">
                   Publicar Vacante
                 </Button>
               </div>
@@ -1420,24 +1420,24 @@ export default function TalentoHumano() {
       {/* MODAL: NUEVA EVALUACIÓN */}
       {showEvaluacionModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0A1A2F] border border-[#00E5FF]/30 rounded-xl p-6 w-full max-w-2xl">
+          <div className="bg-white border border-[#F97316]/30 rounded-xl p-6 w-full max-w-2xl">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-white">Nueva Evaluación</h2>
-              <button onClick={() => setShowEvaluacionModal(false)} className="text-gray-400 hover:text-white">
+              <h2 className="text-2xl font-bold text-gray-900">Nueva Evaluación</h2>
+              <button onClick={() => setShowEvaluacionModal(false)} className="text-gray-600 hover:text-gray-900">
                 <X className="w-6 h-6" />
               </button>
             </div>
             <form onSubmit={crearEvaluacion} className="space-y-4">
               <div>
-                <Label className="text-white">Empleado</Label>
+                <Label className="text-gray-900">Empleado</Label>
                 <Select
                   value={formEvaluacion.empleado_nombre || ''}
                   onValueChange={(value) => setFormEvaluacion({ ...formEvaluacion, empleado_nombre: value })}
                 >
-                  <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+                  <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                     <SelectValue placeholder="Selecciona un empleado" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                  <SelectContent className="bg-white border-[#F97316]/30">
                     {empleados.map((emp) => (
                       <SelectItem key={emp.id} value={emp.nombre_completo}>
                         {emp.nombre_completo}
@@ -1447,17 +1447,17 @@ export default function TalentoHumano() {
                 </Select>
               </div>
               <div>
-                <Label className="text-white">Período</Label>
+                <Label className="text-gray-900">Período</Label>
                 <Input
                   required
                   placeholder="Ej: Q1 2024, Enero 2024"
                   value={formEvaluacion.periodo || ''}
                   onChange={(e) => setFormEvaluacion({ ...formEvaluacion, periodo: e.target.value })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
               <div>
-                <Label className="text-white">Calificación (1-5)</Label>
+                <Label className="text-gray-900">Calificación (1-5)</Label>
                 <Input
                   type="number"
                   min="1"
@@ -1465,7 +1465,7 @@ export default function TalentoHumano() {
                   required
                   value={formEvaluacion.calificacion || ''}
                   onChange={(e) => setFormEvaluacion({ ...formEvaluacion, calificacion: parseFloat(e.target.value) })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
               <div className="flex gap-3 justify-end mt-6">
@@ -1473,7 +1473,7 @@ export default function TalentoHumano() {
                   type="button"
                   variant="outline"
                   onClick={() => setShowEvaluacionModal(false)}
-                  className="border-gray-600 text-gray-400 hover:bg-gray-800"
+                  className="border-gray-600 text-gray-600 hover:bg-gray-800"
                 >
                   Cancelar
                 </Button>
@@ -1489,59 +1489,59 @@ export default function TalentoHumano() {
       {/* MODAL: NUEVA CAPACITACIÓN */}
       {showCapacitacionModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0A1A2F] border border-[#00E5FF]/30 rounded-xl p-6 w-full max-w-2xl">
+          <div className="bg-white border border-[#F97316]/30 rounded-xl p-6 w-full max-w-2xl">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-white">Nueva Capacitación</h2>
-              <button onClick={() => setShowCapacitacionModal(false)} className="text-gray-400 hover:text-white">
+              <h2 className="text-2xl font-bold text-gray-900">Nueva Capacitación</h2>
+              <button onClick={() => setShowCapacitacionModal(false)} className="text-gray-600 hover:text-gray-900">
                 <X className="w-6 h-6" />
               </button>
             </div>
             <form onSubmit={crearCapacitacion} className="space-y-4">
               <div>
-                <Label className="text-white">Título</Label>
+                <Label className="text-gray-900">Título</Label>
                 <Input
                   required
                   value={formCapacitacion.titulo || ''}
                   onChange={(e) => setFormCapacitacion({ ...formCapacitacion, titulo: e.target.value })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
               <div>
-                <Label className="text-white">Descripción</Label>
+                <Label className="text-gray-900">Descripción</Label>
                 <textarea
                   required
                   value={formCapacitacion.descripcion || ''}
                   onChange={(e) => setFormCapacitacion({ ...formCapacitacion, descripcion: e.target.value })}
-                  className="w-full bg-white/5 border border-[#00E5FF]/20 text-white rounded-lg p-2 min-h-[100px]"
+                  className="w-full bg-gray-50 border border-[#F97316]/20 text-gray-900 rounded-lg p-2 min-h-[100px]"
                 />
               </div>
               <div>
-                <Label className="text-white">Instructor</Label>
+                <Label className="text-gray-900">Instructor</Label>
                 <Input
                   value={formCapacitacion.instructor || ''}
                   onChange={(e) => setFormCapacitacion({ ...formCapacitacion, instructor: e.target.value })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-white">Fecha Inicio</Label>
+                  <Label className="text-gray-900">Fecha Inicio</Label>
                   <Input
                     type="date"
                     required
                     value={formCapacitacion.fecha_inicio || ''}
                     onChange={(e) => setFormCapacitacion({ ...formCapacitacion, fecha_inicio: e.target.value })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
                 <div>
-                  <Label className="text-white">Fecha Fin</Label>
+                  <Label className="text-gray-900">Fecha Fin</Label>
                   <Input
                     type="date"
                     required
                     value={formCapacitacion.fecha_fin || ''}
                     onChange={(e) => setFormCapacitacion({ ...formCapacitacion, fecha_fin: e.target.value })}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
               </div>
@@ -1550,11 +1550,11 @@ export default function TalentoHumano() {
                   type="button"
                   variant="outline"
                   onClick={() => setShowCapacitacionModal(false)}
-                  className="border-gray-600 text-gray-400 hover:bg-gray-800"
+                  className="border-gray-600 text-gray-600 hover:bg-gray-800"
                 >
                   Cancelar
                 </Button>
-                <Button type="submit" className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
+                <Button type="submit" className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
                   Crear Capacitación
                 </Button>
               </div>

@@ -79,7 +79,7 @@ function formFromProducto(p: any) {
 }
 
 export function ProductoModal({ open, onClose, onSuccess, producto, categorias, token }: ProductoModalProps) {
-  const { empresa } = useAuth();
+  const { user } = useAuth();
 
   const [formData, setFormData] = useState(() => producto ? formFromProducto(producto) : { ...EMPTY_FORM });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -160,7 +160,8 @@ export function ProductoModal({ open, onClose, onSuccess, producto, categorias, 
 
       const payloadToSave = {
         ...formData,
-        empresa_id: empresa?.id
+        // empresa_id lo sobreescribe el backend con auth.empresaId — solo enviamos como referencia
+        empresa_id: user?.empresa?.id ?? user?.empresa_id ?? undefined,
       };
 
       const response = await fetch(url, {
@@ -186,7 +187,7 @@ export function ProductoModal({ open, onClose, onSuccess, producto, categorias, 
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-white border-[#F97316]/30 text-gray-900 max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{producto ? 'Editar Producto' : 'Nuevo Producto'}</DialogTitle>
           <DialogDescription>
@@ -197,12 +198,12 @@ export function ProductoModal({ open, onClose, onSuccess, producto, categorias, 
         <form onSubmit={handleSubmit} className="space-y-4 mt-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Código * {!producto && <span className="text-xs text-[#00E5FF]">(Auto-generado)</span>}</Label>
+              <Label>Código * {!producto && <span className="text-xs text-[#F97316]">(Auto-generado)</span>}</Label>
               <div className="flex gap-2">
                 <Input
                   value={formData.codigo}
                   onChange={(e) => setFormData({ ...formData, codigo: e.target.value })}
-                  className="bg-white/5 border-[#00E5FF]/20 text-[#00E5FF] font-black tracking-widest uppercase flex-1"
+                  className="bg-gray-50 border-[#F97316]/20 text-[#F97316] font-black tracking-widest uppercase flex-1"
                   placeholder="Selecciona Categoría y Tipo"
                   required
                 />
@@ -211,23 +212,23 @@ export function ProductoModal({ open, onClose, onSuccess, producto, categorias, 
 
             <div className="space-y-2">
               <Label>Código de Barras</Label>
-              <Input value={formData.codigo_barras} onChange={(e) => setFormData({ ...formData, codigo_barras: e.target.value })} className="bg-white/5 border-[#00E5FF]/20 text-white" placeholder="Ej: 7501234567890" />
+              <Input value={formData.codigo_barras} onChange={(e) => setFormData({ ...formData, codigo_barras: e.target.value })} className="bg-gray-50 border-[#F97316]/20 text-gray-900" placeholder="Ej: 7501234567890" />
             </div>
           </div>
 
           <div className="space-y-2">
             <Label>Nombre del Producto *</Label>
-            <Input value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} className="bg-white/5 border-[#00E5FF]/20 text-white" placeholder="Ej: Tomate Riñón" required />
+            <Input value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} className="bg-gray-50 border-[#F97316]/20 text-gray-900" placeholder="Ej: Tomate Riñón" required />
           </div>
 
           <div className="space-y-2">
             <Label>Descripción</Label>
-            <Textarea value={formData.descripcion} onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })} className="bg-white/5 border-[#00E5FF]/20 text-white" rows={2} />
+            <Textarea value={formData.descripcion} onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })} className="bg-gray-50 border-[#F97316]/20 text-gray-900" rows={2} />
           </div>
 
           {/* SELECTOR DE CATEGORÍAS */}
           <div className="space-y-3 pt-2">
-            <Label className="text-base text-[#00E5FF]">Categoría de Alimentos *</Label>
+            <Label className="text-base text-[#F97316]">Categoría de Alimentos *</Label>
             {formData.categoria_id && !CATEGORIAS_ALIMENTOS.find(c => c.id === formData.categoria_id) && (
               <div className="text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/30 rounded px-3 py-2">
                 Categoría actual: <strong>{categorias.find((c: any) => c.id === formData.categoria_id)?.nombre || formData.categoria_id}</strong> — selecciona una de abajo para cambiarla.
@@ -241,15 +242,15 @@ export function ProductoModal({ open, onClose, onSuccess, producto, categorias, 
                   onClick={() => handleSelectCategoria(cat.id)}
                   className={`flex items-center gap-2 p-3 rounded-lg border text-sm transition-all ${
                     formData.categoria_id === cat.id
-                      ? 'border-[#00E5FF] bg-[#00E5FF]/20 text-[#00E5FF]'
-                      : 'border-[#00E5FF]/20 bg-white/5 text-gray-300 hover:border-[#00E5FF]/50'
+                      ? 'border-[#F97316] bg-[#F97316]/20 text-[#F97316]'
+                      : 'border-[#F97316]/20 bg-gray-50 text-gray-600 hover:border-[#F97316]/50'
                   }`}
                 >
-                  <div className={formData.categoria_id === cat.id ? 'text-[#00E5FF]' : 'text-gray-400'}>
+                  <div className={formData.categoria_id === cat.id ? 'text-[#F97316]' : 'text-gray-600'}>
                     {cat.icon}
                   </div>
                   <span className="text-left leading-tight text-xs font-medium">{cat.id}</span>
-                  {formData.categoria_id === cat.id && <CheckCircle className="w-4 h-4 ml-auto text-[#00E5FF]" />}
+                  {formData.categoria_id === cat.id && <CheckCircle className="w-4 h-4 ml-auto text-[#F97316]" />}
                 </button>
               ))}
             </div>
@@ -259,10 +260,10 @@ export function ProductoModal({ open, onClose, onSuccess, producto, categorias, 
             <div className="space-y-2">
               <Label>Tipo *</Label>
               <Select value={formData.tipo} onValueChange={handleSelectTipo}>
-                <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+                <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white">
+                <SelectContent className="bg-white border-[#F97316]/30 text-gray-900">
                   <SelectItem value="producto">Producto</SelectItem>
                   <SelectItem value="insumo">Insumo</SelectItem>
                   <SelectItem value="servicio">Servicio</SelectItem>
@@ -275,10 +276,10 @@ export function ProductoModal({ open, onClose, onSuccess, producto, categorias, 
             <div className="space-y-2">
               <Label>Unidad de Medida</Label>
               <Select value={formData.unidad_medida} onValueChange={(value) => setFormData({ ...formData, unidad_medida: value })}>
-                <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+                <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white">
+                <SelectContent className="bg-white border-[#F97316]/30 text-gray-900">
                   <SelectItem value="unidad">Unidad</SelectItem>
                   <SelectItem value="kilogramo">Kilogramo (kg)</SelectItem>
                   <SelectItem value="gramo">Gramo (g)</SelectItem>
@@ -296,63 +297,63 @@ export function ProductoModal({ open, onClose, onSuccess, producto, categorias, 
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Precio Compra</Label>
-              <Input type="number" step="0.01" value={formData.precio_compra} onChange={(e) => setFormData({ ...formData, precio_compra: parseFloat(e.target.value) || 0 })} className="bg-white/5 border-[#00E5FF]/20 text-white" />
+              <Input type="number" step="0.01" value={formData.precio_compra} onChange={(e) => setFormData({ ...formData, precio_compra: parseFloat(e.target.value) || 0 })} className="bg-gray-50 border-[#F97316]/20 text-gray-900" />
             </div>
 
             <div className="space-y-2">
               <Label>Precio Venta *</Label>
-              <Input type="number" step="0.01" value={formData.precio_venta} onChange={(e) => setFormData({ ...formData, precio_venta: parseFloat(e.target.value) || 0 })} className="bg-white/5 border-[#00E5FF]/20 text-[#00E5FF] font-bold" required />
+              <Input type="number" step="0.01" value={formData.precio_venta} onChange={(e) => setFormData({ ...formData, precio_venta: parseFloat(e.target.value) || 0 })} className="bg-gray-50 border-[#F97316]/20 text-[#F97316] font-bold" required />
             </div>
 
             <div className="space-y-2">
               <Label>IVA (%)</Label>
-              <Input type="number" step="0.01" value={formData.porcentaje_iva} onChange={(e) => setFormData({ ...formData, porcentaje_iva: parseFloat(e.target.value) || 0 })} className="bg-white/5 border-[#00E5FF]/20 text-white" />
+              <Input type="number" step="0.01" value={formData.porcentaje_iva} onChange={(e) => setFormData({ ...formData, porcentaje_iva: parseFloat(e.target.value) || 0 })} className="bg-gray-50 border-[#F97316]/20 text-gray-900" />
             </div>
           </div>
 
           <div className="space-y-2">
             <Label>Stock Mínimo (Seguridad)</Label>
-            <Input type="number" value={formData.stock_minimo} onChange={(e) => setFormData({ ...formData, stock_minimo: parseFloat(e.target.value) || 0 })} className="bg-white/5 border-[#00E5FF]/20 text-white w-1/2" placeholder="Ej: 10" />
-            <p className="text-xs text-gray-400 mt-1"><Info className="w-3 h-3 inline mr-1" />Stock de seguridad para evitar roturas</p>
+            <Input type="number" value={formData.stock_minimo} onChange={(e) => setFormData({ ...formData, stock_minimo: parseFloat(e.target.value) || 0 })} className="bg-gray-50 border-[#F97316]/20 text-gray-900 w-1/2" placeholder="Ej: 10" />
+            <p className="text-xs text-gray-600 mt-1"><Info className="w-3 h-3 inline mr-1" />Stock de seguridad para evitar roturas</p>
           </div>
 
           <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between p-2 rounded bg-white/5 border border-[#00E5FF]/10"><Label>Impuesto Incluido en Precio</Label><Switch checked={formData.impuesto_incluido} onCheckedChange={(checked) => setFormData({ ...formData, impuesto_incluido: checked })} /></div>
-            <div className="flex items-center justify-between p-2 rounded bg-white/5 border border-[#00E5FF]/10"><Label>Gestionar Inventario</Label><Switch checked={formData.gestiona_inventario} onCheckedChange={(checked) => setFormData({ ...formData, gestiona_inventario: checked })} /></div>
-            <div className="flex items-center justify-between p-2 rounded bg-white/5 border border-[#00E5FF]/10"><Label>Producto con Receta (Fórmula)</Label><Switch checked={formData.es_receta} onCheckedChange={(checked) => setFormData({ ...formData, es_receta: checked })} /></div>
-            <div className="flex items-center justify-between p-2 rounded bg-white/5 border border-[#00E5FF]/10"><Label>Disponible para Venta</Label><Switch checked={formData.disponible} onCheckedChange={(checked) => setFormData({ ...formData, disponible: checked })} /></div>
+            <div className="flex items-center justify-between p-2 rounded bg-gray-50 border border-[#F97316]/10"><Label>Impuesto Incluido en Precio</Label><Switch checked={formData.impuesto_incluido} onCheckedChange={(checked) => setFormData({ ...formData, impuesto_incluido: checked })} /></div>
+            <div className="flex items-center justify-between p-2 rounded bg-gray-50 border border-[#F97316]/10"><Label>Gestionar Inventario</Label><Switch checked={formData.gestiona_inventario} onCheckedChange={(checked) => setFormData({ ...formData, gestiona_inventario: checked })} /></div>
+            <div className="flex items-center justify-between p-2 rounded bg-gray-50 border border-[#F97316]/10"><Label>Producto con Receta (Fórmula)</Label><Switch checked={formData.es_receta} onCheckedChange={(checked) => setFormData({ ...formData, es_receta: checked })} /></div>
+            <div className="flex items-center justify-between p-2 rounded bg-gray-50 border border-[#F97316]/10"><Label>Disponible para Venta</Label><Switch checked={formData.disponible} onCheckedChange={(checked) => setFormData({ ...formData, disponible: checked })} /></div>
           </div>
 
           {formData.gestiona_inventario && (
-            <Card className="bg-[#1e64a7]/10 border-[#00E5FF]/30 mt-4">
+            <Card className="bg-[#C2410C]/10 border-[#F97316]/30 mt-4">
               <CardContent className="p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="text-white font-semibold flex items-center gap-2"><Calculator className="w-4 h-4 text-[#00E5FF]" />Gestión Avanzada de Inventario</h4>
-                    <p className="text-xs text-gray-400 mt-1">Configura los parámetros para control automático de reorden</p>
+                    <h4 className="text-gray-900 font-semibold flex items-center gap-2"><Calculator className="w-4 h-4 text-[#F97316]" />Gestión Avanzada de Inventario</h4>
+                    <p className="text-xs text-gray-600 mt-1">Configura los parámetros para control automático de reorden</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-sm">Consumo Promedio Diario</Label><Input type="number" step="0.01" value={formData.consumo_promedio_diario} onChange={(e) => setFormData({ ...formData, consumo_promedio_diario: parseFloat(e.target.value) || 0 })} className="bg-white/5 border-[#00E5FF]/20 text-white" /></div>
-                  <div className="space-y-2"><Label className="text-sm">Lead Time (días)</Label><Input type="number" value={formData.lead_time_dias} onChange={(e) => setFormData({ ...formData, lead_time_dias: parseInt(e.target.value) || 0 })} className="bg-white/5 border-[#00E5FF]/20 text-white" /></div>
+                  <div className="space-y-2"><Label className="text-sm">Consumo Promedio Diario</Label><Input type="number" step="0.01" value={formData.consumo_promedio_diario} onChange={(e) => setFormData({ ...formData, consumo_promedio_diario: parseFloat(e.target.value) || 0 })} className="bg-gray-50 border-[#F97316]/20 text-gray-900" /></div>
+                  <div className="space-y-2"><Label className="text-sm">Lead Time (días)</Label><Input type="number" value={formData.lead_time_dias} onChange={(e) => setFormData({ ...formData, lead_time_dias: parseInt(e.target.value) || 0 })} className="bg-gray-50 border-[#F97316]/20 text-gray-900" /></div>
                 </div>
 
-                <Button type="button" onClick={calcularParametrosInventario} className="w-full bg-[#00E5FF]/20 hover:bg-[#00E5FF]/30 text-[#00E5FF] border border-[#00E5FF]/30">
+                <Button type="button" onClick={calcularParametrosInventario} className="w-full bg-[#F97316]/20 hover:bg-[#F97316]/30 text-[#F97316] border border-[#F97316]/30">
                   <Calculator className="w-4 h-4 mr-2" />Calcular Automáticamente
                 </Button>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-sm flex items-center gap-2"><TrendingUp className="w-3 h-3 text-yellow-400" />Punto de Pedido</Label><Input type="number" value={formData.punto_pedido} onChange={(e) => setFormData({ ...formData, punto_pedido: parseInt(e.target.value) || 0 })} className="bg-white/5 border-yellow-500/20 text-white" /></div>
-                  <div className="space-y-2"><Label className="text-sm flex items-center gap-2"><AlertTriangle className="w-3 h-3 text-green-400" />Stock Máximo</Label><Input type="number" value={formData.stock_maximo} onChange={(e) => setFormData({ ...formData, stock_maximo: parseInt(e.target.value) || 0 })} className="bg-white/5 border-green-500/20 text-white" /></div>
+                  <div className="space-y-2"><Label className="text-sm flex items-center gap-2"><TrendingUp className="w-3 h-3 text-yellow-400" />Punto de Pedido</Label><Input type="number" value={formData.punto_pedido} onChange={(e) => setFormData({ ...formData, punto_pedido: parseInt(e.target.value) || 0 })} className="bg-gray-50 border-yellow-500/20 text-gray-900" /></div>
+                  <div className="space-y-2"><Label className="text-sm flex items-center gap-2"><AlertTriangle className="w-3 h-3 text-green-400" />Stock Máximo</Label><Input type="number" value={formData.stock_maximo} onChange={(e) => setFormData({ ...formData, stock_maximo: parseInt(e.target.value) || 0 })} className="bg-gray-50 border-green-500/20 text-gray-900" /></div>
                 </div>
               </CardContent>
             </Card>
           )}
 
           <div className="flex gap-3 pt-4">
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1 border-[#00E5FF]/20 text-gray-300 hover:text-white hover:bg-white/5">Cancelar</Button>
-            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white font-bold">{isSubmitting ? 'Guardando...' : producto ? 'Actualizar' : 'Crear Producto'}</Button>
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1 border-[#F97316]/20 text-gray-600 hover:text-gray-900 hover:bg-gray-50">Cancelar</Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white font-bold">{isSubmitting ? 'Guardando...' : producto ? 'Actualizar' : 'Crear Producto'}</Button>
           </div>
         </form>
       </DialogContent>

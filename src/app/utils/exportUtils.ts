@@ -665,6 +665,10 @@ export const exportRecetasToExcel = (recetas: any[], catalogoProductos: any[] = 
 };
 
 
+// ── Formateador numérico local (entero con separador de miles) ────────────────
+const fmtN = (n: number): string =>
+  Number.isFinite(n) ? n.toLocaleString('es-EC') : '0';
+
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║               ÓRDENES DE PRODUCCIÓN — PDF EJECUTIVO                     ║
 // ╚══════════════════════════════════════════════════════════════════════════╝

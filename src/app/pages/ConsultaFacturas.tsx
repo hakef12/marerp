@@ -71,6 +71,12 @@ export default function ConsultaFacturas() {
   const [dialogRIDE, setDialogRIDE] = useState(false);
   const [dialogDetalles, setDialogDetalles] = useState(false);
 
+  // Email dialog
+  const [dialogEmail, setDialogEmail] = useState(false);
+  const [facturaParaEmail, setFacturaParaEmail] = useState<Factura | null>(null);
+  const [emailDestino, setEmailDestino] = useState('');
+  const [enviandoEmail, setEnviandoEmail] = useState(false);
+
   useEffect(() => {
     cargarFacturas();
   }, []);
@@ -187,13 +193,22 @@ export default function ConsultaFacturas() {
     toast.success('XML descargado');
   };
 
-  const enviarPorEmail = async (factura: Factura) => {
-    if (!factura.cliente_email) {
-      toast.error('Cliente no tiene email registrado');
+  /** Abre el dialog de email pre-rellenando con el email del cliente si existe */
+  const abrirDialogEmail = (factura: Factura) => {
+    setFacturaParaEmail(factura);
+    setEmailDestino(factura.cliente_email || '');
+    setDialogEmail(true);
+  };
+
+  /** Envía realmente el email via Resend */
+  const confirmarEnvioEmail = async () => {
+    if (!facturaParaEmail) return;
+    if (!emailDestino || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailDestino)) {
+      toast.error('Ingresa un email válido');
       return;
     }
 
-    setIsLoading(true);
+    setEnviandoEmail(true);
     try {
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/server/facturacion/reenviar-email`,
@@ -205,22 +220,29 @@ export default function ConsultaFacturas() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            factura_id: factura.id
+            factura_id: facturaParaEmail.id,
+            destinatario: emailDestino,
           }),
         }
       );
 
+      const data = await response.json();
       if (response.ok) {
-        toast.success(`Email enviado a ${factura.cliente_email}`);
+        toast.success(`✅ Factura enviada a ${emailDestino}`);
+        // Actualizar la lista local para reflejar email_enviado
+        setFacturas(prev => prev.map(f =>
+          f.id === facturaParaEmail.id
+            ? { ...f, email_enviado: true, cliente_email: emailDestino } as any
+            : f
+        ));
+        setDialogEmail(false);
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Error enviando email');
+        toast.error(data.error || 'Error enviando email');
       }
-    } catch (error) {
-      console.error('Error:', error);
+    } catch {
       toast.error('Error de conexión');
     } finally {
-      setIsLoading(false);
+      setEnviandoEmail(false);
     }
   };
 
@@ -289,16 +311,16 @@ export default function ConsultaFacturas() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-[#0A1A2F] to-[#0F2744]">
+    <div className="h-full flex flex-col bg-gradient-to-br from-gray-50 to-[#111111]">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#0A1A2F] to-[#1e64a7] p-6 border-b border-[#00E5FF]/20">
+      <div className="bg-gradient-to-r from-gray-50 to-[#C2410C] p-6 border-b border-[#F97316]/20">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-              <FileText className="w-8 h-8 text-[#00E5FF]" />
+            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+              <FileText className="w-8 h-8 text-[#F97316]" />
               Consulta de Facturas Electrónicas
             </h1>
-            <p className="text-sm text-gray-300 mt-2">
+            <p className="text-sm text-gray-600 mt-2">
               Gestión y consulta de comprobantes electrónicos SRI
             </p>
           </div>
@@ -337,7 +359,7 @@ export default function ConsultaFacturas() {
             <Button
               onClick={cargarFacturas}
               disabled={isLoading}
-              className="bg-gradient-to-r from-[#00E5FF] to-[#1e64a7] hover:from-[#00E5FF]/80 hover:to-[#1e64a7]/80"
+              className="bg-gradient-to-r from-[#F97316] to-[#C2410C] hover:from-[#F97316]/80 hover:to-[#C2410C]/80"
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
               Actualizar
@@ -349,23 +371,23 @@ export default function ConsultaFacturas() {
       {/* Estadísticas */}
       <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <Card className="bg-[#0A1A2F]/60 border-[#00E5FF]/20">
+          <Card className="bg-white border-[#F97316]/20">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm">Total Facturas</p>
-                  <p className="text-2xl font-bold text-white">{totales.todas}</p>
+                  <p className="text-gray-600 text-sm">Total Facturas</p>
+                  <p className="text-2xl font-bold text-gray-900">{totales.todas}</p>
                 </div>
-                <FileText className="w-10 h-10 text-[#00E5FF]/50" />
+                <FileText className="w-10 h-10 text-[#F97316]/50" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-[#0A1A2F]/60 border-green-500/20">
+          <Card className="bg-white border-green-500/20">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm">Autorizadas</p>
+                  <p className="text-gray-600 text-sm">Autorizadas</p>
                   <p className="text-2xl font-bold text-green-400">{totales.autorizadas}</p>
                 </div>
                 <CheckCircle2 className="w-10 h-10 text-green-500/50" />
@@ -373,11 +395,11 @@ export default function ConsultaFacturas() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#0A1A2F]/60 border-yellow-500/20">
+          <Card className="bg-white border-yellow-500/20">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm">Pendientes</p>
+                  <p className="text-gray-600 text-sm">Pendientes</p>
                   <p className="text-2xl font-bold text-yellow-400">{totales.pendientes}</p>
                 </div>
                 <Clock className="w-10 h-10 text-yellow-500/50" />
@@ -385,11 +407,11 @@ export default function ConsultaFacturas() {
             </CardContent>
           </Card>
 
-          <Card className="bg-[#0A1A2F]/60 border-red-500/20">
+          <Card className="bg-white border-red-500/20">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm">Con Errores</p>
+                  <p className="text-gray-600 text-sm">Con Errores</p>
                   <p className="text-2xl font-bold text-red-400">{totales.errores}</p>
                 </div>
                 <XCircle className="w-10 h-10 text-red-500/50" />
@@ -397,14 +419,14 @@ export default function ConsultaFacturas() {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-r from-[#1e64a7]/20 to-[#00E5FF]/20 border-[#00E5FF]/30">
+          <Card className="bg-gradient-to-r from-[#C2410C]/20 to-[#F97316]/20 border-[#F97316]/30">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm">Monto Total</p>
-                  <p className="text-2xl font-bold text-[#00E5FF]">${(totales.montoTotal || 0).toFixed(2)}</p>
+                  <p className="text-gray-600 text-sm">Monto Total</p>
+                  <p className="text-2xl font-bold text-[#F97316]">${(totales.montoTotal || 0).toFixed(2)}</p>
                 </div>
-                <DollarSign className="w-10 h-10 text-[#00E5FF]/50" />
+                <DollarSign className="w-10 h-10 text-[#F97316]/50" />
               </div>
             </CardContent>
           </Card>
@@ -413,26 +435,26 @@ export default function ConsultaFacturas() {
 
       {/* Filtros */}
       <div className="px-6 pb-4">
-        <Card className="bg-[#0A1A2F]/60 border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardContent className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="md:col-span-2">
-                <Label className="text-white text-sm mb-2 block">Buscar</Label>
+                <Label className="text-gray-900 text-sm mb-2 block">Buscar</Label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <Input
                     placeholder="Número, clave, cliente..."
                     value={busqueda}
                     onChange={(e) => setBusqueda(e.target.value)}
-                    className="pl-10 bg-[#0A1A2F]/60 border-[#00E5FF]/20 text-white"
+                    className="pl-10 bg-white border-[#F97316]/20 text-gray-900"
                   />
                 </div>
               </div>
 
               <div>
-                <Label className="text-white text-sm mb-2 block">Estado</Label>
+                <Label className="text-gray-900 text-sm mb-2 block">Estado</Label>
                 <Select value={filtroEstado} onValueChange={setFiltroEstado}>
-                  <SelectTrigger className="bg-[#0A1A2F]/60 border-[#00E5FF]/20 text-white">
+                  <SelectTrigger className="bg-white border-[#F97316]/20 text-gray-900">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -446,22 +468,22 @@ export default function ConsultaFacturas() {
               </div>
 
               <div>
-                <Label className="text-white text-sm mb-2 block">Desde</Label>
+                <Label className="text-gray-900 text-sm mb-2 block">Desde</Label>
                 <Input
                   type="date"
                   value={fechaInicio}
                   onChange={(e) => setFechaInicio(e.target.value)}
-                  className="bg-[#0A1A2F]/60 border-[#00E5FF]/20 text-white"
+                  className="bg-white border-[#F97316]/20 text-gray-900"
                 />
               </div>
 
               <div>
-                <Label className="text-white text-sm mb-2 block">Hasta</Label>
+                <Label className="text-gray-900 text-sm mb-2 block">Hasta</Label>
                 <Input
                   type="date"
                   value={fechaFin}
                   onChange={(e) => setFechaFin(e.target.value)}
-                  className="bg-[#0A1A2F]/60 border-[#00E5FF]/20 text-white"
+                  className="bg-white border-[#F97316]/20 text-gray-900"
                 />
               </div>
             </div>
@@ -471,12 +493,12 @@ export default function ConsultaFacturas() {
 
       {/* Lista de Facturas */}
       <div className="flex-1 px-6 pb-6 overflow-auto">
-        <Card className="bg-[#0A1A2F]/60 border-[#00E5FF]/20 h-full">
+        <Card className="bg-white border-[#F97316]/20 h-full">
           <CardContent className="p-0">
             <ScrollArea className="h-full">
-              <div className="divide-y divide-[#00E5FF]/10">
+              <div className="divide-y divide-[#F97316]/10">
                 {facturasFiltradas.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+                  <div className="flex flex-col items-center justify-center h-64 text-gray-600">
                     <FileText className="w-16 h-16 mb-4 opacity-20" />
                     <p>No se encontraron facturas</p>
                   </div>
@@ -484,32 +506,32 @@ export default function ConsultaFacturas() {
                   facturasFiltradas.map((factura) => (
                     <div
                       key={factura.id}
-                      className="p-4 hover:bg-[#00E5FF]/5 transition-colors"
+                      className="p-4 hover:bg-[#F97316]/5 transition-colors"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
-                            <h3 className="text-white font-bold text-lg">
+                            <h3 className="text-gray-900 font-bold text-lg">
                               {factura.numero_factura}
                             </h3>
                             {getEstadoBadge(factura.estado)}
-                            <Badge variant="outline" className="border-[#00E5FF]/30 text-gray-400">
+                            <Badge variant="outline" className="border-[#F97316]/30 text-gray-600">
                               {factura.ambiente === 'pruebas' ? '🧪 Pruebas' : '🚀 Producción'}
                             </Badge>
                           </div>
 
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                             <div>
-                              <p className="text-gray-400">Cliente</p>
-                              <p className="text-white font-medium">{factura.cliente_razon_social}</p>
+                              <p className="text-gray-600">Cliente</p>
+                              <p className="text-gray-900 font-medium">{factura.cliente_razon_social}</p>
                             </div>
                             <div>
-                              <p className="text-gray-400">Identificación</p>
-                              <p className="text-white">{factura.cliente_identificacion}</p>
+                              <p className="text-gray-600">Identificación</p>
+                              <p className="text-gray-900">{factura.cliente_identificacion}</p>
                             </div>
                             <div>
-                              <p className="text-gray-400">Fecha Emisión</p>
-                              <p className="text-white">
+                              <p className="text-gray-600">Fecha Emisión</p>
+                              <p className="text-gray-900">
                                 {factura.fecha_emision
                                 ? (() => { try { return new Date(factura.fecha_emision).toLocaleString('es-EC', { dateStyle: 'short', timeStyle: 'short' }); } catch { return factura.fecha_emision; } })()
                                 : '—'
@@ -517,8 +539,8 @@ export default function ConsultaFacturas() {
                               </p>
                             </div>
                             <div>
-                              <p className="text-gray-400">Total</p>
-                              <p className="text-[#00E5FF] font-bold text-lg">
+                              <p className="text-gray-600">Total</p>
+                              <p className="text-[#F97316] font-bold text-lg">
                                 ${(Number(factura.total) || 0).toFixed(2)}
                               </p>
                             </div>
@@ -526,7 +548,7 @@ export default function ConsultaFacturas() {
 
                           {factura.numero_autorizacion && (
                             <div className="mt-2 text-xs">
-                              <p className="text-gray-400">
+                              <p className="text-gray-600">
                                 Autorización: <span className="text-green-400">{factura.numero_autorizacion}</span>
                               </p>
                             </div>
@@ -553,7 +575,7 @@ export default function ConsultaFacturas() {
                             size="sm"
                             variant="outline"
                             onClick={() => verDetalles(factura)}
-                            className="border-[#00E5FF]/20 text-white hover:bg-[#00E5FF]/10"
+                            className="border-[#F97316]/20 text-gray-900 hover:bg-[#F97316]/10"
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -561,7 +583,7 @@ export default function ConsultaFacturas() {
                             size="sm"
                             variant="outline"
                             onClick={() => verRIDE(factura)}
-                            className="border-[#00E5FF]/20 text-white hover:bg-[#00E5FF]/10"
+                            className="border-[#F97316]/20 text-gray-900 hover:bg-[#F97316]/10"
                           >
                             <Printer className="w-4 h-4" />
                           </Button>
@@ -569,21 +591,20 @@ export default function ConsultaFacturas() {
                             size="sm"
                             variant="outline"
                             onClick={() => descargarXML(factura)}
-                            className="border-[#00E5FF]/20 text-white hover:bg-[#00E5FF]/10"
+                            className="border-[#F97316]/20 text-gray-900 hover:bg-[#F97316]/10"
                           >
                             <FileDown className="w-4 h-4" />
                           </Button>
-                          {factura.cliente_email && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => enviarPorEmail(factura)}
-                              disabled={isLoading}
-                              className="border-[#00E5FF]/20 text-white hover:bg-[#00E5FF]/10"
-                            >
-                              <Mail className="w-4 h-4" />
-                            </Button>
-                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => abrirDialogEmail(factura)}
+                            disabled={isLoading}
+                            title={factura.cliente_email ? `Enviar a ${factura.cliente_email}` : 'Enviar por email'}
+                            className={`border-[#F97316]/20 hover:bg-[#F97316]/10 ${(factura as any).email_enviado ? 'text-green-600' : 'text-gray-900'}`}
+                          >
+                            <Mail className="w-4 h-4" />
+                          </Button>
                           {/* Mostrar Reintentar para TODOS los estados — permite re-verificar facturas
                               marcadas incorrectamente como AUTORIZADO por bug anterior */}
                           {(factura.estado === 'ERROR' || factura.estado === 'PENDIENTE' || factura.estado === 'NO_AUTORIZADO' || factura.estado === 'AUTORIZADO') && (
@@ -613,10 +634,10 @@ export default function ConsultaFacturas() {
 
       {/* Dialog RIDE */}
       <Dialog open={dialogRIDE} onOpenChange={setDialogRIDE}>
-        <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/20 max-w-2xl max-h-[90vh]">
+        <DialogContent className="bg-white border-[#F97316]/20 max-w-2xl max-h-[90vh]">
           <DialogHeader>
-            <DialogTitle className="text-white text-xl flex items-center gap-2">
-              <FileText className="w-5 h-5 text-[#00E5FF]" />
+            <DialogTitle className="text-gray-900 text-xl flex items-center gap-2">
+              <FileText className="w-5 h-5 text-[#F97316]" />
               RIDE - Factura Electrónica
             </DialogTitle>
           </DialogHeader>
@@ -628,10 +649,10 @@ export default function ConsultaFacturas() {
               </div>
             )}
 
-            <div className="flex justify-end gap-2 pt-4 border-t border-[#00E5FF]/20">
+            <div className="flex justify-end gap-2 pt-4 border-t border-[#F97316]/20">
               <Button
                 onClick={() => window.print()}
-                className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]"
+                className="bg-gradient-to-r from-[#C2410C] to-[#F97316]"
               >
                 <Printer className="w-4 h-4 mr-2" />
                 Imprimir
@@ -639,7 +660,7 @@ export default function ConsultaFacturas() {
               <Button
                 onClick={() => setDialogRIDE(false)}
                 variant="outline"
-                className="border-[#00E5FF]/20 text-white"
+                className="border-[#F97316]/20 text-gray-900"
               >
                 Cerrar
               </Button>
@@ -650,9 +671,9 @@ export default function ConsultaFacturas() {
 
       {/* Dialog Detalles */}
       <Dialog open={dialogDetalles} onOpenChange={setDialogDetalles}>
-        <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/20 max-w-2xl">
+        <DialogContent className="bg-white border-[#F97316]/20 max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="text-white text-xl">
+            <DialogTitle className="text-gray-900 text-xl">
               Detalles de la Factura
             </DialogTitle>
           </DialogHeader>
@@ -661,22 +682,22 @@ export default function ConsultaFacturas() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-gray-400 text-sm">Número</Label>
-                  <p className="text-white font-bold">{facturaSeleccionada.numero_factura}</p>
+                  <Label className="text-gray-600 text-sm">Número</Label>
+                  <p className="text-gray-900 font-bold">{facturaSeleccionada.numero_factura}</p>
                 </div>
                 <div>
-                  <Label className="text-gray-400 text-sm">Estado</Label>
+                  <Label className="text-gray-600 text-sm">Estado</Label>
                   <div className="mt-1">{getEstadoBadge(facturaSeleccionada.estado)}</div>
                 </div>
                 <div className="col-span-2">
-                  <Label className="text-gray-400 text-sm">Clave de Acceso</Label>
-                  <p className="text-white font-mono text-xs break-all">
+                  <Label className="text-gray-600 text-sm">Clave de Acceso</Label>
+                  <p className="text-gray-900 font-mono text-xs break-all">
                     {facturaSeleccionada.clave_acceso}
                   </p>
                 </div>
                 {facturaSeleccionada.numero_autorizacion && (
                   <div className="col-span-2">
-                    <Label className="text-gray-400 text-sm">Número de Autorización</Label>
+                    <Label className="text-gray-600 text-sm">Número de Autorización</Label>
                     <p className="text-green-400 font-mono text-xs">
                       {facturaSeleccionada.numero_autorizacion}
                     </p>
@@ -684,41 +705,41 @@ export default function ConsultaFacturas() {
                 )}
               </div>
 
-              <Separator className="bg-[#00E5FF]/20" />
+              <Separator className="bg-[#F97316]/20" />
 
               <div>
-                <Label className="text-gray-400 text-sm mb-2 block">Items</Label>
-                <div className="bg-[#0A1A2F]/60 border border-[#00E5FF]/20 rounded-lg p-3 max-h-40 overflow-auto">
+                <Label className="text-gray-600 text-sm mb-2 block">Items</Label>
+                <div className="bg-white border border-[#F97316]/20 rounded-lg p-3 max-h-40 overflow-auto">
                   {facturaSeleccionada.items?.map((item: any, idx: number) => (
                     <div key={idx} className="flex justify-between text-sm py-1">
-                      <span className="text-white">
+                      <span className="text-gray-900">
                         {item.cantidad}x {item.nombre || item.descripcion || 'Producto'}
                       </span>
-                      <span className="text-gray-400">${(Number(item.subtotal) || 0).toFixed(2)}</span>
+                      <span className="text-gray-600">${(Number(item.subtotal) || 0).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="bg-gradient-to-r from-[#1e64a7]/20 to-[#00E5FF]/20 border border-[#00E5FF]/20 rounded-lg p-4">
+              <div className="bg-gradient-to-r from-[#C2410C]/20 to-[#F97316]/20 border border-[#F97316]/20 rounded-lg p-4">
                 <div className="flex justify-between mb-1">
-                  <span className="text-gray-400">Subtotal:</span>
-                  <span className="text-white">${(Number(facturaSeleccionada.subtotal) || 0).toFixed(2)}</span>
+                  <span className="text-gray-600">Subtotal:</span>
+                  <span className="text-gray-900">${(Number(facturaSeleccionada.subtotal) || 0).toFixed(2)}</span>
                 </div>
                 {(Number(facturaSeleccionada.descuento) || 0) > 0 && (
                   <div className="flex justify-between mb-1">
-                    <span className="text-gray-400">Descuento:</span>
+                    <span className="text-gray-600">Descuento:</span>
                     <span className="text-red-400">-${(Number(facturaSeleccionada.descuento) || 0).toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between mb-1">
-                  <span className="text-gray-400">IVA 15%:</span>
-                  <span className="text-white">${(Number(facturaSeleccionada.iva) || 0).toFixed(2)}</span>
+                  <span className="text-gray-600">IVA 15%:</span>
+                  <span className="text-gray-900">${(Number(facturaSeleccionada.iva) || 0).toFixed(2)}</span>
                 </div>
-                <Separator className="bg-[#00E5FF]/20 my-2" />
+                <Separator className="bg-[#F97316]/20 my-2" />
                 <div className="flex justify-between">
-                  <span className="text-white font-bold text-lg">Total:</span>
-                  <span className="text-[#00E5FF] font-bold text-2xl">
+                  <span className="text-gray-900 font-bold text-lg">Total:</span>
+                  <span className="text-[#F97316] font-bold text-2xl">
                     ${(Number(facturaSeleccionada.total) || 0).toFixed(2)}
                   </span>
                 </div>
@@ -727,7 +748,7 @@ export default function ConsultaFacturas() {
               {/* Mensajes SRI */}
               {(facturaSeleccionada as any).mensajes_sri?.length > 0 && (
                 <div>
-                  <Label className="text-gray-400 text-sm mb-2 block">Mensajes SRI</Label>
+                  <Label className="text-gray-600 text-sm mb-2 block">Mensajes SRI</Label>
                   <div className={`rounded-lg p-3 text-xs font-mono space-y-1 ${
                     facturaSeleccionada.estado === 'AUTORIZADO' ? 'bg-green-500/10 border border-green-500/20' :
                     facturaSeleccionada.estado === 'NO_AUTORIZADO' ? 'bg-red-500/10 border border-red-500/20' :
@@ -735,9 +756,9 @@ export default function ConsultaFacturas() {
                   }`}>
                     {(facturaSeleccionada as any).mensajes_sri.map((msg: string, idx: number) => (
                       <p key={idx} className={
-                        facturaSeleccionada.estado === 'AUTORIZADO' ? 'text-green-300' :
-                        facturaSeleccionada.estado === 'NO_AUTORIZADO' ? 'text-red-300' :
-                        'text-yellow-300'
+                        facturaSeleccionada.estado === 'AUTORIZADO' ? 'text-green-700' :
+                        facturaSeleccionada.estado === 'NO_AUTORIZADO' ? 'text-red-600' :
+                        'text-yellow-700'
                       }>{msg}</p>
                     ))}
                   </div>
@@ -747,8 +768,8 @@ export default function ConsultaFacturas() {
               {/* Debug: raw SRI response (only shown for non-authorized) */}
               {facturaSeleccionada.estado !== 'AUTORIZADO' && (facturaSeleccionada as any).debug_sri_response && (
                 <div>
-                  <Label className="text-gray-400 text-sm mb-2 block">Respuesta raw SRI (debug)</Label>
-                  <pre className="bg-[#060f1e] border border-[#00E5FF]/10 rounded-lg p-2 text-[10px] text-gray-400 whitespace-pre-wrap break-all max-h-32 overflow-auto">
+                  <Label className="text-gray-600 text-sm mb-2 block">Respuesta raw SRI (debug)</Label>
+                  <pre className="bg-gray-50 border border-[#F97316]/10 rounded-lg p-2 text-[10px] text-gray-600 whitespace-pre-wrap break-all max-h-32 overflow-auto">
                     {(facturaSeleccionada as any).debug_sri_response}
                   </pre>
                 </div>
@@ -758,9 +779,89 @@ export default function ConsultaFacturas() {
                 <Button
                   onClick={() => setDialogDetalles(false)}
                   variant="outline"
-                  className="border-[#00E5FF]/20 text-white"
+                  className="border-[#F97316]/20 text-gray-900"
                 >
                   Cerrar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: Enviar factura por email ── */}
+      <Dialog open={dialogEmail} onOpenChange={setDialogEmail}>
+        <DialogContent className="bg-white border-[#F97316]/20 max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-gray-900 flex items-center gap-2">
+              <Mail className="w-5 h-5 text-[#F97316]" />
+              Enviar Factura por Email
+            </DialogTitle>
+          </DialogHeader>
+
+          {facturaParaEmail && (
+            <div className="space-y-4 pt-2">
+              {/* Resumen de la factura */}
+              <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Factura</span>
+                  <span className="font-semibold text-gray-900">{facturaParaEmail.numero_factura}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Cliente</span>
+                  <span className="text-gray-900">{facturaParaEmail.cliente_razon_social || 'Consumidor Final'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Total</span>
+                  <span className="font-semibold text-[#C2410C]">${Number(facturaParaEmail.total || 0).toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Campo email */}
+              <div className="space-y-2">
+                <Label className="text-gray-700">
+                  Email de destino <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="email"
+                  placeholder="cliente@ejemplo.com"
+                  value={emailDestino}
+                  onChange={e => setEmailDestino(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && confirmarEnvioEmail()}
+                  className="bg-gray-50 border-gray-200 text-gray-900"
+                  autoFocus
+                />
+                {facturaParaEmail.cliente_email && facturaParaEmail.cliente_email !== emailDestino && (
+                  <button
+                    className="text-xs text-[#F97316] hover:underline"
+                    onClick={() => setEmailDestino(facturaParaEmail.cliente_email!)}
+                  >
+                    Usar email del cliente: {facturaParaEmail.cliente_email}
+                  </button>
+                )}
+              </div>
+
+              <p className="text-xs text-gray-400">
+                Se enviará el RIDE de la factura como email HTML al destinatario indicado.
+              </p>
+
+              <div className="flex gap-3 justify-end pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setDialogEmail(false)}
+                  disabled={enviandoEmail}
+                  className="border-gray-200 text-gray-700"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={confirmarEnvioEmail}
+                  disabled={enviandoEmail || !emailDestino}
+                  className="bg-[#F97316] hover:bg-[#ea6c0d] text-white"
+                >
+                  {enviandoEmail
+                    ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Enviando…</>
+                    : <><Send className="w-4 h-4 mr-2" />Enviar</>}
                 </Button>
               </div>
             </div>

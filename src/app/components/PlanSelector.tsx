@@ -118,8 +118,8 @@ export function PlanSelector({ selectedPlan, onSelectPlan }: PlanSelectorProps) 
     return (
       <div className="space-y-4">
         <div className="text-center mb-6">
-          <h3 className="text-xl font-bold text-white mb-2">Selecciona tu Plan</h3>
-          <p className="text-gray-400 text-sm">Cargando planes...</p>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Selecciona tu Plan</h3>
+          <p className="text-gray-600 text-sm">Cargando planes...</p>
         </div>
       </div>
     );
@@ -128,8 +128,8 @@ export function PlanSelector({ selectedPlan, onSelectPlan }: PlanSelectorProps) 
   return (
     <div className="space-y-4">
       <div className="text-center mb-6">
-        <h3 className="text-xl font-bold text-white mb-2">Selecciona tu Plan</h3>
-        <p className="text-gray-400 text-sm">30 días de prueba gratis • Sin tarjeta de crédito</p>
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Selecciona tu Plan</h3>
+        <p className="text-gray-600 text-sm">30 días de prueba gratis • Sin tarjeta de crédito</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -148,49 +148,49 @@ export function PlanSelector({ selectedPlan, onSelectPlan }: PlanSelectorProps) 
               }}
               className={`relative text-left p-4 rounded-xl border-2 transition-all duration-200 ${
                 isSelected
-                  ? 'border-[#00E5FF] bg-[#00E5FF]/10 scale-105 shadow-lg shadow-[#00E5FF]/20'
-                  : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
+                  ? 'border-[#F97316] bg-[#F97316]/10 scale-105 shadow-lg shadow-[#F97316]/20'
+                  : 'border-gray-100 bg-gray-50 hover:border-gray-200 hover:bg-gray-100'
               }`}
             >
               {/* Badge Popular */}
               {plan.popular && (
-                <div className="absolute -top-2 -right-2 bg-gradient-to-r from-[#7B61FF] to-[#00E5FF] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg">
+                <div className="absolute -top-2 -right-2 bg-gradient-to-r from-[#FB923C] to-[#F97316] text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg">
                   ⭐ Popular
                 </div>
               )}
 
               {/* Check Mark */}
               {isSelected && (
-                <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-[#00E5FF] flex items-center justify-center">
-                  <Check className="w-4 h-4 text-white" />
+                <div className="absolute top-3 right-3 w-6 h-6 rounded-full bg-[#F97316] flex items-center justify-center">
+                  <Check className="w-4 h-4 text-gray-900" />
                 </div>
               )}
 
               {/* Icon */}
               <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${color} flex items-center justify-center mb-3`}>
-                <Icon className="w-6 h-6 text-white" />
+                <Icon className="w-6 h-6 text-gray-900" />
               </div>
 
               {/* Nombre y Precio */}
               <div className="mb-2">
-                <h4 className="text-white font-bold text-lg">{plan.nombre}</h4>
-                <p className="text-gray-400 text-xs mb-2">{plan.descripcion}</p>
+                <h4 className="text-gray-900 font-bold text-lg">{plan.nombre}</h4>
+                <p className="text-gray-600 text-xs mb-2">{plan.descripcion}</p>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-bold text-white">${plan.precio_mensual}</span>
-                  <span className="text-gray-400 text-sm">/mes</span>
+                  <span className="text-3xl font-bold text-gray-900">${plan.precio_mensual}</span>
+                  <span className="text-gray-600 text-sm">/mes</span>
                 </div>
               </div>
 
               {/* Características */}
               <ul className="space-y-1 mt-3">
                 {caracteristicas.slice(0, 3).map((caracteristica, index) => (
-                  <li key={`${plan.codigo}-caracteristica-${index}`} className="flex items-start gap-2 text-xs text-gray-300">
-                    <Check className="w-3 h-3 text-[#00E5FF] mt-0.5 flex-shrink-0" />
+                  <li key={`${plan.codigo}-caracteristica-${index}`} className="flex items-start gap-2 text-xs text-gray-600">
+                    <Check className="w-3 h-3 text-[#F97316] mt-0.5 flex-shrink-0" />
                     <span>{caracteristica}</span>
                   </li>
                 ))}
                 {caracteristicas.length > 3 && (
-                  <li key={`${plan.codigo}-mas-caracteristicas`} className="text-xs text-[#00E5FF] font-medium">
+                  <li key={`${plan.codigo}-mas-caracteristicas`} className="text-xs text-[#F97316] font-medium">
                     +{caracteristicas.length - 3} más
                   </li>
                 )}
@@ -200,8 +200,8 @@ export function PlanSelector({ selectedPlan, onSelectPlan }: PlanSelectorProps) 
         })}
       </div>
 
-      <div className="bg-[#1e64a7]/10 border border-[#1e64a7]/30 rounded-lg p-3 mt-4">
-        <p className="text-xs text-gray-400 text-center">
+      <div className="bg-[#C2410C]/10 border border-[#C2410C]/30 rounded-lg p-3 mt-4">
+        <p className="text-xs text-gray-600 text-center">
           💡 Todos los planes incluyen 30 días de prueba gratuita. Puedes cambiar de plan en cualquier momento.
         </p>
       </div>

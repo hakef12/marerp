@@ -58,17 +58,17 @@ export function DiagnosticoPanel() {
         <Button 
           variant="outline" 
           size="sm"
-          className="bg-[#0A1A2F]/60 border-[#00E5FF]/30 text-[#00E5FF] hover:bg-[#00E5FF]/10"
+          className="bg-white border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10"
           onClick={ejecutar}
         >
           <Bug className="w-4 h-4 mr-2" />
           Diagnóstico
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl max-h-[80vh] bg-[#0A1A2F] border-[#00E5FF]/20">
+      <DialogContent className="max-w-3xl max-h-[80vh] bg-white border-[#F97316]/20">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-white flex items-center gap-2">
-            <Bug className="w-6 h-6 text-[#00E5FF]" />
+          <DialogTitle className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <Bug className="w-6 h-6 text-[#F97316]" />
             Diagnóstico del Sistema
           </DialogTitle>
         </DialogHeader>
@@ -108,7 +108,7 @@ export function DiagnosticoPanel() {
           <Button 
             onClick={ejecutar} 
             disabled={isLoading}
-            className="w-full bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:from-[#00E5FF] hover:to-[#7B61FF]"
+            className="w-full bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:from-[#F97316] hover:to-[#FB923C]"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             {isLoading ? 'Ejecutando diagnóstico...' : resultados.length > 0 ? 'Refrescar' : 'Ejecutar Diagnóstico'}
@@ -116,18 +116,18 @@ export function DiagnosticoPanel() {
 
           {/* Resultados */}
           {resultados.length > 0 && (
-            <ScrollArea className="h-[400px] rounded-lg border border-[#00E5FF]/20 p-4">
+            <ScrollArea className="h-[400px] rounded-lg border border-[#F97316]/20 p-4">
               <div className="space-y-3">
                 {resultados.map((resultado, index) => (
                   <Card 
                     key={index} 
-                    className="bg-[#0A1A2F]/40 border-[#00E5FF]/20"
+                    className="bg-white border-[#F97316]/20"
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-2">
                           {getIcono(resultado.estado)}
-                          <CardTitle className="text-base text-white">
+                          <CardTitle className="text-base text-gray-900">
                             {resultado.paso}
                           </CardTitle>
                         </div>
@@ -135,13 +135,13 @@ export function DiagnosticoPanel() {
                           {resultado.estado.toUpperCase()}
                         </Badge>
                       </div>
-                      <CardDescription className="text-gray-300 mt-1">
+                      <CardDescription className="text-gray-600 mt-1">
                         {resultado.mensaje}
                       </CardDescription>
                     </CardHeader>
                     {resultado.detalles && (
                       <CardContent>
-                        <pre className="text-xs bg-black/30 p-3 rounded text-[#00E5FF] overflow-auto">
+                        <pre className="text-xs bg-black/30 p-3 rounded text-[#F97316] overflow-auto">
                           {JSON.stringify(resultado.detalles, null, 2)}
                         </pre>
                       </CardContent>
@@ -161,7 +161,7 @@ export function DiagnosticoPanel() {
                   Se detectaron errores
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-gray-300 space-y-2">
+              <CardContent className="text-gray-600 space-y-2">
                 <p>Recomendaciones:</p>
                 <ul className="list-disc list-inside space-y-1 text-sm">
                   <li>Verifica que el servidor de Supabase esté funcionando</li>

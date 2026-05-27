@@ -253,7 +253,7 @@ export default function ConfiguracionSistema() {
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${checked ? 'bg-[#00E5FF]' : 'bg-white/20'}`}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${checked ? 'bg-[#F97316]' : 'bg-gray-200'}`}
     >
       <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
     </button>
@@ -269,9 +269,9 @@ export default function ConfiguracionSistema() {
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="bg-white/5 border-white/10 text-white pr-10"
+        className="bg-gray-50 border-gray-100 text-gray-900 pr-10"
       />
-      <button type="button" onClick={onToggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+      <button type="button" onClick={onToggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-900">
         {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
       </button>
     </div>
@@ -292,19 +292,19 @@ export default function ConfiguracionSistema() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Settings className="w-7 h-7 text-[#00E5FF]" />
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+            <Settings className="w-7 h-7 text-[#F97316]" />
             Configuración
           </h1>
-          <p className="text-gray-400 text-sm mt-1">Gestiona la información y preferencias de tu empresa</p>
+          <p className="text-gray-600 text-sm mt-1">Gestiona la información y preferencias de tu empresa</p>
         </div>
 
         {/* System health badge */}
         <div className="flex items-center gap-3">
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${
-            health === 'ok'       ? 'bg-green-500/10 border-green-500/30 text-green-300' :
-            health === 'error'    ? 'bg-red-500/10 border-red-500/30 text-red-300' :
-                                    'bg-white/5 border-white/10 text-gray-400'
+            health === 'ok'       ? 'bg-green-50 border-green-300 text-green-700' :
+            health === 'error'    ? 'bg-red-50 border-red-300 text-red-600' :
+                                    'bg-gray-50 border-gray-100 text-gray-600'
           }`}>
             {health === 'ok'    ? <Wifi className="w-3.5 h-3.5" /> :
              health === 'error'  ? <WifiOff className="w-3.5 h-3.5" /> :
@@ -314,7 +314,7 @@ export default function ConfiguracionSistema() {
           <button
             onClick={cargarEstado}
             disabled={refreshingHealth}
-            className="p-2 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-40"
+            className="p-2 rounded-lg bg-gray-50 border border-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-all disabled:opacity-40"
           >
             <RefreshCw className={`w-4 h-4 ${refreshingHealth ? 'animate-spin' : ''}`} />
           </button>
@@ -325,16 +325,16 @@ export default function ConfiguracionSistema() {
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { icon: Package,     label: 'Productos',         value: stats.productos,  color: 'text-[#7B61FF]' },
-            { icon: Layers,      label: 'Categorías',        value: stats.categorias, color: 'text-[#00E5FF]' },
+            { icon: Package,     label: 'Productos',         value: stats.productos,  color: 'text-[#FB923C]' },
+            { icon: Layers,      label: 'Categorías',        value: stats.categorias, color: 'text-[#F97316]' },
             { icon: ShoppingCart,label: 'Ventas totales',    value: stats.ventas,     color: 'text-green-400'  },
             { icon: ChefHat,     label: 'Comandas activas',  value: stats.comandas,   color: 'text-orange-400' },
           ].map(({ icon: Icon, label, value, color }) => (
-            <div key={label} className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-3">
+            <div key={label} className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 flex items-center gap-3">
               <Icon className={`w-5 h-5 flex-shrink-0 ${color}`} />
               <div>
-                <p className="text-white font-bold text-lg leading-none">{value}</p>
-                <p className="text-gray-500 text-xs mt-0.5">{label}</p>
+                <p className="text-gray-900 font-bold text-lg leading-none">{value}</p>
+                <p className="text-gray-600 text-xs mt-0.5">{label}</p>
               </div>
             </div>
           ))}
@@ -342,15 +342,15 @@ export default function ConfiguracionSistema() {
       )}
 
       {/* ── Tab nav ─────────────────────────────────────────────────────── */}
-      <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1.5">
+      <div className="flex gap-1 bg-gray-50 border border-gray-100 rounded-xl p-1.5">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
             className={`flex items-center gap-2 flex-1 justify-center px-3 py-2 rounded-lg text-sm font-medium transition-all ${
               tab === id
-                ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow'
-                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
             }`}
           >
             <Icon className="w-4 h-4" />
@@ -363,87 +363,87 @@ export default function ConfiguracionSistema() {
           TAB: EMPRESA
       ════════════════════════════════════════════════════════════════════ */}
       {tab === 'empresa' && (
-        <Card className="bg-white/5 border border-white/10">
+        <Card className="bg-gray-50 border border-gray-100">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2 text-lg">
-              <Building2 className="w-5 h-5 text-[#00E5FF]" />
+            <CardTitle className="text-gray-900 flex items-center gap-2 text-lg">
+              <Building2 className="w-5 h-5 text-[#F97316]" />
               Información de la Empresa
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-gray-300">Razón Social / Nombre *</Label>
+                <Label className="text-gray-600">Razón Social / Nombre *</Label>
                 <div className="relative">
-                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <Input value={empresa.nombre} onChange={e => setEmpresa(p => ({ ...p, nombre: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white pl-10" placeholder="Nombre de tu empresa" />
+                    className="bg-gray-50 border-gray-100 text-gray-900 pl-10" placeholder="Nombre de tu empresa" />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">RUC / Identificación</Label>
+                <Label className="text-gray-600">RUC / Identificación</Label>
                 <div className="relative">
-                  <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <Input value={empresa.ruc} onChange={e => setEmpresa(p => ({ ...p, ruc: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white pl-10" placeholder="0000000000001" maxLength={13} />
+                    className="bg-gray-50 border-gray-100 text-gray-900 pl-10" placeholder="0000000000001" maxLength={13} />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Teléfono</Label>
+                <Label className="text-gray-600">Teléfono</Label>
                 <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <Input value={empresa.telefono} onChange={e => setEmpresa(p => ({ ...p, telefono: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white pl-10" placeholder="+593 99 000 0000" />
+                    className="bg-gray-50 border-gray-100 text-gray-900 pl-10" placeholder="+593 99 000 0000" />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Correo Electrónico</Label>
+                <Label className="text-gray-600">Correo Electrónico</Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <Input value={empresa.email} onChange={e => setEmpresa(p => ({ ...p, email: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white pl-10" placeholder="empresa@correo.com" type="email" />
+                    className="bg-gray-50 border-gray-100 text-gray-900 pl-10" placeholder="empresa@correo.com" type="email" />
                 </div>
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label className="text-gray-300">Dirección</Label>
+                <Label className="text-gray-600">Dirección</Label>
                 <div className="relative">
-                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <Input value={empresa.direccion} onChange={e => setEmpresa(p => ({ ...p, direccion: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white pl-10" placeholder="Calle Principal, N° y Referencia" />
+                    className="bg-gray-50 border-gray-100 text-gray-900 pl-10" placeholder="Calle Principal, N° y Referencia" />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Ciudad</Label>
+                <Label className="text-gray-600">Ciudad</Label>
                 <Input value={empresa.ciudad} onChange={e => setEmpresa(p => ({ ...p, ciudad: e.target.value }))}
-                  className="bg-white/5 border-white/10 text-white" placeholder="Quito" />
+                  className="bg-gray-50 border-gray-100 text-gray-900" placeholder="Quito" />
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Provincia</Label>
+                <Label className="text-gray-600">Provincia</Label>
                 <Input value={empresa.provincia} onChange={e => setEmpresa(p => ({ ...p, provincia: e.target.value }))}
-                  className="bg-white/5 border-white/10 text-white" placeholder="Pichincha" />
+                  className="bg-gray-50 border-gray-100 text-gray-900" placeholder="Pichincha" />
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">País</Label>
+                <Label className="text-gray-600">País</Label>
                 <Input value={empresa.pais} onChange={e => setEmpresa(p => ({ ...p, pais: e.target.value }))}
-                  className="bg-white/5 border-white/10 text-white" placeholder="Ecuador" />
+                  className="bg-gray-50 border-gray-100 text-gray-900" placeholder="Ecuador" />
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Representante Legal</Label>
+                <Label className="text-gray-600">Representante Legal</Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <Input value={empresa.representante_legal} onChange={e => setEmpresa(p => ({ ...p, representante_legal: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white pl-10" placeholder="Nombre del representante" />
+                    className="bg-gray-50 border-gray-100 text-gray-900 pl-10" placeholder="Nombre del representante" />
                 </div>
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label className="text-gray-300">Actividad Económica</Label>
+                <Label className="text-gray-600">Actividad Económica</Label>
                 <Input value={empresa.actividad_economica} onChange={e => setEmpresa(p => ({ ...p, actividad_economica: e.target.value }))}
-                  className="bg-white/5 border-white/10 text-white" placeholder="Ej: Restaurantes y servicios de comida" />
+                  className="bg-gray-50 border-gray-100 text-gray-900" placeholder="Ej: Restaurantes y servicios de comida" />
               </div>
             </div>
             <div className="flex justify-end pt-2">
               <Button onClick={guardarEmpresa} disabled={savingEmpresa}
-                className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90">
+                className="bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90">
                 {savingEmpresa ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                 {savingEmpresa ? 'Guardando...' : 'Guardar Empresa'}
               </Button>
@@ -456,22 +456,22 @@ export default function ConfiguracionSistema() {
           TAB: SISTEMA
       ════════════════════════════════════════════════════════════════════ */}
       {tab === 'sistema' && (
-        <Card className="bg-white/5 border border-white/10">
+        <Card className="bg-gray-50 border border-gray-100">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2 text-lg">
-              <Globe className="w-5 h-5 text-[#00E5FF]" />
+            <CardTitle className="text-gray-900 flex items-center gap-2 text-lg">
+              <Globe className="w-5 h-5 text-[#F97316]" />
               Preferencias del Sistema
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-gray-300 flex items-center gap-2"><Clock className="w-4 h-4" /> Zona Horaria</Label>
+                <Label className="text-gray-600 flex items-center gap-2"><Clock className="w-4 h-4" /> Zona Horaria</Label>
                 <Select value={prefs.zona_horaria} onValueChange={v => setPrefs(p => ({ ...p, zona_horaria: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                  <SelectTrigger className="bg-gray-50 border-gray-100 text-gray-900">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-white/10">
+                  <SelectContent className="bg-white border-gray-100">
                     <SelectItem value="America/Guayaquil">Ecuador — UTC-5 (Guayaquil / Quito)</SelectItem>
                     <SelectItem value="America/Bogota">Colombia — UTC-5 (Bogotá)</SelectItem>
                     <SelectItem value="America/Lima">Perú — UTC-5 (Lima)</SelectItem>
@@ -480,12 +480,12 @@ export default function ConfiguracionSistema() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300 flex items-center gap-2"><DollarSign className="w-4 h-4" /> Moneda</Label>
+                <Label className="text-gray-600 flex items-center gap-2"><DollarSign className="w-4 h-4" /> Moneda</Label>
                 <Select value={prefs.moneda} onValueChange={v => setPrefs(p => ({ ...p, moneda: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                  <SelectTrigger className="bg-gray-50 border-gray-100 text-gray-900">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-white/10">
+                  <SelectContent className="bg-white border-gray-100">
                     <SelectItem value="USD">USD — Dólar Americano ($)</SelectItem>
                     <SelectItem value="EUR">EUR — Euro (€)</SelectItem>
                     <SelectItem value="COP">COP — Peso Colombiano</SelectItem>
@@ -493,12 +493,12 @@ export default function ConfiguracionSistema() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Formato de Fecha</Label>
+                <Label className="text-gray-600">Formato de Fecha</Label>
                 <Select value={prefs.formato_fecha} onValueChange={v => setPrefs(p => ({ ...p, formato_fecha: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                  <SelectTrigger className="bg-gray-50 border-gray-100 text-gray-900">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-white/10">
+                  <SelectContent className="bg-white border-gray-100">
                     <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
                     <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
                     <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
@@ -506,12 +506,12 @@ export default function ConfiguracionSistema() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Decimales en Precios</Label>
+                <Label className="text-gray-600">Decimales en Precios</Label>
                 <Select value={prefs.decimales} onValueChange={v => setPrefs(p => ({ ...p, decimales: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                  <SelectTrigger className="bg-gray-50 border-gray-100 text-gray-900">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-white/10">
+                  <SelectContent className="bg-white border-gray-100">
                     <SelectItem value="0">Sin decimales (1000)</SelectItem>
                     <SelectItem value="2">2 decimales (1000.00)</SelectItem>
                     <SelectItem value="4">4 decimales (1000.0000)</SelectItem>
@@ -519,12 +519,12 @@ export default function ConfiguracionSistema() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Inicio Ejercicio Fiscal</Label>
+                <Label className="text-gray-600">Inicio Ejercicio Fiscal</Label>
                 <Select value={prefs.inicio_ejercicio_fiscal} onValueChange={v => setPrefs(p => ({ ...p, inicio_ejercicio_fiscal: v }))}>
-                  <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                  <SelectTrigger className="bg-gray-50 border-gray-100 text-gray-900">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-white/10">
+                  <SelectContent className="bg-white border-gray-100">
                     <SelectItem value="01/01">1 de Enero</SelectItem>
                     <SelectItem value="01/04">1 de Abril</SelectItem>
                     <SelectItem value="01/07">1 de Julio</SelectItem>
@@ -534,13 +534,13 @@ export default function ConfiguracionSistema() {
               </div>
             </div>
             {/* Info note */}
-            <div className="bg-[#1e64a7]/10 border border-[#1e64a7]/30 rounded-lg p-3 flex gap-2 text-sm text-gray-400">
-              <CheckCircle2 className="w-4 h-4 text-[#00E5FF] flex-shrink-0 mt-0.5" />
+            <div className="bg-[#C2410C]/10 border border-[#C2410C]/30 rounded-lg p-3 flex gap-2 text-sm text-gray-600">
+              <CheckCircle2 className="w-4 h-4 text-[#F97316] flex-shrink-0 mt-0.5" />
               El sistema ya está configurado para Ecuador (UTC-5, IVA 15%, facturación electrónica SRI). Estos ajustes son adicionales.
             </div>
             <div className="flex justify-end pt-2">
               <Button onClick={guardarPrefs} disabled={savingPrefs}
-                className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90">
+                className="bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90">
                 {savingPrefs ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                 {savingPrefs ? 'Guardando...' : 'Guardar Preferencias'}
               </Button>
@@ -553,23 +553,23 @@ export default function ConfiguracionSistema() {
           TAB: MI PERFIL
       ════════════════════════════════════════════════════════════════════ */}
       {tab === 'perfil' && (
-        <Card className="bg-white/5 border border-white/10">
+        <Card className="bg-gray-50 border border-gray-100">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2 text-lg">
-              <User className="w-5 h-5 text-[#00E5FF]" />
+            <CardTitle className="text-gray-900 flex items-center gap-2 text-lg">
+              <User className="w-5 h-5 text-[#F97316]" />
               Mi Perfil
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
             {/* Avatar */}
-            <div className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#7B61FF] to-[#00E5FF] flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
+            <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#FB923C] to-[#F97316] flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
                 {perfil.nombre?.charAt(0)?.toUpperCase() ?? '?'}
               </div>
               <div>
-                <p className="text-white font-semibold text-lg">{perfil.nombre || '—'}</p>
-                <p className="text-gray-400 text-sm">{perfil.email}</p>
-                <Badge className="mt-1 bg-purple-500/20 text-purple-300 border-purple-500/40 text-xs capitalize">
+                <p className="text-gray-900 font-semibold text-lg">{perfil.nombre || '—'}</p>
+                <p className="text-gray-600 text-sm">{perfil.email}</p>
+                <Badge className="mt-1 bg-purple-100 text-purple-700 border-purple-300 text-xs capitalize">
                   {user?.rol ?? '—'}
                 </Badge>
               </div>
@@ -577,26 +577,26 @@ export default function ConfiguracionSistema() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-gray-300">Nombre Completo</Label>
+                <Label className="text-gray-600">Nombre Completo</Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <Input value={perfil.nombre} onChange={e => setPerfil(p => ({ ...p, nombre: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white pl-10" placeholder="Tu nombre" />
+                    className="bg-gray-50 border-gray-100 text-gray-900 pl-10" placeholder="Tu nombre" />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Correo Electrónico</Label>
+                <Label className="text-gray-600">Correo Electrónico</Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <Input value={perfil.email} onChange={e => setPerfil(p => ({ ...p, email: e.target.value }))}
-                    className="bg-white/5 border-white/10 text-white pl-10" placeholder="correo@ejemplo.com" type="email" />
+                    className="bg-gray-50 border-gray-100 text-gray-900 pl-10" placeholder="correo@ejemplo.com" type="email" />
                 </div>
               </div>
             </div>
 
             <div className="flex justify-end pt-2">
               <Button onClick={guardarPerfil} disabled={savingPerfil}
-                className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90">
+                className="bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90">
                 {savingPerfil ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                 {savingPerfil ? 'Guardando...' : 'Actualizar Perfil'}
               </Button>
@@ -610,23 +610,23 @@ export default function ConfiguracionSistema() {
       ════════════════════════════════════════════════════════════════════ */}
       {tab === 'seguridad' && (
         <div className="space-y-5">
-          <Card className="bg-white/5 border border-white/10">
+          <Card className="bg-gray-50 border border-gray-100">
             <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2 text-lg">
-                <Key className="w-5 h-5 text-[#00E5FF]" />
+              <CardTitle className="text-gray-900 flex items-center gap-2 text-lg">
+                <Key className="w-5 h-5 text-[#F97316]" />
                 Cambiar Contraseña
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-gray-300">Contraseña Actual</Label>
+                <Label className="text-gray-600">Contraseña Actual</Label>
                 <PasswordInput id="pass-actual" value={pass.actual} show={showPass.actual}
                   onChange={v => setPass(p => ({ ...p, actual: v }))}
                   onToggle={() => setShowPass(p => ({ ...p, actual: !p.actual }))}
                   placeholder="Tu contraseña actual" />
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Nueva Contraseña</Label>
+                <Label className="text-gray-600">Nueva Contraseña</Label>
                 <PasswordInput id="pass-nueva" value={pass.nueva} show={showPass.nueva}
                   onChange={v => setPass(p => ({ ...p, nueva: v }))}
                   onToggle={() => setShowPass(p => ({ ...p, nueva: !p.nueva }))}
@@ -638,17 +638,17 @@ export default function ConfiguracionSistema() {
                       <div key={i} className={`h-1 flex-1 rounded-full transition-colors ${
                         pass.nueva.length >= min
                           ? ['bg-red-400','bg-orange-400','bg-yellow-400','bg-green-400'][i]
-                          : 'bg-white/10'
+                          : 'bg-gray-100'
                       }`} />
                     ))}
-                    <span className="text-xs text-gray-500 ml-1">
+                    <span className="text-xs text-gray-600 ml-1">
                       {pass.nueva.length < 4 ? 'Muy débil' : pass.nueva.length < 8 ? 'Débil' : pass.nueva.length < 11 ? 'Media' : 'Fuerte'}
                     </span>
                   </div>
                 )}
               </div>
               <div className="space-y-2">
-                <Label className="text-gray-300">Confirmar Nueva Contraseña</Label>
+                <Label className="text-gray-600">Confirmar Nueva Contraseña</Label>
                 <PasswordInput id="pass-confirmar" value={pass.confirmar} show={showPass.confirmar}
                   onChange={v => setPass(p => ({ ...p, confirmar: v }))}
                   onToggle={() => setShowPass(p => ({ ...p, confirmar: !p.confirmar }))}
@@ -666,7 +666,7 @@ export default function ConfiguracionSistema() {
               </div>
               <div className="flex justify-end pt-2">
                 <Button onClick={cambiarPassword} disabled={savingPass}
-                  className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90">
+                  className="bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90">
                   {savingPass ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Lock className="w-4 h-4 mr-2" />}
                   {savingPass ? 'Actualizando...' : 'Cambiar Contraseña'}
                 </Button>
@@ -675,10 +675,10 @@ export default function ConfiguracionSistema() {
           </Card>
 
           {/* Security tips */}
-          <Card className="bg-white/5 border border-white/10">
+          <Card className="bg-gray-50 border border-gray-100">
             <CardContent className="p-5 space-y-3">
-              <p className="text-white font-semibold flex items-center gap-2">
-                <Shield className="w-4 h-4 text-[#00E5FF]" /> Recomendaciones de Seguridad
+              <p className="text-gray-900 font-semibold flex items-center gap-2">
+                <Shield className="w-4 h-4 text-[#F97316]" /> Recomendaciones de Seguridad
               </p>
               {[
                 'Usa una contraseña de al menos 12 caracteres con letras, números y símbolos.',
@@ -686,8 +686,8 @@ export default function ConfiguracionSistema() {
                 'Cierra sesión cuando uses dispositivos compartidos o públicos.',
                 'El sistema cierra sesión automáticamente cuando el token expira.',
               ].map((tip, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm text-gray-400">
-                  <CheckCircle2 className="w-4 h-4 text-[#00E5FF] mt-0.5 flex-shrink-0" />
+                <div key={i} className="flex items-start gap-2 text-sm text-gray-600">
+                  <CheckCircle2 className="w-4 h-4 text-[#F97316] mt-0.5 flex-shrink-0" />
                   <span>{tip}</span>
                 </div>
               ))}
@@ -700,10 +700,10 @@ export default function ConfiguracionSistema() {
           TAB: NOTIFICACIONES
       ════════════════════════════════════════════════════════════════════ */}
       {tab === 'notificaciones' && (
-        <Card className="bg-white/5 border border-white/10">
+        <Card className="bg-gray-50 border border-gray-100">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2 text-lg">
-              <Bell className="w-5 h-5 text-[#00E5FF]" />
+            <CardTitle className="text-gray-900 flex items-center gap-2 text-lg">
+              <Bell className="w-5 h-5 text-[#F97316]" />
               Preferencias de Notificaciones
             </CardTitle>
           </CardHeader>
@@ -714,14 +714,14 @@ export default function ConfiguracionSistema() {
               { key: 'comandas_cocina',      label: 'Comandas de cocina',             desc: 'Notifica cuando hay comandas pendientes o urgentes en cocina',   icon: ChefHat    },
               { key: 'facturas_pendientes',  label: 'Facturas pendientes de envío',   desc: 'Notifica cuando hay comprobantes pendientes de autorización SRI', icon: FileText   },
             ].map(({ key, label, desc, icon: Icon }) => (
-              <div key={key} className="flex items-center justify-between py-4 border-b border-white/5 last:border-0">
+              <div key={key} className="flex items-center justify-between py-4 border-b border-gray-100 last:border-0">
                 <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-[#00E5FF]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Icon className="w-4 h-4 text-[#00E5FF]" />
+                  <div className="w-8 h-8 rounded-lg bg-[#F97316]/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Icon className="w-4 h-4 text-[#F97316]" />
                   </div>
                   <div>
-                    <p className="text-white text-sm font-medium">{label}</p>
-                    <p className="text-gray-500 text-xs mt-0.5">{desc}</p>
+                    <p className="text-gray-900 text-sm font-medium">{label}</p>
+                    <p className="text-gray-600 text-xs mt-0.5">{desc}</p>
                   </div>
                 </div>
                 <Toggle
@@ -733,7 +733,7 @@ export default function ConfiguracionSistema() {
 
             <div className="flex justify-end pt-4">
               <Button onClick={guardarNotifs} disabled={savingNotifs}
-                className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] hover:opacity-90">
+                className="bg-gradient-to-r from-[#C2410C] to-[#F97316] hover:opacity-90">
                 {savingNotifs ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                 {savingNotifs ? 'Guardando...' : 'Guardar Preferencias'}
               </Button>

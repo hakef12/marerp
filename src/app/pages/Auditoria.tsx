@@ -5,7 +5,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Shield, Activity, AlertTriangle, Eye, Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { Shield, Activity, AlertTriangle, Eye, Download, FileSpreadsheet, FileText, Calendar, RefreshCw, XCircle } from 'lucide-react';
+import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -18,6 +19,12 @@ export default function Auditoria() {
   const [anomalias, setAnomalias] = useState<any[]>([]);
   const [filtroModulo, setFiltroModulo] = useState('todos');
   const [kpis, setKpis] = useState<any>(null);
+
+  // Filtros de fecha y búsqueda
+  const hoy = new Date().toISOString().split('T')[0];
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [fechaFin, setFechaFin]       = useState(hoy);
+  const [busqueda, setBusqueda]       = useState('');
 
   useEffect(() => {
     if (token) {
@@ -37,9 +44,10 @@ export default function Auditoria() {
       
       // Construir parámetros de filtro
       const params = new URLSearchParams();
-      if (filtroModulo !== 'todos') {
-        params.append('modulo', filtroModulo);
-      }
+      if (filtroModulo !== 'todos') params.append('modulo', filtroModulo);
+      if (fechaInicio)              params.append('desde', fechaInicio);
+      if (fechaFin)                 params.append('hasta', fechaFin + 'T23:59:59');
+      params.append('limite', '500');
 
       // Obtener logs de auditoría
       const logsResponse = await fetch(
@@ -93,6 +101,18 @@ export default function Auditoria() {
     }
   };
 
+  // Filtrado local por búsqueda de texto (sobre los logs ya cargados)
+  const logsVisibles = logs.filter(log => {
+    if (!busqueda.trim()) return true;
+    const q = busqueda.toLowerCase();
+    const usuario  = (log.usuarios?.nombre_completo || '').toLowerCase();
+    const desc     = (log.descripcion || '').toLowerCase();
+    const accion   = (log.accion || '').toLowerCase();
+    const modulo   = (log.modulo || '').toLowerCase();
+    const ip       = (log.ip_address || '').toLowerCase();
+    return usuario.includes(q) || desc.includes(q) || accion.includes(q) || modulo.includes(q) || ip.includes(q);
+  });
+
   const getAccionBadge = (accion: string) => {
     const styles = {
       crear: 'bg-green-500/20 text-green-400 border-green-500/30',
@@ -100,7 +120,7 @@ export default function Auditoria() {
       eliminar: 'bg-red-500/20 text-red-400 border-red-500/30',
       login: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
     };
-    return styles[accion as keyof typeof styles] || 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+    return styles[accion as keyof typeof styles] || 'bg-gray-500/20 text-gray-600 border-gray-500/30';
   };
 
   const getSeveridadBadge = (severidad: string) => {
@@ -114,88 +134,109 @@ export default function Auditoria() {
   };
 
   const exportToExcel = () => {
-    const worksheet = XLSX.utils.json_to_sheet(logs);
+    const rows = logsVisibles.map(log => ({
+      'Fecha/Hora': new Date(log.created_at).toLocaleString('es-ES'),
+      'Usuario':    log.usuarios?.nombre_completo || 'Sistema',
+      'Acción':     log.accion,
+      'Módulo':     log.modulo,
+      'Tabla':      log.tabla || '',
+      'Descripción':log.descripcion || '',
+      'IP':         log.ip_address || '',
+      'Resultado':  log.resultado || '',
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Logs de Auditoría');
-    XLSX.writeFile(workbook, 'logs_auditoria.xlsx');
+    XLSX.writeFile(workbook, `auditoria_${new Date().toISOString().split('T')[0]}.xlsx`);
     toast.success('Logs exportados a Excel');
   };
 
   const exportToPDF = () => {
     const doc = new jsPDF();
-    doc.autoTable({
-      head: [['Fecha/Hora', 'Usuario', 'Acción', 'Módulo', 'Descripción']],
-      body: logs.map(log => [
-        new Date(log.created_at).toLocaleString(),
+    doc.setFontSize(14);
+    doc.text('Reporte de Auditoría', 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Generado: ${new Date().toLocaleString('es-ES')}`, 14, 22);
+    (doc as any).autoTable({
+      head: [['Fecha/Hora', 'Usuario', 'Acción', 'Módulo', 'Descripción', 'IP']],
+      body: logsVisibles.map(log => [
+        new Date(log.created_at).toLocaleString('es-ES'),
         log.usuarios?.nombre_completo || 'Sistema',
         log.accion,
         log.modulo,
-        log.descripcion || `${log.accion} en ${log.tabla}`
+        log.descripcion || `${log.accion} en ${log.tabla}`,
+        log.ip_address || '-'
       ]),
-      startY: 20,
-      theme: 'grid'
+      startY: 27,
+      theme: 'grid',
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [249, 115, 22] }
     });
-    doc.save('logs_auditoria.pdf');
+    doc.save(`auditoria_${new Date().toISOString().split('T')[0]}.pdf`);
     toast.success('Logs exportados a PDF');
   };
 
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
-          <Shield className="w-8 h-8 text-[#00E5FF]" />
+        <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
+          <Shield className="w-8 h-8 text-[#F97316]" />
           Módulo de Auditoría
         </h1>
-        <p className="text-gray-400">Seguimiento y control de actividades del sistema</p>
+        <p className="text-gray-600">Seguimiento y control de actividades del sistema</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Eventos Hoy</CardTitle>
-            <Activity className="w-5 h-5 text-[#00E5FF]" />
+            <CardTitle className="text-sm font-medium text-gray-600">Eventos Hoy</CardTitle>
+            <Activity className="w-5 h-5 text-[#F97316]" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">{logs.length}</div>
+            <div className="text-3xl font-bold text-gray-900">{kpis?.total_hoy ?? 0}</div>
+            <p className="text-xs text-gray-400 mt-1">Últimas 24 h</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Anomalías</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Anomalías</CardTitle>
             <AlertTriangle className="w-5 h-5 text-orange-400" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-orange-400">{anomalias.length}</div>
+            <p className="text-xs text-gray-400 mt-1">{anomalias.length === 0 ? 'Sin alertas activas' : 'Requieren atención'}</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Sesiones Activas</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Eventos (7 días)</CardTitle>
             <Eye className="w-5 h-5 text-green-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">5</div>
+            <div className="text-3xl font-bold text-gray-900">{kpis?.total_7d ?? 0}</div>
+            <p className="text-xs text-gray-400 mt-1">{kpis?.eliminaciones_hoy ? `${kpis.eliminaciones_hoy} eliminaciones hoy` : 'Actividad semanal'}</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Intentos Fallidos</CardTitle>
-            <Shield className="w-5 h-5 text-red-400" />
+            <CardTitle className="text-sm font-medium text-gray-600">Errores Registrados</CardTitle>
+            <XCircle className="w-5 h-5 text-red-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-red-400">0</div>
+            <div className="text-3xl font-bold text-red-400">{kpis?.errores_hoy ?? 0}</div>
+            <p className="text-xs text-gray-400 mt-1">Últimas 24 h</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Anomalías */}
       {anomalias.length > 0 && (
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-orange-500/30">
+        <Card className="bg-white border-orange-500/30">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
+            <CardTitle className="text-gray-900 flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-400" />
               Anomalías Detectadas
             </CardTitle>
@@ -203,18 +244,18 @@ export default function Auditoria() {
           <CardContent>
             <div className="space-y-3">
               {anomalias.map((anomalia) => (
-                <div key={anomalia.id} className="p-4 rounded-lg bg-white/5 border border-orange-500/20">
+                <div key={anomalia.id} className="p-4 rounded-lg bg-gray-50 border border-orange-500/20">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <Badge className={getSeveridadBadge(anomalia.severidad)}>
                           {anomalia.severidad}
                         </Badge>
-                        <span className="text-gray-400 text-sm">{anomalia.modulo}</span>
+                        <span className="text-gray-600 text-sm">{anomalia.modulo}</span>
                       </div>
-                      <p className="text-white">{anomalia.descripcion}</p>
+                      <p className="text-gray-900">{anomalia.descripcion}</p>
                     </div>
-                    <span className="text-gray-400 text-xs">
+                    <span className="text-gray-600 text-xs">
                       {new Date(anomalia.fecha_deteccion).toLocaleString()}
                     </span>
                   </div>
@@ -226,44 +267,111 @@ export default function Auditoria() {
       )}
 
       {/* Log de Actividades */}
-      <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+      <Card className="bg-white border-[#F97316]/20">
         <CardHeader>
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <CardTitle className="text-white flex items-center gap-2">
-              <Activity className="w-5 h-5 text-[#00E5FF]" />
-              Registro de Actividades
-            </CardTitle>
-            <div className="flex gap-2 flex-wrap">
-              <Select value={filtroModulo} onValueChange={setFiltroModulo}>
-                <SelectTrigger className="w-48 bg-white/5 border-[#00E5FF]/20 text-white">
-                  <SelectValue placeholder="Filtrar módulo" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
-                  <SelectItem value="todos">Todos los módulos</SelectItem>
-                  <SelectItem value="pos">POS</SelectItem>
-                  <SelectItem value="inventario">Inventario</SelectItem>
-                  <SelectItem value="contabilidad">Contabilidad</SelectItem>
-                  <SelectItem value="cocina">Cocina</SelectItem>
-                  <SelectItem value="auditoria">Auditoría</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="flex flex-col gap-4">
+            {/* Título + exportar */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <CardTitle className="text-gray-900 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-[#F97316]" />
+                Registro de Actividades
+                <span className="text-sm font-normal text-gray-400 ml-1">({logsVisibles.length} registros)</span>
+              </CardTitle>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-gray-600 border-gray-200 hover:bg-gray-50"
+                  onClick={fetchAuditoriaData}
+                  disabled={isLoading}
+                >
+                  <RefreshCw className={`w-4 h-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+                  Actualizar
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="bg-green-500/20 text-green-700 border-green-500/30 hover:bg-green-500/30"
+                  onClick={exportToExcel}
+                  disabled={isLoading || logsVisibles.length === 0}
+                >
+                  <FileSpreadsheet className="w-4 h-4 mr-1" />
+                  Excel
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="bg-red-500/20 text-red-700 border-red-500/30 hover:bg-red-500/30"
+                  onClick={exportToPDF}
+                  disabled={isLoading || logsVisibles.length === 0}
+                >
+                  <FileText className="w-4 h-4 mr-1" />
+                  PDF
+                </Button>
+              </div>
+            </div>
+
+            {/* Filtros */}
+            <div className="flex flex-wrap gap-3 items-end">
+              {/* Módulo */}
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Módulo</label>
+                <Select value={filtroModulo} onValueChange={setFiltroModulo}>
+                  <SelectTrigger className="w-44 bg-gray-50 border-gray-200 text-gray-900 h-9">
+                    <SelectValue placeholder="Todos" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white border-gray-200">
+                    <SelectItem value="todos">Todos los módulos</SelectItem>
+                    <SelectItem value="pos">POS</SelectItem>
+                    <SelectItem value="inventario">Inventario</SelectItem>
+                    <SelectItem value="contabilidad">Contabilidad</SelectItem>
+                    <SelectItem value="cocina">Cocina</SelectItem>
+                    <SelectItem value="facturacion">Facturación</SelectItem>
+                    <SelectItem value="auditoria">Auditoría</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Fecha inicio */}
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Desde</label>
+                <Input
+                  type="date"
+                  value={fechaInicio}
+                  onChange={e => setFechaInicio(e.target.value)}
+                  className="h-9 bg-gray-50 border-gray-200 text-gray-900 w-40"
+                />
+              </div>
+
+              {/* Fecha fin */}
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Hasta</label>
+                <Input
+                  type="date"
+                  value={fechaFin}
+                  onChange={e => setFechaFin(e.target.value)}
+                  className="h-9 bg-gray-50 border-gray-200 text-gray-900 w-40"
+                />
+              </div>
+
+              {/* Buscar */}
+              <div className="flex-1 min-w-[180px]">
+                <label className="text-xs text-gray-500 mb-1 block">Buscar</label>
+                <Input
+                  placeholder="Usuario, acción, descripción..."
+                  value={busqueda}
+                  onChange={e => setBusqueda(e.target.value)}
+                  className="h-9 bg-gray-50 border-gray-200 text-gray-900"
+                />
+              </div>
+
               <Button
-                variant="outline"
-                className="bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/30"
-                onClick={exportToExcel}
-                disabled={isLoading || logs.length === 0}
+                size="sm"
+                className="bg-[#F97316] hover:bg-[#ea6c0d] text-white h-9"
+                onClick={fetchAuditoriaData}
+                disabled={isLoading}
               >
-                <FileSpreadsheet className="w-4 h-4 mr-2" />
-                Excel
-              </Button>
-              <Button
-                variant="outline"
-                className="bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30"
-                onClick={exportToPDF}
-                disabled={isLoading || logs.length === 0}
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                PDF
+                Buscar
               </Button>
             </div>
           </div>
@@ -272,37 +380,37 @@ export default function Auditoria() {
           <div className="overflow-x-auto scroll-top">
             <Table>
               <TableHeader>
-                <TableRow className="border-[#00E5FF]/20 hover:bg-transparent">
-                  <TableHead className="text-gray-400">Fecha/Hora</TableHead>
-                  <TableHead className="text-gray-400">Usuario</TableHead>
-                  <TableHead className="text-gray-400">Acción</TableHead>
-                  <TableHead className="text-gray-400">Módulo</TableHead>
-                  <TableHead className="text-gray-400">Descripción</TableHead>
-                  <TableHead className="text-gray-400">IP</TableHead>
+                <TableRow className="border-[#F97316]/20 hover:bg-transparent">
+                  <TableHead className="text-gray-600">Fecha/Hora</TableHead>
+                  <TableHead className="text-gray-600">Usuario</TableHead>
+                  <TableHead className="text-gray-600">Acción</TableHead>
+                  <TableHead className="text-gray-600">Módulo</TableHead>
+                  <TableHead className="text-gray-600">Descripción</TableHead>
+                  <TableHead className="text-gray-600">IP</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-gray-400 py-8">
+                    <TableCell colSpan={6} className="text-center text-gray-600 py-8">
                       <div className="flex items-center justify-center gap-2">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#00E5FF]"></div>
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#F97316]"></div>
                         Cargando registros...
                       </div>
                     </TableCell>
                   </TableRow>
-                ) : logs.length === 0 ? (
+                ) : logsVisibles.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-gray-400 py-8">
-                      <Shield className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                      <p>No hay registros de actividad</p>
-                      <p className="text-sm mt-2">Las acciones del sistema se registrarán aquí</p>
+                    <TableCell colSpan={6} className="text-center text-gray-600 py-8">
+                      <Shield className="w-12 h-12 mx-auto mb-3 opacity-50 text-gray-400" />
+                      <p>{logs.length === 0 ? 'No hay registros de actividad' : 'Ningún registro coincide con el filtro'}</p>
+                      <p className="text-sm mt-2 text-gray-400">{logs.length === 0 ? 'Las acciones del sistema se registrarán aquí' : `${logs.length} registros en total — ajusta los filtros`}</p>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  logs.slice(0, 100).map((log) => (
-                    <TableRow key={log.id} className="border-[#00E5FF]/10 hover:bg-white/5">
-                      <TableCell className="text-gray-400 text-sm whitespace-nowrap">
+                  logsVisibles.slice(0, 200).map((log) => (
+                    <TableRow key={log.id} className="border-[#F97316]/10 hover:bg-gray-50">
+                      <TableCell className="text-gray-600 text-sm whitespace-nowrap">
                         {new Date(log.created_at).toLocaleString('es-ES', {
                           year: 'numeric',
                           month: '2-digit',
@@ -311,7 +419,7 @@ export default function Auditoria() {
                           minute: '2-digit'
                         })}
                       </TableCell>
-                      <TableCell className="text-white">
+                      <TableCell className="text-gray-900">
                         {log.usuarios?.nombre_completo || 'Sistema'}
                       </TableCell>
                       <TableCell>
@@ -319,11 +427,11 @@ export default function Auditoria() {
                           {log.accion}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-gray-400 capitalize">{log.modulo}</TableCell>
-                      <TableCell className="text-gray-300 text-sm max-w-md truncate">
+                      <TableCell className="text-gray-600 capitalize">{log.modulo}</TableCell>
+                      <TableCell className="text-gray-600 text-sm max-w-md truncate">
                         {log.descripcion || `${log.accion} en ${log.tabla}`}
                       </TableCell>
-                      <TableCell className="text-gray-400 text-xs">
+                      <TableCell className="text-gray-600 text-xs">
                         {log.ip_address || '-'}
                       </TableCell>
                     </TableRow>
@@ -332,9 +440,9 @@ export default function Auditoria() {
               </TableBody>
             </Table>
           </div>
-          {logs.length > 100 && (
-            <p className="text-gray-400 text-sm text-center mt-4">
-              Mostrando los primeros 100 registros de {logs.length} totales
+          {logsVisibles.length > 200 && (
+            <p className="text-gray-500 text-sm text-center mt-4">
+              Mostrando los primeros 200 de {logsVisibles.length} registros filtrados
             </p>
           )}
         </CardContent>
