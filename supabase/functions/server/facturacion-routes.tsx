@@ -1962,41 +1962,285 @@ export async function handleReintentarAutorizacion(req: Request, empresaId: stri
 }
 
 // ============================================================
-// EMAIL
+// EMAIL  — Envío real con Resend (https://resend.com)
+// Requiere secret RESEND_API_KEY en Supabase
 // ============================================================
 
+/** Genera el HTML del RIDE para el cuerpo del email */
+function generarHTMLFactura(f: any): string {
+  const fmt2 = (n: number) => Number(n || 0).toFixed(2);
+  const fmtFecha = (iso: string) => {
+    try { return new Date(iso).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+    catch { return iso || '—'; }
+  };
+  const items: any[] = f.items || [];
+  const filas = items.map((it: any) => `
+    <tr style="border-bottom:1px solid #f0f0f0;">
+      <td style="padding:8px 10px;font-size:13px;color:#374151;">${it.descripcion || it.nombre || '—'}</td>
+      <td style="padding:8px 10px;font-size:13px;color:#374151;text-align:center;">${it.cantidad || 1}</td>
+      <td style="padding:8px 10px;font-size:13px;color:#374151;text-align:right;">$${fmt2(it.precio_unitario || it.precio)}</td>
+      <td style="padding:8px 10px;font-size:13px;color:#374151;text-align:right;">$${fmt2(it.subtotal || (it.cantidad * it.precio_unitario))}</td>
+    </tr>`).join('');
+
+  const subtotal   = fmt2(f.subtotal_iva ?? f.subtotal ?? 0);
+  const descuento  = fmt2(f.total_descuento ?? f.descuento ?? 0);
+  const iva        = fmt2(f.iva ?? 0);
+  const total      = fmt2(f.total ?? 0);
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Factura Electrónica ${f.numero_factura || ''}</title></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
+<tr><td align="center">
+<table width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
+
+  <!-- HEADER -->
+  <tr><td style="background:linear-gradient(135deg,#C2410C 0%,#F97316 100%);padding:28px 32px;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td>
+          <div style="color:#fff;font-size:22px;font-weight:bold;letter-spacing:-0.5px;">${f.razon_social || f.nombre_comercial || 'Emisor'}</div>
+          <div style="color:#fed7aa;font-size:12px;margin-top:4px;">RUC: ${f.ruc || '—'} &nbsp;|&nbsp; ${f.direccion_matriz || ''}</div>
+        </td>
+        <td align="right" style="vertical-align:top;">
+          <div style="background:rgba(255,255,255,.15);border-radius:8px;padding:12px 16px;text-align:center;">
+            <div style="color:#fed7aa;font-size:10px;text-transform:uppercase;letter-spacing:1px;">Factura N°</div>
+            <div style="color:#fff;font-size:18px;font-weight:bold;">${f.numero_factura || '—'}</div>
+            <div style="color:#fed7aa;font-size:11px;margin-top:4px;">${fmtFecha(f.fecha_emision)}</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- ESTADO SRI -->
+  ${f.estado === 'AUTORIZADO' ? `
+  <tr><td style="background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:12px 32px;">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="color:#15803d;font-size:13px;font-weight:bold;">✅ Autorizado por el SRI</td>
+      <td align="right" style="color:#6b7280;font-size:11px;">N° Autorización: ${f.numero_autorizacion || '—'}</td>
+    </tr></table>
+  </td></tr>` : `
+  <tr><td style="background:#fff7ed;border-bottom:1px solid #fed7aa;padding:12px 32px;">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="color:#c2410c;font-size:13px;font-weight:bold;">⏳ ${f.estado || 'PENDIENTE'} — Clave acceso: ${(f.clave_acceso || '').substring(0, 20)}…</td>
+    </tr></table>
+  </td></tr>`}
+
+  <!-- DATOS CLIENTE -->
+  <tr><td style="padding:24px 32px 0;">
+    <div style="background:#f9fafb;border-radius:8px;padding:16px 20px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:8px;">Receptor</div>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="font-size:14px;font-weight:bold;color:#111827;">${f.cliente_razon_social || 'Consumidor Final'}</td>
+          <td align="right" style="font-size:13px;color:#6b7280;">${f.cliente_tipo_identificacion || 'RUC/CI'}: ${f.cliente_identificacion || '—'}</td>
+        </tr>
+        ${f.cliente_email ? `<tr><td colspan="2" style="font-size:12px;color:#6b7280;padding-top:4px;">📧 ${f.cliente_email}</td></tr>` : ''}
+      </table>
+    </div>
+  </td></tr>
+
+  <!-- DETALLE DE ITEMS -->
+  <tr><td style="padding:24px 32px 0;">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:12px;">Detalle</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+      <tr style="background:#f9fafb;">
+        <th style="padding:10px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:left;font-weight:600;">Descripción</th>
+        <th style="padding:10px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:center;font-weight:600;">Cant.</th>
+        <th style="padding:10px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:right;font-weight:600;">P. Unit.</th>
+        <th style="padding:10px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:right;font-weight:600;">Subtotal</th>
+      </tr>
+      ${filas || '<tr><td colspan="4" style="padding:16px;text-align:center;color:#9ca3af;font-size:13px;">Sin detalle de ítems</td></tr>'}
+    </table>
+  </td></tr>
+
+  <!-- TOTALES -->
+  <tr><td style="padding:20px 32px;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr><td></td><td width="260" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr style="border-bottom:1px solid #f0f0f0;">
+            <td style="padding:8px 16px;font-size:13px;color:#6b7280;">Subtotal sin IVA</td>
+            <td style="padding:8px 16px;font-size:13px;color:#374151;text-align:right;">$${subtotal}</td>
+          </tr>
+          ${Number(descuento) > 0 ? `<tr style="border-bottom:1px solid #f0f0f0;">
+            <td style="padding:8px 16px;font-size:13px;color:#6b7280;">Descuento</td>
+            <td style="padding:8px 16px;font-size:13px;color:#ef4444;text-align:right;">-$${descuento}</td>
+          </tr>` : ''}
+          <tr style="border-bottom:1px solid #f0f0f0;">
+            <td style="padding:8px 16px;font-size:13px;color:#6b7280;">IVA 15%</td>
+            <td style="padding:8px 16px;font-size:13px;color:#374151;text-align:right;">$${iva}</td>
+          </tr>
+          <tr style="background:#fff7ed;">
+            <td style="padding:12px 16px;font-size:15px;font-weight:bold;color:#111827;">TOTAL</td>
+            <td style="padding:12px 16px;font-size:15px;font-weight:bold;color:#C2410C;text-align:right;">$${total}</td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- CLAVE DE ACCESO -->
+  ${f.clave_acceso ? `
+  <tr><td style="padding:0 32px 24px;">
+    <div style="background:#f9fafb;border-radius:8px;padding:12px 16px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:6px;">Clave de Acceso SRI</div>
+      <div style="font-size:11px;font-family:monospace;color:#374151;word-break:break-all;">${f.clave_acceso}</div>
+    </div>
+  </td></tr>` : ''}
+
+  <!-- FOOTER -->
+  <tr><td style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:20px 32px;text-align:center;">
+    <p style="margin:0;font-size:12px;color:#9ca3af;">Este documento es una Factura Electrónica generada por el sistema <strong>M.A.R ERP</strong>.</p>
+    <p style="margin:4px 0 0;font-size:11px;color:#d1d5db;">Para consultas: ${f.email || f.telefono || ''}</p>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body></html>`;
+}
+
+// ── Encode helper: convierte string UTF-8 a base64 ────────────────────────────
+function xmlToBase64(xml: string): string {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(xml);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// ── Envío con Resend ──────────────────────────────────────────────────────────
+async function enviarConResend(opts: {
+  to: string;
+  subject: string;
+  html: string;
+  fromName: string;
+  xmlAdjunto?: string;      // XML firmado (base64 ya codificado)
+  xmlFilename?: string;     // nombre del archivo .xml
+}): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const apiKey = Deno.env.get('RESEND_API_KEY');
+  if (!apiKey) return { ok: false, error: 'RESEND_API_KEY no configurada en secrets de Supabase' };
+
+  const fromDomain = Deno.env.get('RESEND_FROM_DOMAIN') || 'onboarding@resend.dev';
+  const from = fromDomain.includes('@') ? fromDomain : `${opts.fromName} <noreply@${fromDomain}>`;
+
+  const body: any = {
+    from,
+    to: [opts.to],
+    subject: opts.subject,
+    html: opts.html,
+  };
+
+  if (opts.xmlAdjunto && opts.xmlFilename) {
+    body.attachments = [{ filename: opts.xmlFilename, content: opts.xmlAdjunto }];
+  }
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  const resBody = await res.json();
+  if (!res.ok) return { ok: false, error: resBody.message || resBody.error || `HTTP ${res.status}` };
+  return { ok: true, id: resBody.id };
+}
+
+/** Handler principal: envía a un email especificado manualmente */
 export async function handleEnviarEmailFactura(req: Request, empresaId: string) {
   try {
     const emailData = await req.json();
-    if (!emailData.destinatario || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailData.destinatario)) {
-      return new Response(JSON.stringify({ error: 'Email inválido' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    const destinatario: string = emailData.destinatario || '';
+    const facturaId: string    = emailData.factura_id   || '';
+
+    if (!destinatario || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destinatario))
+      return new Response(JSON.stringify({ error: 'Email de destinatario inválido' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    if (!facturaId)
+      return new Response(JSON.stringify({ error: 'factura_id requerido' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+
+    const f = await getFactura(empresaId, facturaId);
+    if (!f) return new Response(JSON.stringify({ error: 'Factura no encontrada' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+
+    const html    = generarHTMLFactura(f);
+    const subject = `Factura Electrónica N° ${f.numero_factura || facturaId} — ${f.razon_social || 'MAR ERP'}`;
+    const fileNum = (f.numero_factura || facturaId).replace(/[\/\\]/g, '-');
+
+    // Adjunto XML firmado (si existe)
+    const xmlAdjunto  = f.xml_firmado ? xmlToBase64(f.xml_firmado) : undefined;
+    const xmlFilename = f.xml_firmado ? `factura_${fileNum}.xml` : undefined;
+
+    const result = await enviarConResend({ to: destinatario, subject, html, fromName: f.razon_social || 'MAR ERP', xmlAdjunto, xmlFilename });
+    if (!result.ok) {
+      console.error('❌ Resend error:', result.error);
+      return new Response(JSON.stringify({ error: result.error }), { status: 502, headers: { 'Content-Type': 'application/json' } });
     }
-    if (emailData.factura_id) {
-      const f = await getFactura(empresaId, emailData.factura_id);
-      if (f) {
-        f.email_enviado = true; f.email_enviado_en = new Date().toISOString(); f.email_destinatario = emailData.destinatario;
-        await setFactura(empresaId, emailData.factura_id, f);
-      }
-    }
-    return new Response(JSON.stringify({ success: true, mensaje: `Email enviado a ${emailData.destinatario}` }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+    // Marcar como enviado
+    f.email_enviado      = true;
+    f.email_enviado_en   = new Date().toISOString();
+    f.email_destinatario = destinatario;
+    f.resend_email_id    = result.id;
+    await setFactura(empresaId, facturaId, f);
+
+    console.log(`✅ Email factura ${f.numero_factura} enviado a ${destinatario} (Resend ID: ${result.id})`);
+    return new Response(JSON.stringify({ success: true, mensaje: `Factura enviada a ${destinatario}`, resend_id: result.id }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: 'Error al enviar email' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    console.error('❌ handleEnviarEmailFactura:', error.message);
+    return new Response(JSON.stringify({ error: 'Error al enviar email', detalle: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
 
+/** Handler reenvío: usa el email del cliente registrado en la factura */
 export async function handleReenviarEmailFactura(req: Request, empresaId: string) {
   try {
-    const { factura_id } = await req.json();
-    const f = await getFactura(empresaId, factura_id);
+    const body        = await req.json();
+    const facturaId   = body.factura_id || '';
+    const override    = body.destinatario || '';   // permite sobreescribir el email
+
+    if (!facturaId)
+      return new Response(JSON.stringify({ error: 'factura_id requerido' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+
+    const f = await getFactura(empresaId, facturaId);
     if (!f) return new Response(JSON.stringify({ error: 'Factura no encontrada' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
-    if (!f.cliente_email) return new Response(JSON.stringify({ error: 'Cliente sin email' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
 
-    f.email_enviado = true; f.email_enviado_en = new Date().toISOString(); f.email_destinatario = f.cliente_email;
-    await setFactura(empresaId, factura_id, f);
+    const destinatario = override || f.cliente_email || '';
+    if (!destinatario || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destinatario))
+      return new Response(JSON.stringify({ error: 'El cliente no tiene email registrado. Ingrese un email de destino.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
 
-    return new Response(JSON.stringify({ success: true, mensaje: `Email reenviado a ${f.cliente_email}` }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const html    = generarHTMLFactura(f);
+    const subject = `Factura Electrónica N° ${f.numero_factura || facturaId} — ${f.razon_social || 'MAR ERP'}`;
+    const fileNum = (f.numero_factura || facturaId).replace(/[\/\\]/g, '-');
+
+    // Adjunto XML firmado (si existe)
+    const xmlAdjunto  = f.xml_firmado ? xmlToBase64(f.xml_firmado) : undefined;
+    const xmlFilename = f.xml_firmado ? `factura_${fileNum}.xml` : undefined;
+
+    const result = await enviarConResend({ to: destinatario, subject, html, fromName: f.razon_social || 'MAR ERP', xmlAdjunto, xmlFilename });
+    if (!result.ok) {
+      console.error('❌ Resend error (reenvío):', result.error);
+      return new Response(JSON.stringify({ error: result.error }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    f.email_enviado      = true;
+    f.email_enviado_en   = new Date().toISOString();
+    f.email_destinatario = destinatario;
+    f.resend_email_id    = result.id;
+    await setFactura(empresaId, facturaId, f);
+
+    console.log(`✅ Email factura ${f.numero_factura} reenviado a ${destinatario} (Resend ID: ${result.id})`);
+    return new Response(JSON.stringify({ success: true, mensaje: `Factura enviada a ${destinatario}`, resend_id: result.id }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: 'Error al reenviar email' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    console.error('❌ handleReenviarEmailFactura:', error.message);
+    return new Response(JSON.stringify({ error: 'Error al reenviar email', detalle: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
 

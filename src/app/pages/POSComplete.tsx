@@ -181,6 +181,8 @@ export default function POS() {
   const [dialogDatosCliente, setDialogDatosCliente] = useState(false);
   const [dialogRIDE, setDialogRIDE] = useState(false);
   const [facturaGenerada, setFacturaGenerada] = useState<any>(null);
+  const [autoImprimirRIDE, setAutoImprimirRIDE] = useState(false);
+  const [generandoFactura, setGenerandoFactura] = useState(false);
 
   // Vista móvil: alternar entre productos y orden
   const [vistaMovil, setVistaMovil] = useState<'productos' | 'orden'>('productos');
@@ -332,19 +334,40 @@ export default function POS() {
     setNotaTemp('');
   };
 
-  const subtotal = orden.reduce((s, i) => s + i.subtotal, 0);
-  const descuentoVal = (subtotal * descuento) / 100;
-  // IVA calculado por producto: se respeta porcentaje_iva individual y si el precio ya incluye IVA
-  const ivaVal = aplicarIVA
-    ? orden.reduce((sum, item) => {
+  // subtotalBruto = suma de precios × cantidades (el precio puede incluir IVA o no)
+  const subtotalBruto = orden.reduce((s, i) => s + i.subtotal, 0);
+  const descuentoVal = (subtotalBruto * descuento) / 100;
+
+  // Desglose por ítem: separa base sin IVA y el IVA de cada producto.
+  // impuesto_incluido=true  → extrae IVA del precio: IVA = precio × pct/(100+pct)
+  // impuesto_incluido=false → añade IVA sobre la base: IVA = base × pct/100
+  const { subtotalBase, ivaVal } = (() => {
+    if (!aplicarIVA) {
+      return { subtotalBase: subtotalBruto - descuentoVal, ivaVal: 0 };
+    }
+    return orden.reduce(
+      (acc, item) => {
         const p = item.producto;
-        if (p.impuesto_incluido) return sum; // precio ya incluye IVA, no sumar de nuevo
         const pct = (p.porcentaje_iva ?? 0) > 0 ? (p.porcentaje_iva ?? 0) : 15;
-        const baseConDescuento = item.subtotal * (1 - descuento / 100);
-        return sum + baseConDescuento * (pct / 100);
-      }, 0)
-    : 0;
-  const total = subtotal - descuentoVal + ivaVal + (tipoServicio === 'delivery' ? costoEnvio : 0);
+        const lineaConDescuento = item.subtotal * (1 - descuento / 100);
+        if (p.impuesto_incluido) {
+          // El precio ya lleva IVA → extraerlo
+          const ivaExtraido = lineaConDescuento * pct / (100 + pct);
+          return { subtotalBase: acc.subtotalBase + (lineaConDescuento - ivaExtraido), ivaVal: acc.ivaVal + ivaExtraido };
+        } else {
+          // El precio es base → calcular IVA encima
+          return { subtotalBase: acc.subtotalBase + lineaConDescuento, ivaVal: acc.ivaVal + lineaConDescuento * pct / 100 };
+        }
+      },
+      { subtotalBase: 0, ivaVal: 0 }
+    );
+  })();
+
+  // Total = base sin IVA + IVA desglosado + delivery (matemáticamente idéntico al total anterior)
+  const total = parseFloat((subtotalBase + ivaVal + (tipoServicio === 'delivery' ? costoEnvio : 0)).toFixed(2));
+
+  // hayIVAIncluido: true si algún ítem tiene el precio con IVA ya adentro
+  const hayIVAIncluido = aplicarIVA && orden.some(i => i.producto.impuesto_incluido);
   const cambio = metodoPago === 'efectivo' && montoRecibido
     ? Math.max(0, parseFloat(montoRecibido) - total) : 0;
 
@@ -448,9 +471,9 @@ export default function POS() {
         numero_ticket: numero_orden,
         fecha: new Date().toISOString(),
         items,
-        subtotal,
-        descuento: descuentoVal,
-        impuestos: ivaVal,
+        subtotal: parseFloat(subtotalBase.toFixed(2)),
+        descuento: parseFloat(descuentoVal.toFixed(2)),
+        impuestos: parseFloat(ivaVal.toFixed(2)),
         costo_envio: tipoServicio === 'delivery' ? costoEnvio : 0,
         total,
         metodo_pago: metodoPago,
@@ -566,8 +589,11 @@ export default function POS() {
   const generarFactura = async (datosCliente: DatosCliente) => {
     if (!ventaCompletada) return;
     setProcesando(true);
+    setGenerandoFactura(true);
     setDialogDatosCliente(false);
+
     try {
+      // ── 1. Generar factura ─────────────────────────────────────────────────
       const body = {
         numero_ticket: ventaCompletada.numero_ticket,
         items: ventaCompletada.items,
@@ -581,31 +607,85 @@ export default function POS() {
         cliente_razon_social: datosCliente.razon_social,
         cliente_email: datosCliente.email,
       };
+
       const res = await fetch(
         `https://${projectId}.supabase.co/functions/v1/server/facturacion/generar`,
         { method: 'POST', headers: apiHeaders(token), body: JSON.stringify(body) }
       );
-      if (res.ok) {
-        const data = await res.json();
-        setFacturaGenerada(data.factura);
-        setDialogRIDE(true);
-        const estado = data.factura?.estado;
-        if (estado === 'AUTORIZADO') {
-          toast.success('✅ Factura electrónica AUTORIZADA por el SRI');
-        } else if (estado === 'NO_AUTORIZADO') {
-          toast.error('❌ SRI rechazó la factura — revisa Consulta de Facturas');
-        } else {
-          toast.success('📄 Factura generada y enviada al SRI — ve a Consulta de Facturas para ver el estado');
-        }
-      } else {
+
+      if (!res.ok) {
         const err = await res.json();
-        if (err.requiere_configuracion) toast.error('Configure la facturación electrónica primero en Facturación → Configuración');
+        if (err.requiere_configuracion) toast.error('Configure la facturación electrónica en Facturación → Configuración');
         else toast.error(err.error || 'Error al generar factura');
+        return;
       }
+
+      const data = await res.json();
+      let factura = data.factura;
+      const facturaId: string = data.factura_id || factura?.id || '';
+
+      // ── 2. Polling SRI — hasta 4 intentos cada 3s si queda PENDIENTE ──────
+      if (factura?.estado === 'PENDIENTE' && facturaId) {
+        toast.loading('⏳ Esperando autorización del SRI…', { id: 'sri-polling' });
+        for (let intento = 0; intento < 4; intento++) {
+          await new Promise(r => setTimeout(r, 3000));
+          try {
+            const authRes = await fetch(
+              `https://${projectId}.supabase.co/functions/v1/server/facturacion/facturas/${facturaId}/autorizar`,
+              { method: 'POST', headers: apiHeaders(token), body: JSON.stringify({ factura_id: facturaId }) }
+            );
+            if (authRes.ok) {
+              const authData = await authRes.json();
+              if (authData.factura) factura = authData.factura;
+            }
+          } catch { /* continuar aunque falle un intento */ }
+          if (factura.estado !== 'PENDIENTE') break;
+        }
+        toast.dismiss('sri-polling');
+      }
+
+      // ── 3. Toast según estado final ────────────────────────────────────────
+      if (factura.estado === 'AUTORIZADO') {
+        toast.success('✅ Factura AUTORIZADA por el SRI');
+      } else if (factura.estado === 'NO_AUTORIZADO') {
+        toast.error('❌ El SRI no autorizó la factura — revisa Consulta de Facturas');
+      } else {
+        toast.warning('⏱ Factura pendiente de autorización — revisa Consulta de Facturas');
+      }
+
+      // ── 4. Mostrar RIDE y auto-imprimir ────────────────────────────────────
+      setFacturaGenerada(factura);
+      setAutoImprimirRIDE(true);
+      setDialogRIDE(true);
+
+      // ── 5. Auto-enviar email si hay correo del cliente ─────────────────────
+      const emailCliente = datosCliente.email || factura.cliente_email || '';
+      if (emailCliente && facturaId) {
+        // Envío en background — no bloquear la UI
+        fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/facturacion/reenviar-email`,
+          { method: 'POST', headers: apiHeaders(token), body: JSON.stringify({ factura_id: facturaId, destinatario: emailCliente }) }
+        )
+          .then(r => r.json())
+          .then(r => {
+            if (r.success) toast.success(`📧 Factura enviada a ${emailCliente}`, { duration: 4000 });
+          })
+          .catch(() => { /* silencioso */ });
+      }
+
     } finally {
       setProcesando(false);
-      limpiarVenta(true);
+      setGenerandoFactura(false);
+      // limpiarVenta se llama al cerrar el diálogo RIDE (ver cerrarRIDE)
     }
+  };
+
+  /** Cierra el diálogo RIDE y limpia la venta (incluyendo navegación a mesas si aplica) */
+  const cerrarRIDE = () => {
+    setDialogRIDE(false);
+    setAutoImprimirRIDE(false);
+    setFacturaGenerada(null);
+    limpiarVenta(true);
   };
 
   // ─── Productos filtrados ────────────────────────────────────────────────────
@@ -622,41 +702,41 @@ export default function POS() {
   // ── Pantalla: caja cerrada ────────────────────────────────────
   if (cargandoCaja) {
     return (
-      <div className="h-full flex items-center justify-center bg-gradient-to-br from-[#060f1e] to-[#0A1A2F]">
-        <div className="w-10 h-10 border-2 border-[#00E5FF]/30 border-t-[#00E5FF] rounded-full animate-spin" />
+      <div className="h-full flex items-center justify-center bg-white">
+        <div className="w-10 h-10 border-2 border-[#F97316]/30 border-t-[#F97316] rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!caja?.abierta) {
     return (
-      <div className="h-full flex items-center justify-center bg-gradient-to-br from-[#060f1e] to-[#0A1A2F] p-6">
+      <div className="h-full flex items-center justify-center bg-white p-6">
         <div className="max-w-md w-full text-center space-y-6">
           <div className="w-20 h-20 rounded-full bg-orange-500/10 border border-orange-500/30 flex items-center justify-center mx-auto">
             <AlertCircle className="w-10 h-10 text-orange-400" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-white mb-2">Caja cerrada</h2>
-            <p className="text-gray-400">
-              Para comenzar a vender debes <strong className="text-white">abrir la caja</strong> primero.
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Caja cerrada</h2>
+            <p className="text-gray-600">
+              Para comenzar a vender debes <strong className="text-gray-900">abrir la caja</strong> primero.
               Todas las ventas se registran automáticamente en la sesión de caja activa.
             </p>
           </div>
-          <div className="bg-[#0A1A2F]/80 border border-orange-500/20 rounded-xl p-4 text-left space-y-2 text-sm text-gray-400">
+          <div className="bg-white border border-orange-500/20 rounded-xl p-4 text-left space-y-2 text-sm text-gray-600">
             <p className="flex items-center gap-2"><span className="w-5 h-5 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs font-bold flex-shrink-0">1</span> Ve a Gestión de Caja</p>
             <p className="flex items-center gap-2"><span className="w-5 h-5 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs font-bold flex-shrink-0">2</span> Abre la caja con el monto inicial</p>
             <p className="flex items-center gap-2"><span className="w-5 h-5 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs font-bold flex-shrink-0">3</span> Vuelve al POS para vender</p>
           </div>
           <div className="flex gap-3">
             <Button
-              className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] font-semibold"
+              className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316] font-semibold"
               onClick={() => navigate('/caja')}
             >
               <Wallet className="w-4 h-4 mr-2" /> Ir a Gestión de Caja
             </Button>
             <Button
               variant="outline"
-              className="border-white/10 text-gray-400 hover:text-white"
+              className="border-gray-100 text-gray-600 hover:text-gray-900"
               onClick={() => {
                 // Reintentar verificación de caja
                 setCargandoCaja(true);
@@ -677,22 +757,22 @@ export default function POS() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-[#060f1e] to-[#0A1A2F] overflow-hidden">
+    <div className="h-full flex flex-col bg-white overflow-hidden">
 
       {/* ── Top bar ── */}
-      <div className="flex-none bg-[#0A1A2F]/90 border-b border-[#00E5FF]/20 px-4 py-3">
+      <div className="flex-none bg-white border-b border-[#F97316]/20 px-4 py-3">
         <div className="flex items-center gap-3 flex-wrap">
 
           {/* Tipo de servicio */}
-          <div className="flex rounded-lg overflow-hidden border border-[#00E5FF]/20">
+          <div className="flex rounded-lg overflow-hidden border border-[#F97316]/20">
             {(['mesa', 'para_llevar', 'delivery'] as TipoServicio[]).map(t => (
               <button
                 key={t}
                 onClick={() => { setTipoServicio(t); setMesa(''); }}
                 className={`px-3 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 ${
                   tipoServicio === t
-                    ? 'bg-[#00E5FF] text-black'
-                    : 'text-gray-300 hover:bg-white/5'
+                    ? 'bg-[#F97316] text-black'
+                    : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
                 {t === 'mesa' && <Users className="w-3.5 h-3.5" />}
@@ -709,13 +789,13 @@ export default function POS() {
               <select
                 value={mesa}
                 onChange={e => setMesa(e.target.value)}
-                className="bg-[#0A1A2F] border border-[#00E5FF]/30 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#00E5FF]"
+                className="bg-white border border-[#F97316]/30 text-gray-900 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#F97316]"
               >
                 <option value="">Mesa...</option>
                 {MESAS.map(n => <option key={n} value={String(n)}>Mesa {n}</option>)}
               </select>
               {mesa && (
-                <span className="bg-[#00E5FF]/20 text-[#00E5FF] font-bold px-3 py-1.5 rounded-lg text-sm border border-[#00E5FF]/30">
+                <span className="bg-[#F97316]/20 text-[#F97316] font-bold px-3 py-1.5 rounded-lg text-sm border border-[#F97316]/30">
                   Mesa {mesa}
                 </span>
               )}
@@ -725,24 +805,24 @@ export default function POS() {
           {/* Cliente */}
           <div className="flex items-center gap-2">
             <div className="relative">
-              <Users className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <Users className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-600" />
               <Input
                 placeholder="Cliente (opcional)"
                 value={cliente}
                 onChange={e => setCliente(e.target.value)}
-                className="pl-8 bg-[#0A1A2F]/60 border-[#00E5FF]/20 text-white placeholder:text-gray-500 h-9 text-sm w-44"
+                className="pl-8 bg-white border-[#F97316]/20 text-gray-900 placeholder:text-gray-400 h-9 text-sm w-44"
               />
             </div>
           </div>
 
           {/* Buscar */}
           <div className="flex-1 min-w-48 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
             <Input
               placeholder="Buscar producto..."
               value={busqueda}
               onChange={e => setBusqueda(e.target.value)}
-              className="pl-9 bg-[#0A1A2F]/60 border-[#00E5FF]/20 text-white placeholder:text-gray-500 h-9 text-sm"
+              className="pl-9 bg-white border-[#F97316]/20 text-gray-900 placeholder:text-gray-400 h-9 text-sm"
             />
           </div>
 
@@ -758,19 +838,19 @@ export default function POS() {
             <div className="flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 rounded-lg px-2.5 py-1.5">
               <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
               <span className="text-green-400 text-xs font-medium hidden sm:block">Caja abierta</span>
-              {caja?.cajero && <span className="text-gray-500 text-xs hidden md:block">· {caja.cajero}</span>}
+              {caja?.cajero && <span className="text-gray-600 text-xs hidden md:block">· {caja.cajero}</span>}
             </div>
             {searchParams.get('mesa') && (
               <button
                 onClick={() => navigate('/mesas')}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#00E5FF]/10 border border-[#00E5FF]/30 text-[#00E5FF] text-xs hover:bg-[#00E5FF]/20 transition-all"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#F97316]/10 border border-[#F97316]/30 text-[#F97316] text-xs hover:bg-[#F97316]/20 transition-all"
               >
                 ← Plano de Mesas
               </button>
             )}
             <button
               onClick={cargarDatos}
-              className="text-gray-400 hover:text-white transition-colors p-1"
+              className="text-gray-600 hover:text-gray-900 transition-colors p-1"
               title="Actualizar"
             >
               <Receipt className="w-5 h-5" />
@@ -780,13 +860,13 @@ export default function POS() {
       </div>
 
       {/* ── Tab bar mobile (solo visible en sm) ── */}
-      <div className="md:hidden flex-none flex border-b border-[#00E5FF]/15 bg-[#08111e]">
+      <div className="md:hidden flex-none flex border-b border-[#F97316]/15 bg-gray-50">
         <button
           onClick={() => setVistaMovil('productos')}
           className={`flex-1 py-3 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
             vistaMovil === 'productos'
-              ? 'text-[#00E5FF] border-b-2 border-[#00E5FF]'
-              : 'text-gray-400'
+              ? 'text-[#F97316] border-b-2 border-[#F97316]'
+              : 'text-gray-600'
           }`}
         >
           <Package className="w-4 h-4" />
@@ -796,14 +876,14 @@ export default function POS() {
           onClick={() => setVistaMovil('orden')}
           className={`flex-1 py-3 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
             vistaMovil === 'orden'
-              ? 'text-[#00E5FF] border-b-2 border-[#00E5FF]'
-              : 'text-gray-400'
+              ? 'text-[#F97316] border-b-2 border-[#F97316]'
+              : 'text-gray-600'
           }`}
         >
           <ShoppingCart className="w-4 h-4" />
           Orden
           {orden.length > 0 && (
-            <span className="bg-[#00E5FF] text-black text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+            <span className="bg-[#F97316] text-black text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
               {orden.length}
             </span>
           )}
@@ -822,8 +902,8 @@ export default function POS() {
                 onClick={() => setCategoriaActiva('todos')}
                 className={`flex-none px-3 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
                   categoriaActiva === 'todos'
-                    ? 'bg-[#00E5FF] text-black'
-                    : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                    ? 'bg-[#F97316] text-black'
+                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                 }`}
               >
                 Todo ({productos.length})
@@ -853,14 +933,14 @@ export default function POS() {
           {/* Grid de productos */}
           <ScrollArea className="flex-1 px-4 pb-4">
             {loadingProductos ? (
-              <div className="flex items-center justify-center h-48 text-gray-400">
+              <div className="flex items-center justify-center h-48 text-gray-600">
                 <div className="text-center">
                   <Utensils className="w-12 h-12 mx-auto mb-3 opacity-20 animate-pulse" />
                   <p>Cargando menú...</p>
                 </div>
               </div>
             ) : productosFiltrados.length === 0 ? (
-              <div className="flex items-center justify-center h-48 text-gray-400">
+              <div className="flex items-center justify-center h-48 text-gray-600">
                 <div className="text-center">
                   <Search className="w-12 h-12 mx-auto mb-3 opacity-20" />
                   <p>Sin resultados</p>
@@ -880,24 +960,24 @@ export default function POS() {
                       disabled={sinStock}
                       className={`relative rounded-xl border text-left transition-all duration-150 overflow-hidden group ${
                         sinStock
-                          ? 'opacity-40 cursor-not-allowed border-white/10 bg-white/3'
+                          ? 'opacity-40 cursor-not-allowed border-gray-100 bg-gray-50'
                           : enOrden
-                          ? 'border-[#00E5FF]/70 bg-[#00E5FF]/10 hover:bg-[#00E5FF]/15 scale-[1.02]'
-                          : 'border-white/10 bg-white/5 hover:border-[#00E5FF]/40 hover:bg-white/8'
+                          ? 'border-[#F97316]/70 bg-[#F97316]/10 hover:bg-[#F97316]/15 scale-[1.02]'
+                          : 'border-gray-100 bg-gray-50 hover:border-[#F97316]/40 hover:bg-gray-100'
                       }`}
                     >
                       {/* Color band */}
                       <div
                         className="h-1.5 w-full"
-                        style={{ backgroundColor: p.categorias?.color || '#1e64a7' }}
+                        style={{ backgroundColor: p.categorias?.color || '#C2410C' }}
                       />
                       <div className="p-3">
-                        <p className="text-white text-sm font-semibold leading-tight mb-2 line-clamp-2 min-h-[2.5rem]">
+                        <p className="text-gray-900 text-sm font-semibold leading-tight mb-2 line-clamp-2 min-h-[2.5rem]">
                           {p.nombre}
                         </p>
                         <div className="flex items-end justify-between gap-1">
                           <div>
-                            <p className="text-[#00E5FF] font-bold text-base">
+                            <p className="text-[#F97316] font-bold text-base">
                               ${(Number(p.precio) || 0).toFixed(2)}
                             </p>
                             {tieneIVA && (
@@ -924,7 +1004,7 @@ export default function POS() {
                           )}
                         </div>
                         {enOrden && (
-                          <div className="mt-2 bg-[#00E5FF] text-black text-xs font-bold rounded-full px-2 py-0.5 text-center">
+                          <div className="mt-2 bg-[#F97316] text-black text-xs font-bold rounded-full px-2 py-0.5 text-center">
                             {enOrden.cantidad} en orden
                           </div>
                         )}
@@ -939,18 +1019,18 @@ export default function POS() {
 
         {/* ── Panel derecho: Orden ── */}
         <div className={`
-          w-full md:w-[340px] lg:w-[380px] flex-none flex flex-col bg-[#08111e] border-l border-[#00E5FF]/15
+          w-full md:w-[340px] lg:w-[380px] flex-none flex flex-col bg-gray-50 border-l border-[#F97316]/15
           ${vistaMovil === 'productos' ? 'hidden md:flex' : 'flex'}
         `}>
 
           {/* Header orden */}
-          <div className="flex-none px-4 py-3 border-b border-[#00E5FF]/15">
+          <div className="flex-none px-4 py-3 border-b border-[#F97316]/15">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4 text-[#00E5FF]" />
-                <span className="text-white font-semibold">Orden</span>
+                <ShoppingCart className="w-4 h-4 text-[#F97316]" />
+                <span className="text-gray-900 font-semibold">Orden</span>
                 {orden.length > 0 && (
-                  <span className="bg-[#00E5FF] text-black text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  <span className="bg-[#F97316] text-black text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
                     {orden.length}
                   </span>
                 )}
@@ -969,8 +1049,8 @@ export default function POS() {
             </div>
             {/* Resumen mesa/cliente */}
             {(mesa || cliente) && (
-              <div className="mt-1.5 flex gap-2 text-xs text-gray-400">
-                {mesa && tipoServicio === 'mesa' && <span className="text-[#00E5FF]">Mesa {mesa}</span>}
+              <div className="mt-1.5 flex gap-2 text-xs text-gray-600">
+                {mesa && tipoServicio === 'mesa' && <span className="text-[#F97316]">Mesa {mesa}</span>}
                 {cliente && <span>• {cliente}</span>}
               </div>
             )}
@@ -979,27 +1059,27 @@ export default function POS() {
           {/* Items */}
           <ScrollArea className="flex-1">
             {orden.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-gray-500 px-6">
+              <div className="flex flex-col items-center justify-center h-48 text-gray-600 px-6">
                 <ShoppingCart className="w-12 h-12 mb-3 opacity-15" />
                 <p className="text-sm text-center">Toca un producto para agregarlo a la orden</p>
               </div>
             ) : (
               <div className="p-3 space-y-2">
                 {orden.map(item => (
-                  <div key={item.producto.id} className="bg-white/5 rounded-xl p-3 border border-white/8">
+                  <div key={item.producto.id} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                     <div className="flex items-start gap-2">
                       {/* Cantidad */}
-                      <div className="flex items-center gap-1 bg-[#0A1A2F] rounded-lg p-1 flex-none">
+                      <div className="flex items-center gap-1 bg-white rounded-lg p-1 flex-none">
                         <button
                           onClick={() => cambiarCantidad(item.producto.id, -1)}
-                          className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 rounded"
+                          className="w-6 h-6 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
                         >
                           <Minus className="w-3 h-3" />
                         </button>
-                        <span className="text-white font-bold text-sm w-6 text-center">{item.cantidad}</span>
+                        <span className="text-gray-900 font-bold text-sm w-6 text-center">{item.cantidad}</span>
                         <button
                           onClick={() => cambiarCantidad(item.producto.id, +1)}
-                          className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 rounded"
+                          className="w-6 h-6 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
                         >
                           <Plus className="w-3 h-3" />
                         </button>
@@ -1007,8 +1087,8 @@ export default function POS() {
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{item.producto.nombre}</p>
-                        <p className="text-xs text-gray-400">${item.precio_unitario.toFixed(2)} c/u</p>
+                        <p className="text-gray-900 text-sm font-medium truncate">{item.producto.nombre}</p>
+                        <p className="text-xs text-gray-600">${item.precio_unitario.toFixed(2)} c/u</p>
                         {item.notas && (
                           <p className="text-xs text-amber-400 mt-0.5 flex items-center gap-1">
                             <MessageSquare className="w-3 h-3" /> {item.notas}
@@ -1018,21 +1098,21 @@ export default function POS() {
 
                       {/* Subtotal + acciones */}
                       <div className="flex flex-col items-end gap-1 flex-none">
-                        <p className="text-[#00E5FF] font-bold text-sm">${item.subtotal.toFixed(2)}</p>
+                        <p className="text-[#F97316] font-bold text-sm">${item.subtotal.toFixed(2)}</p>
                         <div className="flex gap-1">
                           <button
                             onClick={() => {
                               setEditandoNota(item.producto.id);
                               setNotaTemp(item.notas);
                             }}
-                            className="w-5 h-5 flex items-center justify-center text-gray-500 hover:text-amber-400 transition-colors"
+                            className="w-5 h-5 flex items-center justify-center text-gray-600 hover:text-amber-400 transition-colors"
                             title="Agregar nota"
                           >
                             <MessageSquare className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => eliminarItem(item.producto.id)}
-                            className="w-5 h-5 flex items-center justify-center text-gray-500 hover:text-red-400 transition-colors"
+                            className="w-5 h-5 flex items-center justify-center text-gray-600 hover:text-red-400 transition-colors"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
@@ -1040,8 +1120,8 @@ export default function POS() {
                       </div>
                     </div>
                     {/* Descuento por ítem */}
-                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-white/8">
-                      <span className="text-xs text-gray-400 whitespace-nowrap flex items-center gap-1">
+                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
+                      <span className="text-xs text-gray-600 whitespace-nowrap flex items-center gap-1">
                         <Percent className="w-3 h-3" /> Dcto:
                       </span>
                       <input
@@ -1049,9 +1129,9 @@ export default function POS() {
                         value={item.descuento_item || ''}
                         onChange={e => cambiarDescuentoItem(item.producto.id, Number(e.target.value))}
                         placeholder="0"
-                        className="w-16 h-7 text-sm bg-[#1a3a52] border border-amber-400/40 rounded px-2 text-amber-300 placeholder:text-gray-500 focus:outline-none focus:border-amber-400"
+                        className="w-16 h-7 text-sm bg-gray-100 border border-amber-400/40 rounded px-2 text-amber-300 placeholder:text-gray-400 focus:outline-none focus:border-amber-400"
                       />
-                      <span className="text-xs text-gray-500">%</span>
+                      <span className="text-xs text-gray-600">%</span>
                       {(item.descuento_item || 0) > 0 && (
                         <span className="text-xs text-amber-400 font-bold ml-auto">
                           -{item.descuento_item}% = -${((item.precio_unitario * item.cantidad * (item.descuento_item / 100))).toFixed(2)}
@@ -1068,7 +1148,7 @@ export default function POS() {
                     onChange={e => setNotas(e.target.value)}
                     placeholder="Notas generales de la orden..."
                     rows={2}
-                    className="w-full text-xs bg-white/3 border border-white/10 rounded-lg p-2 text-gray-300 placeholder:text-gray-600 resize-none focus:outline-none focus:border-[#00E5FF]/30"
+                    className="w-full text-xs bg-gray-50 border border-gray-100 rounded-lg p-2 text-gray-600 placeholder:text-gray-400 resize-none focus:outline-none focus:border-[#F97316]/30"
                   />
                 </div>
               </div>
@@ -1077,25 +1157,25 @@ export default function POS() {
 
           {/* Totales + acciones */}
           {orden.length > 0 && (
-            <div className="flex-none border-t border-[#00E5FF]/15 p-4 space-y-3 bg-[#060f1e]">
+            <div className="flex-none border-t border-[#F97316]/15 p-4 space-y-3 bg-gray-50">
               {/* Descuento global e IVA */}
               <div className="flex gap-3 items-center">
                 <div className="flex items-center gap-1.5 flex-1">
-                  <Percent className="w-3.5 h-3.5 text-gray-400" />
+                  <Percent className="w-3.5 h-3.5 text-gray-600" />
                   <Input
                     type="number" min="0" max="100"
                     value={descuento || ''}
                     onChange={e => setDescuento(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
                     placeholder="Dcto global %"
-                    className="h-8 text-sm bg-white/5 border-white/10 text-white placeholder:text-gray-600"
+                    className="h-8 text-sm bg-gray-50 border-gray-100 text-gray-900 placeholder:text-gray-400"
                   />
                 </div>
-                <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={aplicarIVA}
                     onChange={e => setAplicarIVA(e.target.checked)}
-                    className="w-4 h-4 accent-[#00E5FF]"
+                    className="w-4 h-4 accent-[#F97316]"
                   />
                   IVA
                 </label>
@@ -1104,51 +1184,57 @@ export default function POS() {
               {/* Costo de envío (solo delivery) */}
               {tipoServicio === 'delivery' && (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 whitespace-nowrap">🛵 Envío $</span>
+                  <span className="text-xs text-gray-600 whitespace-nowrap">🛵 Envío $</span>
                   <Input
                     type="number" min="0" step="0.01"
                     value={costoEnvio || ''}
                     onChange={e => setCostoEnvio(Math.max(0, parseFloat(e.target.value) || 0))}
                     placeholder="0.00"
-                    className="h-8 text-sm bg-white/5 border-orange-400/30 text-white placeholder:text-gray-600 flex-1"
+                    className="h-8 text-sm bg-gray-50 border-orange-400/30 text-gray-900 placeholder:text-gray-400 flex-1"
                   />
                 </div>
               )}
 
               {/* Resumen */}
               <div className="space-y-1 text-sm">
-                <div className="flex justify-between text-gray-400">
-                  <span>Subtotal</span>
-                  <span className="text-white">${subtotal.toFixed(2)}</span>
+                <div className="flex justify-between text-gray-600">
+                  <span>Subtotal{hayIVAIncluido ? ' (c/IVA incl.)' : ''}</span>
+                  <span className="text-gray-900">${subtotalBruto.toFixed(2)}</span>
                 </div>
                 {orden.some(i => (i.descuento_item || 0) > 0) && (
-                  <div className="flex justify-between text-gray-400">
+                  <div className="flex justify-between text-gray-600">
                     <span>Dcto. por ítem</span>
                     <span className="text-amber-400">incluido</span>
                   </div>
                 )}
                 {descuento > 0 && (
-                  <div className="flex justify-between text-gray-400">
+                  <div className="flex justify-between text-gray-600">
                     <span>Descuento global ({descuento}%)</span>
                     <span className="text-red-400">-${descuentoVal.toFixed(2)}</span>
                   </div>
                 )}
+                {hayIVAIncluido && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Base sin IVA</span>
+                    <span className="text-gray-900">${subtotalBase.toFixed(2)}</span>
+                  </div>
+                )}
                 {aplicarIVA && ivaVal > 0 && (
-                  <div className="flex justify-between text-gray-400">
-                    <span>IVA</span>
-                    <span className="text-white">${ivaVal.toFixed(2)}</span>
+                  <div className="flex justify-between text-gray-600">
+                    <span>IVA{hayIVAIncluido ? ' desglosado' : ''}</span>
+                    <span className="text-gray-900">${ivaVal.toFixed(2)}</span>
                   </div>
                 )}
                 {tipoServicio === 'delivery' && costoEnvio > 0 && (
-                  <div className="flex justify-between text-gray-400">
+                  <div className="flex justify-between text-gray-600">
                     <span>🛵 Costo de envío</span>
                     <span className="text-orange-400">+${costoEnvio.toFixed(2)}</span>
                   </div>
                 )}
-                <Separator className="bg-white/10 my-1" />
+                <Separator className="bg-gray-100 my-1" />
                 <div className="flex justify-between">
-                  <span className="text-white font-bold text-base">TOTAL</span>
-                  <span className="text-[#00E5FF] font-bold text-2xl">${total.toFixed(2)}</span>
+                  <span className="text-gray-900 font-bold text-base">TOTAL</span>
+                  <span className="text-[#F97316] font-bold text-2xl">${total.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -1159,8 +1245,8 @@ export default function POS() {
                   disabled={procesando}
                   className={`h-12 font-bold text-sm ${
                     comandaEnviada
-                      ? 'bg-green-700/80 hover:bg-green-700 text-white'
-                      : 'bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-white'
+                      ? 'bg-green-700/80 hover:bg-green-700 text-gray-900'
+                      : 'bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-gray-900'
                   }`}
                 >
                   <ChefHat className="w-4 h-4 mr-1.5" />
@@ -1169,7 +1255,7 @@ export default function POS() {
                 <Button
                   onClick={handleCobrar}
                   disabled={procesando}
-                  className="h-12 font-bold text-sm bg-gradient-to-r from-[#00E5FF] to-[#1e64a7] hover:from-[#00E5FF]/90 hover:to-[#1e64a7]/90 text-white"
+                  className="h-12 font-bold text-sm bg-gradient-to-r from-[#F97316] to-[#C2410C] hover:from-[#F97316]/90 hover:to-[#C2410C]/90 text-white"
                 >
                   <DollarSign className="w-4 h-4 mr-1.5" />
                   Cobrar
@@ -1182,14 +1268,14 @@ export default function POS() {
 
       {/* ── Modal: Nota por item ── */}
       <Dialog open={!!editandoNota} onOpenChange={() => setEditandoNota(null)}>
-        <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/30 max-w-sm">
+        <DialogContent className="bg-white border-[#F97316]/30 max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
+            <DialogTitle className="text-gray-900 flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-amber-400" /> Nota del item
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <p className="text-gray-400 text-sm">
+            <p className="text-gray-600 text-sm">
               {orden.find(i => i.producto.id === editandoNota)?.producto.nombre}
             </p>
             <textarea
@@ -1198,13 +1284,13 @@ export default function POS() {
               onChange={e => setNotaTemp(e.target.value)}
               placeholder="Ej: Sin cebolla, término medio, sin gluten..."
               rows={3}
-              className="w-full bg-white/5 border border-[#00E5FF]/20 rounded-lg p-3 text-white placeholder:text-gray-500 resize-none focus:outline-none focus:border-[#00E5FF]/50 text-sm"
+              className="w-full bg-gray-50 border border-[#F97316]/20 rounded-lg p-3 text-gray-900 placeholder:text-gray-400 resize-none focus:outline-none focus:border-[#F97316]/50 text-sm"
             />
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setEditandoNota(null)}
-                className="flex-1 border-white/20 text-white">Cancelar</Button>
+                className="flex-1 border-gray-200 text-gray-900">Cancelar</Button>
               <Button onClick={() => guardarNota(editandoNota!)}
-                className="flex-1 bg-amber-600 hover:bg-amber-500 text-white">Guardar nota</Button>
+                className="flex-1 bg-amber-600 hover:bg-amber-500 text-gray-900">Guardar nota</Button>
             </div>
           </div>
         </DialogContent>
@@ -1212,9 +1298,9 @@ export default function POS() {
 
       {/* ── Modal: Comanda enviada (imprimible) ── */}
       <Dialog open={dialogComanda} onOpenChange={setDialogComanda}>
-        <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/30 max-w-sm">
+        <DialogContent className="bg-white border-[#F97316]/30 max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
+            <DialogTitle className="text-gray-900 flex items-center gap-2">
               <ChefHat className="w-5 h-5 text-violet-400" />
               Comanda enviada a cocina
             </DialogTitle>
@@ -1263,7 +1349,7 @@ export default function POS() {
               <div className="flex gap-2">
                 <Button
                   onClick={() => imprimirComanda(ultimaComanda)}
-                  className="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-bold"
+                  className="flex-1 bg-violet-600 hover:bg-violet-500 text-gray-900 font-bold"
                 >
                   <Printer className="w-4 h-4 mr-2" />
                   Imprimir Comanda
@@ -1271,7 +1357,7 @@ export default function POS() {
                 <Button
                   onClick={() => setDialogComanda(false)}
                   variant="outline"
-                  className="flex-1 border-white/20 text-white"
+                  className="flex-1 border-gray-200 text-gray-900"
                 >
                   Cerrar
                 </Button>
@@ -1283,25 +1369,25 @@ export default function POS() {
 
       {/* ── Modal: Pago ── */}
       <Dialog open={dialogPago} onOpenChange={v => { if (!procesando) setDialogPago(v); }}>
-        <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/30 max-w-md">
+        <DialogContent className="bg-white border-[#F97316]/30 max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-white text-xl flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-[#00E5FF]" />
+            <DialogTitle className="text-gray-900 text-xl flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-[#F97316]" />
               Cobrar Orden
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             {/* Total grande */}
-            <div className="bg-gradient-to-r from-[#00E5FF]/10 to-[#1e64a7]/10 border border-[#00E5FF]/20 rounded-xl p-4 text-center">
-              {mesa && tipoServicio === 'mesa' && <p className="text-gray-400 text-sm mb-1">Mesa {mesa}</p>}
-              <p className="text-gray-400 text-sm">Total a cobrar</p>
-              <p className="text-[#00E5FF] text-4xl font-bold mt-1">${total.toFixed(2)}</p>
+            <div className="bg-gradient-to-r from-[#F97316]/10 to-[#C2410C]/10 border border-[#F97316]/20 rounded-xl p-4 text-center">
+              {mesa && tipoServicio === 'mesa' && <p className="text-gray-600 text-sm mb-1">Mesa {mesa}</p>}
+              <p className="text-gray-600 text-sm">Total a cobrar</p>
+              <p className="text-[#F97316] text-4xl font-bold mt-1">${total.toFixed(2)}</p>
             </div>
 
             {/* Método de pago */}
             <div>
-              <p className="text-white text-sm font-medium mb-2">Método de pago</p>
+              <p className="text-gray-900 text-sm font-medium mb-2">Método de pago</p>
               <div className="grid grid-cols-3 gap-2">
                 {([
                   { id: 'efectivo', label: 'Efectivo', icon: Wallet },
@@ -1313,8 +1399,8 @@ export default function POS() {
                     onClick={() => setMetodoPago(m.id)}
                     className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
                       metodoPago === m.id
-                        ? 'bg-[#00E5FF] border-[#00E5FF] text-black'
-                        : 'bg-white/5 border-white/10 text-gray-300 hover:border-[#00E5FF]/40'
+                        ? 'bg-[#F97316] border-[#F97316] text-black'
+                        : 'bg-gray-50 border-gray-100 text-gray-600 hover:border-[#F97316]/40'
                     }`}
                   >
                     <m.icon className="w-5 h-5" />
@@ -1327,19 +1413,19 @@ export default function POS() {
             {/* Monto recibido (efectivo) */}
             {metodoPago === 'efectivo' && (
               <div>
-                <Label className="text-white text-sm font-medium block mb-2">Monto recibido</Label>
+                <Label className="text-gray-900 text-sm font-medium block mb-2">Monto recibido</Label>
                 <Input
                   type="number" step="0.01" autoFocus
                   value={montoRecibido}
                   onChange={e => setMontoRecibido(e.target.value)}
                   placeholder="0.00"
-                  className="bg-white/5 border-[#00E5FF]/20 text-white text-xl h-12 text-center font-bold"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900 text-xl h-12 text-center font-bold"
                 />
                 {/* Atajos rápidos */}
                 <div className="grid grid-cols-4 gap-1.5 mt-2">
                   {[1, 5, 10, 20, 50, 100, Math.ceil(total), Math.ceil(total / 5) * 5].filter((v, i, a) => a.indexOf(v) === i).slice(0, 8).map(v => (
                     <button key={v} onClick={() => setMontoRecibido(String(v))}
-                      className="bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs rounded-lg py-1.5 transition-colors">
+                      className="bg-gray-50 hover:bg-gray-100 border border-gray-100 text-gray-900 text-xs rounded-lg py-1.5 transition-colors">
                       ${v}
                     </button>
                   ))}
@@ -1354,25 +1440,25 @@ export default function POS() {
             )}
 
             {/* Resumen items */}
-            <div className="bg-white/3 border border-white/8 rounded-xl p-3 max-h-36 overflow-auto">
-              <p className="text-gray-500 text-xs mb-2">{orden.length} item(s):</p>
+            <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 max-h-36 overflow-auto">
+              <p className="text-gray-600 text-xs mb-2">{orden.length} item(s):</p>
               {orden.map(i => (
                 <div key={i.producto.id} className="flex justify-between text-sm py-0.5">
-                  <span className="text-gray-300">{i.cantidad}× {i.producto.nombre}</span>
-                  <span className="text-gray-400">${i.subtotal.toFixed(2)}</span>
+                  <span className="text-gray-600">{i.cantidad}× {i.producto.nombre}</span>
+                  <span className="text-gray-600">${i.subtotal.toFixed(2)}</span>
                 </div>
               ))}
             </div>
 
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setDialogPago(false)} disabled={procesando}
-                className="flex-1 border-white/20 text-white">
+                className="flex-1 border-gray-200 text-gray-900">
                 Cancelar
               </Button>
               <Button
                 onClick={confirmarPago}
                 disabled={procesando || (metodoPago === 'efectivo' && (!montoRecibido || parseFloat(montoRecibido) < parseFloat(total.toFixed(2))))}
-                className="flex-1 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-white font-bold h-11"
+                className="flex-1 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-gray-900 font-bold h-11"
               >
                 {procesando ? (
                   <span className="flex items-center gap-2"><Clock className="w-4 h-4 animate-spin" /> Procesando...</span>
@@ -1390,31 +1476,42 @@ export default function POS() {
         open={dialogDatosCliente}
         onOpenChange={setDialogDatosCliente}
         onConfirmar={generarFactura}
-        onOmitir={() => { setDialogDatosCliente(false); toast.info('Venta completada sin factura'); limpiarVenta(true); }}
+        onOmitir={() => { setDialogDatosCliente(false); limpiarVenta(true); }}
       />
 
-      {/* ── Modal: RIDE ── */}
-      <Dialog open={dialogRIDE} onOpenChange={setDialogRIDE}>
-        <DialogContent className="bg-[#0A1A2F] border-[#00E5FF]/20 max-w-2xl max-h-[90vh]">
+      {/* ── Modal: RIDE — se abre tras generar la factura ── */}
+      <Dialog open={dialogRIDE} onOpenChange={(v) => { if (!v) cerrarRIDE(); }}>
+        <DialogContent className="bg-white border-[#F97316]/20 max-w-2xl max-h-[90vh]">
           <DialogHeader>
-            <DialogTitle className="text-white text-xl flex items-center gap-2">
-              <FileText className="w-5 h-5 text-[#00E5FF]" />
+            <DialogTitle className="text-gray-900 text-xl flex items-center gap-2">
+              <FileText className="w-5 h-5 text-[#F97316]" />
               Factura Electrónica
+              {facturaGenerada?.estado === 'AUTORIZADO' && (
+                <span className="ml-2 text-xs font-normal bg-green-100 text-green-700 px-2 py-0.5 rounded-full border border-green-200">
+                  ✓ Autorizada
+                </span>
+              )}
+              {facturaGenerada?.estado === 'NO_AUTORIZADO' && (
+                <span className="ml-2 text-xs font-normal bg-red-100 text-red-700 px-2 py-0.5 rounded-full border border-red-200">
+                  ✗ No autorizada
+                </span>
+              )}
+              {facturaGenerada?.estado === 'PENDIENTE' && (
+                <span className="ml-2 text-xs font-normal bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full border border-yellow-200">
+                  ⏱ Pendiente SRI
+                </span>
+              )}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {facturaGenerada && (
-              <div className="overflow-y-auto max-h-[calc(90vh-160px)]">
-                <RIDE factura={facturaGenerada} />
+              <div className="overflow-y-auto max-h-[calc(90vh-140px)]">
+                <RIDE factura={facturaGenerada} autoImprimir={autoImprimirRIDE} />
               </div>
             )}
-            <div className="flex justify-end gap-2 pt-2 border-t border-[#00E5FF]/20">
-              <Button onClick={() => window.print()}
-                className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white">
-                <Printer className="w-4 h-4 mr-2" /> Imprimir
-              </Button>
-              <Button variant="outline" onClick={() => setDialogRIDE(false)}
-                className="border-white/20 text-white">
+            <div className="flex justify-end pt-2 border-t border-[#F97316]/20">
+              <Button variant="outline" onClick={cerrarRIDE}
+                className="border-gray-200 text-gray-900">
                 Cerrar
               </Button>
             </div>

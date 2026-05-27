@@ -1,8 +1,11 @@
+import { useEffect } from 'react';
 import { Printer } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cssTermico, printHtml, esc, type AnchoPapel } from '../../utils/printThermal';
 
 interface RIDEProps {
+  /** Si es true, lanza la impresión automáticamente al montar el componente */
+  autoImprimir?: boolean;
   factura: {
     razon_social: string;
     nombre_comercial?: string;
@@ -165,13 +168,22 @@ function buildRideHtml(factura: RIDEProps['factura'], ancho: AnchoPapel): string
   `;
 }
 
-export function RIDE({ factura }: RIDEProps) {
+export function RIDE({ factura, autoImprimir = false }: RIDEProps) {
   const ancho = (parseInt(localStorage.getItem('print_ancho') || '58') as AnchoPapel) === 80 ? 80 : 58;
 
   const handlePrint = () => {
     const html = buildRideHtml(factura, ancho);
     printHtml(html, `Factura ${factura.numero_factura}`, ancho);
   };
+
+  // Auto-imprimir cuando el componente monta (solo si se indica)
+  useEffect(() => {
+    if (!autoImprimir) return;
+    // Pequeño delay para que el diálogo termine de renderizar
+    const t = setTimeout(() => handlePrint(), 400);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoImprimir]);
 
   // ── Vista previa en pantalla (no afecta la impresión) ──────────────────────
   const estadoFinal = factura.estado_autorizacion || (factura as any).estado || 'PENDIENTE';
@@ -180,8 +192,8 @@ export function RIDE({ factura }: RIDEProps) {
     <div className="space-y-4">
       {/* Botón imprimir */}
       <div className="flex justify-end gap-2">
-        <span className="text-xs text-gray-500 self-center">Papel: {ancho}mm</span>
-        <Button onClick={handlePrint} className="bg-gradient-to-r from-[#00E5FF] to-[#1e64a7]">
+        <span className="text-xs text-gray-600 self-center">Papel: {ancho}mm</span>
+        <Button onClick={handlePrint} className="bg-gradient-to-r from-[#F97316] to-[#C2410C]">
           <Printer className="w-4 h-4 mr-2" />
           Imprimir {ancho}mm
         </Button>
