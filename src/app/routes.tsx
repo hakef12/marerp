@@ -16,6 +16,7 @@ import Usuarios from "./pages/Usuarios";
 import Proyectos from "./pages/Proyectos";
 import ConfiguracionFacturacion from "./pages/ConfiguracionFacturacion";
 import ConsultaFacturas from "./pages/ConsultaFacturas";
+import ConsultaRetenciones from "./pages/ConsultaRetenciones";
 import ConfiguracionSistema from "./pages/ConfiguracionSistema";
 import Suscripcion from "./pages/Suscripcion";
 import Produccion from "./pages/Produccion";
@@ -50,6 +51,7 @@ export const router = createBrowserRouter([
       { path: "proyectos", Component: Proyectos },
       { path: "facturacion/configuracion", Component: ConfiguracionFacturacion },
       { path: "facturacion/consulta", Component: ConsultaFacturas },
+      { path: "facturacion/retenciones", Component: ConsultaRetenciones },
       { path: "configuracion", Component: ConfiguracionSistema },
       { path: "suscripcion", Component: Suscripcion },
       { path: "produccion", Component: Produccion },

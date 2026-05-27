@@ -18,12 +18,12 @@ import { registrarAsientoAutomatico } from './kv-helpers.tsx';
 import * as kv from './kv_store.tsx';
 
 // ── SQL helpers para facturación ──────────────────────────────────────────────
-const getDB = () => createClient(
+export const getDB = () => createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-async function getConfig(empresaId: string): Promise<any | null> {
+export async function getConfig(empresaId: string): Promise<any | null> {
   const { data } = await getDB().from('configuracion_facturacion')
     .select('*').eq('empresa_id', empresaId).maybeSingle();
   if (data) {
@@ -43,7 +43,7 @@ async function getConfig(empresaId: string): Promise<any | null> {
   return null;
 }
 
-async function setConfig(empresaId: string, config: any): Promise<void> {
+export async function setConfig(empresaId: string, config: any): Promise<void> {
   const { punto_emision, firma_electronica_activa, firma_electronica_nombre,
           firma_electronica_validez, ...rest } = config;
   await getDB().from('configuracion_facturacion').upsert({
@@ -74,7 +74,7 @@ async function setConfig(empresaId: string, config: any): Promise<void> {
   }, { onConflict: 'empresa_id' });
 }
 
-async function getCert(empresaId: string): Promise<any | null> {
+export async function getCert(empresaId: string): Promise<any | null> {
   const { data } = await getDB().from('certificados_facturacion')
     .select('*').eq('empresa_id', empresaId).maybeSingle();
   if (data) {
@@ -207,7 +207,7 @@ async function listFacturas(empresaId: string): Promise<Array<[string, any]>> {
  *
  * We extract only leaf-text <mensaje> tags (those with no child elements).
  */
-function parsearMensajesSRI(xmlBody: string): string[] {
+export function parsearMensajesSRI(xmlBody: string): string[] {
   const msgs: string[] = [];
   const seen = new Set<string>();
 
@@ -251,7 +251,7 @@ function parsearMensajesSRI(xmlBody: string): string[] {
   return msgs;
 }
 
-function xmlEncode(s: string | undefined | null): string {
+export function xmlEncode(s: string | undefined | null): string {
   if (s == null) return '';
   return String(s)
     .replace(/&/g, '&amp;')
@@ -261,7 +261,7 @@ function xmlEncode(s: string | undefined | null): string {
     .replace(/'/g, '&apos;');
 }
 
-function calcularModulo11(clave: string): string {
+export function calcularModulo11(clave: string): string {
   const factores = [2, 3, 4, 5, 6, 7];
   let suma = 0;
   for (let i = clave.length - 1, f = 0; i >= 0; i--, f = (f + 1) % 6) {
@@ -283,7 +283,7 @@ function getNombrePago(m: string): string {
   return ({ efectivo: 'Efectivo', tarjeta: 'Tarjeta de Crédito', tarjeta_debito: 'Tarjeta de Débito', transferencia: 'Transferencia Bancaria' } as any)[m] ?? 'Efectivo';
 }
 
-function normalizeAmbiente(a: any): 'pruebas' | 'produccion' {
+export function normalizeAmbiente(a: any): 'pruebas' | 'produccion' {
   return (a === '2' || a === 'produccion') ? 'produccion' : 'pruebas';
 }
 
@@ -893,7 +893,7 @@ function extractRawCertDersFromP12(p12DerBytesOrAsn1: string | any): string[] {
  *                        is absent (certificates uploaded before this feature was added).
  *                        Fix: re-upload the certificate to activate the fast path.
  */
-async function firmarXMLXAdES(xmlSinFirmar: string, certData: any): Promise<string> {
+export async function firmarXMLXAdES(xmlSinFirmar: string, certData: any): Promise<string> {
 
   // ── Key & certificate resolution ───────────────────────────────────────────
   let cryptoKey: CryptoKey | null = null;   // WebCrypto key (fast path)
@@ -1184,7 +1184,7 @@ function utf8ToBase64(str: string): string {
   return btoa(binary);
 }
 
-async function enviarXMLAlSRI(xml: string, ambiente: string, timeoutMs = 10000): Promise<{ recibida: boolean; devuelta: boolean; claveYaRegistrada?: boolean; errores: string[]; rawResponse?: string }> {
+export async function enviarXMLAlSRI(xml: string, ambiente: string, timeoutMs = 10000): Promise<{ recibida: boolean; devuelta: boolean; claveYaRegistrada?: boolean; errores: string[]; rawResponse?: string }> {
   const sriUrl = ambiente === 'produccion'
     ? 'https://cel.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline'
     : 'https://celcer.sri.gob.ec/comprobantes-electronicos-ws/RecepcionComprobantesOffline';
@@ -1242,7 +1242,7 @@ async function enviarXMLAlSRI(xml: string, ambiente: string, timeoutMs = 10000):
 // SRI SOAP: AUTHORIZATION QUERY
 // ============================================================
 
-async function consultarAutorizacionSRI(claveAcceso: string, ambiente: string, timeoutMs = 12000): Promise<{
+export async function consultarAutorizacionSRI(claveAcceso: string, ambiente: string, timeoutMs = 12000): Promise<{
   autorizado: boolean; numeroAutorizacion: string; fechaAutorizacion: string; mensajes: string[]; estadoSRI: string;
 }> {
   const sriUrl = ambiente === 'produccion'

@@ -36,14 +36,20 @@ import {
   XCircle,
   Bell,
   X,
+  FileText,
+  FileCode,
+  FileCheck,
 } from 'lucide-react';
 import { ExportButtons } from '../components/ExportButtons';
 import { exportToPDF, exportToExcel } from '../utils/exportUtils';
+import { Pagination, PaginationContent, PaginationItem, PaginationPrevious, PaginationNext, PaginationLink } from '../components/ui/pagination';
 import { ProductoModal } from '../components/inventario/ProductoModal';
 import { ProveedorModal } from '../components/inventario/ProveedorModal';
 import { BodegaModal } from '../components/inventario/BodegaModal';
 import { MovimientoModal } from '../components/inventario/MovimientoModal';
 import { DeleteConfirmationModal } from '../components/shared/DeleteConfirmationModal';
+import { ImportarXMLModal } from '../components/inventario/ImportarXMLModal';
+import { RetenciónDialog } from '../components/facturacion/RetenciónDialog';
 
 export default function Inventario() {
   const { token, logout } = useAuth();
@@ -65,13 +71,11 @@ export default function Inventario() {
   const [proveedores, setProveedores] = useState<any[]>([]);
   const [categorias, setCategorias] = useState<any[]>([]);
   const [movimientos, setMovimientos] = useState<any[]>([]);
-  const [centrosCostos, setCentrosCostos] = useState<any[]>([]);
   const [compras, setCompras] = useState<any[]>([]);
-  const [lotes, setLotes] = useState<any[]>([]);
   
   // Estados de UI
   const [isLoading, setIsLoading] = useState(false);
-  const [view, setView] = useState<'inventory' | 'products' | 'warehouses' | 'suppliers' | 'movements' | 'purchases' | 'cuentaspagar' | 'costcenters' | 'analysis' | 'expiry'>('inventory');
+  const [view, setView] = useState<'inventory' | 'products' | 'warehouses' | 'suppliers' | 'movements' | 'purchases' | 'cuentaspagar' | 'analysis'>('inventory');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWarehouse, setSelectedWarehouse] = useState('all');
   const [filterLevel, setFilterLevel] = useState<'all' | 'critical' | 'low' | 'normal'>('all');
@@ -96,9 +100,25 @@ export default function Inventario() {
   });
   const [compraItems, setCompraItems] = useState<any[]>([{ producto_id: '', cantidad: '', costo_total: '' }]);
   const [viewingCompra, setViewingCompra] = useState<any>(null);
+  const [retenciónCompra, setRetenciónCompra] = useState<any>(null);
   const [cxp, setCxp] = useState<any[]>([]);
   const [cxpPagandoId, setCxpPagandoId] = useState<string | null>(null);
   const [cxpMontoPago, setCxpMontoPago] = useState('');
+  const [showImportarXML, setShowImportarXML] = useState(false);
+
+  // Paginación y filtros — Compras
+  const [comprasPage, setComprasPage]       = useState(1);
+  const [comprasPages, setComprasPages]     = useState(1);
+  const [comprasTotal, setComprasTotal]     = useState(0);
+  const [comprasFi, setComprasFi]           = useState('');
+  const [comprasFf, setComprasFf]           = useState('');
+
+  // Paginación y filtros — Movimientos
+  const [movsPage, setMovsPage]             = useState(1);
+  const [movsPages, setMovsPages]           = useState(1);
+  const [movsTotal, setMovsTotal]           = useState(0);
+  const [movsFi, setMovsFi]                 = useState('');
+  const [movsFf, setMovsFf]                 = useState('');
 
   useEffect(() => {
     loadAllData();
@@ -112,10 +132,8 @@ export default function Inventario() {
       fetchProveedores(),
       fetchCategorias(),
       fetchMovimientos(),
-      fetchCentrosCostos(),
       fetchCompras(),
-      fetchCxP(),
-      fetchLotes()
+      fetchCxP()
     ]);
   };
 
@@ -281,38 +299,141 @@ export default function Inventario() {
     }
   };
 
-  const fetchMovimientos = async () => {
+  const fetchMovimientos = async (page = movsPage, fi = movsFi, ff = movsFf) => {
     try {
       const { projectId } = await import('/utils/supabase/info');
       const headers = await getAuthHeaders();
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/inventario/movimientos`, { headers });
+      const params = new URLSearchParams({ page: String(page), limit: '30' });
+      if (fi) params.set('fecha_inicio', fi);
+      if (ff) params.set('fecha_fin', ff);
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/inventario/movimientos?${params}`, { headers }
+      );
       if (response.ok) {
         const data = await response.json();
         setMovimientos(data.movimientos || []);
+        setMovsTotal(data.total || 0);
+        setMovsPages(data.pages || 1);
+        setMovsPage(page);
       }
     } catch (error) {}
   };
 
-  const fetchCentrosCostos = async () => {
-    try {
-      const { projectId } = await import('/utils/supabase/info');
-      const headers = await getAuthHeaders();
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/centros-costos`, { headers });
-      if (response.ok) {
-        const data = await response.json();
-        setCentrosCostos(data.centros_costos || []);
-      }
-    } catch (error) {}
+  // ── Descarga XML original guardado en metadata ───────────────────────────────
+  const descargarXML = (compra: any) => {
+    const xml = compra.metadata?.xml_original;
+    if (!xml) { toast.error('Esta compra no tiene XML guardado'); return; }
+    const blob = new Blob([xml], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `factura_${compra.numero_factura || compra.id}.xml`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
-  const fetchCompras = async () => {
+  // ── Genera PDF de factura de compra (estilo SRI) ──────────────────────────
+  const descargarPDFCompra = (compra: any) => {
+    const meta = compra.metadata || {};
+    const info = meta.info_sri || {};
+    const items: any[] = compra.items || [];
+    const subtotal = meta.total_sin_impuestos ?? items.reduce((s: number, i: any) => s + (i.costo_total || 0), 0);
+    const iva = meta.total_iva ?? 0;
+    const total = compra.total_compra ?? (subtotal + iva);
+
+    const html = `
+      <html><head><meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 11px; color: #111; margin: 20px; }
+        h1 { font-size: 15px; margin: 0 0 2px; }
+        .header { display: flex; justify-content: space-between; border-bottom: 2px solid #C2410C; padding-bottom: 10px; margin-bottom: 12px; }
+        .badge { background: #C2410C; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px; }
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+        .box { background: #f5f8ff; border-radius: 6px; padding: 8px 12px; }
+        .label { color: #555; font-size: 9px; text-transform: uppercase; margin-bottom: 2px; }
+        .val { font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+        th { background: #C2410C; color: white; padding: 5px 8px; text-align: left; font-size: 10px; }
+        td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; }
+        tr:nth-child(even) td { background: #f9fafb; }
+        .totals { margin-left: auto; width: 260px; }
+        .totals td { padding: 3px 8px; }
+        .totals .total-row td { font-weight: bold; font-size: 13px; border-top: 2px solid #C2410C; }
+        .clave { font-size: 8px; color: #555; word-break: break-all; margin-top: 12px; padding-top: 8px; border-top: 1px solid #ddd; }
+        .footer { text-align: center; color: #888; font-size: 9px; margin-top: 16px; }
+      </style></head><body>
+      <div class="header">
+        <div>
+          <h1>FACTURA DE COMPRA</h1>
+          <div style="color:#555;font-size:10px;">Documento interno — ${new Date().toLocaleDateString('es-EC')}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="badge">N° ${compra.numero_factura || '—'}</div>
+          <div style="margin-top:6px;font-size:10px;">Fecha: <b>${new Date(compra.fecha || compra.created_at).toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit', year:'numeric' })}</b></div>
+          <div style="font-size:10px;">Pago: <b>${compra.tipo_pago === 'credito' ? 'Crédito' : 'Contado'}</b></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="box">
+          <div class="label">Proveedor</div>
+          <div class="val">${compra.proveedor?.nombre || info.proveedor_nombre || '—'}</div>
+          <div style="color:#555">RUC: ${info.proveedor_ruc || compra.proveedor?.ruc || '—'}</div>
+        </div>
+        <div class="box">
+          <div class="label">Autorización SRI</div>
+          <div style="font-size:9px;word-break:break-all">${meta.numero_autorizacion || '—'}</div>
+        </div>
+      </div>
+      <table>
+        <thead><tr>
+          <th>#</th><th>Descripción</th><th style="text-align:right">Cant.</th>
+          <th style="text-align:right">Subtotal</th><th style="text-align:right">IVA</th><th style="text-align:right">Total</th>
+        </tr></thead>
+        <tbody>
+          ${items.map((it: any, idx: number) => `
+            <tr>
+              <td>${idx + 1}</td>
+              <td>${it.descripcion_xml || it.nombre || '—'}</td>
+              <td style="text-align:right">${Number(it.cantidad_xml || it.cantidad || 0).toFixed(2)}</td>
+              <td style="text-align:right">$${Number(it.costo_total || 0).toFixed(2)}</td>
+              <td style="text-align:right">$${Number(it.iva || 0).toFixed(2)}</td>
+              <td style="text-align:right">$${(Number(it.costo_total || 0) + Number(it.iva || 0)).toFixed(2)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+      <table class="totals">
+        <tr><td>Subtotal sin IVA</td><td style="text-align:right">$${Number(subtotal).toFixed(2)}</td></tr>
+        <tr><td>IVA</td><td style="text-align:right">$${Number(iva).toFixed(2)}</td></tr>
+        <tr class="total-row"><td>TOTAL</td><td style="text-align:right">$${Number(total).toFixed(2)}</td></tr>
+      </table>
+      ${meta.clave_acceso ? `<div class="clave"><b>Clave de acceso:</b> ${meta.clave_acceso}</div>` : ''}
+      <div class="footer">Generado por M.A.R Cocina Local — ${new Date().toLocaleString('es-EC')}</div>
+      </body></html>`;
+
+    const win = window.open('', '_blank');
+    if (!win) { toast.error('Permite ventanas emergentes para imprimir'); return; }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 500);
+  };
+
+  const fetchCompras = async (page = comprasPage, fi = comprasFi, ff = comprasFf) => {
     try {
       const { projectId } = await import('/utils/supabase/info');
       const headers = await getAuthHeaders();
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/compras`, { headers });
+      const params = new URLSearchParams({ page: String(page), limit: '20' });
+      if (fi) params.set('fecha_inicio', fi);
+      if (ff) params.set('fecha_fin', ff);
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/compras?${params}`, { headers }
+      );
       if (response.ok) {
         const data = await response.json();
         setCompras(data.compras || []);
+        setComprasTotal(data.total || 0);
+        setComprasPages(data.pages || 1);
+        setComprasPage(page);
       }
     } catch (error) {}
   };
@@ -349,18 +470,6 @@ export default function Inventario() {
         toast.error(err.error || 'Error al registrar pago');
       }
     } catch { toast.error('Error de conexión'); }
-  };
-
-  const fetchLotes = async () => {
-    try {
-      const { projectId } = await import('/utils/supabase/info');
-      const headers = await getAuthHeaders();
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/inventario/lotes`, { headers });
-      if (response.ok) {
-        const data = await response.json();
-        setLotes(data.lotes || []);
-      }
-    } catch (error) {}
   };
 
   // Sync product stock_actual to active bodega after saving a product
@@ -610,8 +719,8 @@ export default function Inventario() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-2">Gestión de Inventario</h1>
-          <p className="text-gray-400">Control completo de stock, bodegas y movimientos</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Gestión de Inventario</h1>
+          <p className="text-gray-600">Control completo de stock, bodegas y movimientos</p>
         </div>
         <div className="flex items-center gap-2">
           <ExportButtons
@@ -646,7 +755,7 @@ export default function Inventario() {
           />
           <Button
             onClick={() => setShowMovimientoModal(true)}
-            className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]"
+            className="bg-gradient-to-r from-[#C2410C] to-[#F97316]"
           >
             <Plus className="w-4 h-4 mr-2" />
             Movimiento de Inventario
@@ -656,29 +765,29 @@ export default function Inventario() {
 
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+        <Card className="bg-white border-[#F97316]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Total Productos</CardTitle>
-            <Package className="w-5 h-5 text-[#00E5FF]" />
+            <CardTitle className="text-sm font-medium text-gray-600">Total Productos</CardTitle>
+            <Package className="w-5 h-5 text-[#F97316]" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">{inventarioMetrics.totalProductos}</div>
+            <div className="text-3xl font-bold text-gray-900">{inventarioMetrics.totalProductos}</div>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#7B61FF]/20">
+        <Card className="bg-white border-[#FB923C]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Bodegas</CardTitle>
-            <Warehouse className="w-5 h-5 text-[#7B61FF]" />
+            <CardTitle className="text-sm font-medium text-gray-600">Bodegas</CardTitle>
+            <Warehouse className="w-5 h-5 text-[#FB923C]" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-white">{bodegas.length}</div>
+            <div className="text-3xl font-bold text-gray-900">{bodegas.length}</div>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-orange-500/20 border-2">
+        <Card className="bg-white border-orange-500/20 border-2">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Stock Bajo</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Stock Bajo</CardTitle>
             <TrendingDown className="w-5 h-5 text-orange-400" />
           </CardHeader>
           <CardContent>
@@ -686,9 +795,9 @@ export default function Inventario() {
           </CardContent>
         </Card>
 
-        <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-red-500/20 border-2">
+        <Card className="bg-white border-red-500/20 border-2">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-400">Stock Crítico</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Stock Crítico</CardTitle>
             <AlertCircle className="w-5 h-5 text-red-400" />
           </CardHeader>
           <CardContent>
@@ -710,13 +819,13 @@ export default function Inventario() {
       )}
 
       {/* Tabs de navegación */}
-      <div className="bg-gradient-to-br from-[#0A1A2F]/80 to-[#1a3a52]/60 rounded-xl shadow-lg border border-[#00E5FF]/20 p-2 flex gap-2 overflow-x-auto">
+      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-lg border border-[#F97316]/20 p-2 flex gap-2 overflow-x-auto">
         <button
           onClick={() => setView('inventory')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'inventory'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <Package className="w-5 h-5" /> Inventario
@@ -725,8 +834,8 @@ export default function Inventario() {
           onClick={() => setView('products')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'products'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <Boxes className="w-5 h-5" /> Productos
@@ -735,8 +844,8 @@ export default function Inventario() {
           onClick={() => setView('warehouses')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'warehouses'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <Warehouse className="w-5 h-5" /> Bodegas
@@ -745,8 +854,8 @@ export default function Inventario() {
           onClick={() => setView('suppliers')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'suppliers'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <Truck className="w-5 h-5" /> Proveedores
@@ -755,8 +864,8 @@ export default function Inventario() {
           onClick={() => setView('movements')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'movements'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <ArrowLeftRight className="w-5 h-5" /> Movimientos
@@ -765,8 +874,8 @@ export default function Inventario() {
           onClick={() => setView('purchases')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'purchases'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <ShoppingCart className="w-5 h-5" /> Compras
@@ -775,8 +884,8 @@ export default function Inventario() {
           onClick={() => setView('cuentaspagar')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'cuentaspagar'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <CreditCard className="w-5 h-5" />
@@ -791,8 +900,8 @@ export default function Inventario() {
           onClick={() => setView('analysis')}
           className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
             view === 'analysis'
-              ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-              : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
           }`}
         >
           <BarChart3 className="w-5 h-5" /> Análisis
@@ -800,10 +909,10 @@ export default function Inventario() {
       </div>
 
       {/* Contenido principal */}
-      <Card className="bg-[#0A1A2F]/60 backdrop-blur-xl border-[#00E5FF]/20">
+      <Card className="bg-white border-[#F97316]/20">
         <CardHeader>
           <div className="flex justify-between items-center">
-            <CardTitle className="text-xl font-bold text-white">
+            <CardTitle className="text-xl font-bold text-gray-900">
               {view === 'inventory' && 'Stock por Bodega'}
               {view === 'products' && 'Catálogo de Productos'}
               {view === 'warehouses' && 'Gestión de Bodegas'}
@@ -829,7 +938,7 @@ export default function Inventario() {
                     setEditingItem(null);
                     setShowProductoModal(true);
                   }}
-                  className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]"
+                  className="bg-gradient-to-r from-[#C2410C] to-[#F97316]"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Nuevo Producto
@@ -842,7 +951,7 @@ export default function Inventario() {
                     setEditingItem(null);
                     setShowBodegaModal(true);
                   }}
-                  className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]"
+                  className="bg-gradient-to-r from-[#C2410C] to-[#F97316]"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Nueva Bodega
@@ -855,7 +964,7 @@ export default function Inventario() {
                     setEditingItem(null);
                     setShowProveedorModal(true);
                   }}
-                  className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]"
+                  className="bg-gradient-to-r from-[#C2410C] to-[#F97316]"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Nuevo Proveedor
@@ -874,14 +983,14 @@ export default function Inventario() {
                     placeholder="Buscar producto..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="bg-white/5 border-[#00E5FF]/20 text-white"
+                    className="bg-gray-50 border-[#F97316]/20 text-gray-900"
                   />
                 </div>
                 <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
-                  <SelectTrigger className="w-48 bg-white/5 border-[#00E5FF]/20 text-white">
+                  <SelectTrigger className="w-48 bg-gray-50 border-[#F97316]/20 text-gray-900">
                     <SelectValue placeholder="Todas las bodegas" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                  <SelectContent className="bg-white border-[#F97316]/30">
                     <SelectItem value="all">Todas las bodegas</SelectItem>
                     {bodegas.map(b => (
                       <SelectItem key={b.id} value={b.id}>{b.nombre}</SelectItem>
@@ -889,10 +998,10 @@ export default function Inventario() {
                   </SelectContent>
                 </Select>
                 <Select value={filterLevel} onValueChange={(v: any) => setFilterLevel(v)}>
-                  <SelectTrigger className="w-48 bg-white/5 border-[#00E5FF]/20 text-white">
+                  <SelectTrigger className="w-48 bg-gray-50 border-[#F97316]/20 text-gray-900">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30">
+                  <SelectContent className="bg-white border-[#F97316]/30">
                     <SelectItem value="all">Todos los niveles</SelectItem>
                     <SelectItem value="critical">Solo críticos</SelectItem>
                     <SelectItem value="low">Solo bajos</SelectItem>
@@ -903,15 +1012,15 @@ export default function Inventario() {
 
               <Table>
                 <TableHeader>
-                  <TableRow className="border-[#00E5FF]/20 hover:bg-white/5">
-                    <TableHead className="text-gray-400">Producto</TableHead>
-                    <TableHead className="text-gray-400">Bodega</TableHead>
-                    <TableHead className="text-gray-400 text-right">Stock Actual</TableHead>
-                    <TableHead className="text-gray-400 text-right">Stock Mín</TableHead>
-                    <TableHead className="text-gray-400 text-right">Stock Máx</TableHead>
-                    <TableHead className="text-gray-400 text-right">Costo Prom.</TableHead>
-                    <TableHead className="text-gray-400 text-right">Valor Total</TableHead>
-                    <TableHead className="text-gray-400">Estado</TableHead>
+                  <TableRow className="border-[#F97316]/20 hover:bg-gray-50">
+                    <TableHead className="text-gray-600">Producto</TableHead>
+                    <TableHead className="text-gray-600">Bodega</TableHead>
+                    <TableHead className="text-gray-600 text-right">Stock Actual</TableHead>
+                    <TableHead className="text-gray-600 text-right">Stock Mín</TableHead>
+                    <TableHead className="text-gray-600 text-right">Stock Máx</TableHead>
+                    <TableHead className="text-gray-600 text-right">Costo Prom.</TableHead>
+                    <TableHead className="text-gray-600 text-right">Valor Total</TableHead>
+                    <TableHead className="text-gray-600">Estado</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -920,19 +1029,19 @@ export default function Inventario() {
                     const valorTotal = item.stock_actual * (item.costo_promedio || 0);
                     
                     return (
-                      <TableRow key={item.id} className="border-[#00E5FF]/10 hover:bg-white/5">
-                        <TableCell className="text-white">
+                      <TableRow key={item.id} className="border-[#F97316]/10 hover:bg-gray-50">
+                        <TableCell className="text-gray-900">
                           <div>
                             <div className="font-medium">{item.productos?.nombre || 'N/A'}</div>
-                            <div className="text-sm text-gray-400">{item.productos?.codigo || ''}</div>
+                            <div className="text-sm text-gray-600">{item.productos?.codigo || ''}</div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-gray-300">{item.bodegas?.nombre || 'N/A'}</TableCell>
-                        <TableCell className="text-white text-right font-bold">{item.stock_actual}</TableCell>
-                        <TableCell className="text-gray-400 text-right">{item.stock_minimo}</TableCell>
-                        <TableCell className="text-gray-400 text-right">{item.stock_maximo || '-'}</TableCell>
-                        <TableCell className="text-white text-right">${(item.costo_promedio || 0).toFixed(2)}</TableCell>
-                        <TableCell className="text-[#00E5FF] text-right font-bold">${valorTotal.toFixed(2)}</TableCell>
+                        <TableCell className="text-gray-600">{item.bodegas?.nombre || 'N/A'}</TableCell>
+                        <TableCell className="text-gray-900 text-right font-bold">{item.stock_actual}</TableCell>
+                        <TableCell className="text-gray-600 text-right">{item.stock_minimo}</TableCell>
+                        <TableCell className="text-gray-600 text-right">{item.stock_maximo || '-'}</TableCell>
+                        <TableCell className="text-gray-900 text-right">${(item.costo_promedio || 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-[#F97316] text-right font-bold">${valorTotal.toFixed(2)}</TableCell>
                         <TableCell>
                           <Badge className={getBadgeColor(nivel)}>
                             {nivel}
@@ -943,7 +1052,7 @@ export default function Inventario() {
                   })}
                   {filteredInventario.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-gray-400 py-8">
+                      <TableCell colSpan={8} className="text-center text-gray-600 py-8">
                         No hay datos de inventario disponibles
                       </TableCell>
                     </TableRow>
@@ -961,37 +1070,37 @@ export default function Inventario() {
                   placeholder="Buscar producto..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="bg-white/5 border-[#00E5FF]/20 text-white flex-1 max-w-md"
+                  className="bg-gray-50 border-[#F97316]/20 text-gray-900 flex-1 max-w-md"
                 />
-                <div className="text-gray-400 text-sm">
-                  Total de productos: <span className="text-[#00E5FF] font-bold">{productos.length}</span>
+                <div className="text-gray-600 text-sm">
+                  Total de productos: <span className="text-[#F97316] font-bold">{productos.length}</span>
                 </div>
               </div>
               
               <Table>
                 <TableHeader>
-                  <TableRow className="border-[#00E5FF]/20 hover:bg-white/5">
-                    <TableHead className="text-gray-400">Código</TableHead>
-                    <TableHead className="text-gray-400">Nombre</TableHead>
-                    <TableHead className="text-gray-400">Categoría</TableHead>
-                    <TableHead className="text-gray-400 text-right">Precio Compra</TableHead>
-                    <TableHead className="text-gray-400 text-right">Precio Venta</TableHead>
-                    <TableHead className="text-gray-400">Estado</TableHead>
-                    <TableHead className="text-gray-400 text-right">Acciones</TableHead>
+                  <TableRow className="border-[#F97316]/20 hover:bg-gray-50">
+                    <TableHead className="text-gray-600">Código</TableHead>
+                    <TableHead className="text-gray-600">Nombre</TableHead>
+                    <TableHead className="text-gray-600">Categoría</TableHead>
+                    <TableHead className="text-gray-600 text-right">Precio Compra</TableHead>
+                    <TableHead className="text-gray-600 text-right">Precio Venta</TableHead>
+                    <TableHead className="text-gray-600">Estado</TableHead>
+                    <TableHead className="text-gray-600 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {productos
                     .filter(p => p.nombre?.toLowerCase().includes(searchTerm.toLowerCase()))
                     .map((producto) => (
-                      <TableRow key={producto.id} className="border-[#00E5FF]/10 hover:bg-white/5">
-                        <TableCell className="text-white font-mono">{producto.codigo}</TableCell>
-                        <TableCell className="text-white font-medium">{producto.nombre}</TableCell>
-                        <TableCell className="text-gray-300">{producto.categorias?.nombre || '-'}</TableCell>
-                        <TableCell className="text-white text-right">${producto.precio_compra?.toFixed(2) || '0.00'}</TableCell>
-                        <TableCell className="text-[#00E5FF] text-right font-bold">${producto.precio_venta?.toFixed(2) || '0.00'}</TableCell>
+                      <TableRow key={producto.id} className="border-[#F97316]/10 hover:bg-gray-50">
+                        <TableCell className="text-gray-900 font-mono">{producto.codigo}</TableCell>
+                        <TableCell className="text-gray-900 font-medium">{producto.nombre}</TableCell>
+                        <TableCell className="text-gray-600">{producto.categorias?.nombre || '-'}</TableCell>
+                        <TableCell className="text-gray-900 text-right">${producto.precio_compra?.toFixed(2) || '0.00'}</TableCell>
+                        <TableCell className="text-[#F97316] text-right font-bold">${producto.precio_venta?.toFixed(2) || '0.00'}</TableCell>
                         <TableCell>
-                          <Badge className={producto.disponible ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}>
+                          <Badge className={producto.disponible ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-600'}>
                             {producto.disponible ? 'Activo' : 'Inactivo'}
                           </Badge>
                         </TableCell>
@@ -1024,7 +1133,7 @@ export default function Inventario() {
                     ))}
                   {productos.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-gray-400 py-8">
+                      <TableCell colSpan={7} className="text-center text-gray-600 py-8">
                         No hay productos registrados. Haz clic en "Nuevo Producto" para comenzar.
                       </TableCell>
                     </TableRow>
@@ -1038,24 +1147,24 @@ export default function Inventario() {
           {view === 'warehouses' && (
             <Table>
               <TableHeader>
-                <TableRow className="border-[#00E5FF]/20 hover:bg-white/5">
-                  <TableHead className="text-gray-400">Código</TableHead>
-                  <TableHead className="text-gray-400">Nombre</TableHead>
-                  <TableHead className="text-gray-400">Tipo</TableHead>
-                  <TableHead className="text-gray-400">Dirección</TableHead>
-                  <TableHead className="text-gray-400">Estado</TableHead>
-                  <TableHead className="text-gray-400 text-right">Acciones</TableHead>
+                <TableRow className="border-[#F97316]/20 hover:bg-gray-50">
+                  <TableHead className="text-gray-600">Código</TableHead>
+                  <TableHead className="text-gray-600">Nombre</TableHead>
+                  <TableHead className="text-gray-600">Tipo</TableHead>
+                  <TableHead className="text-gray-600">Dirección</TableHead>
+                  <TableHead className="text-gray-600">Estado</TableHead>
+                  <TableHead className="text-gray-600 text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {bodegas.map((bodega) => (
-                  <TableRow key={bodega.id} className="border-[#00E5FF]/10 hover:bg-white/5">
-                    <TableCell className="text-white font-mono">{bodega.codigo}</TableCell>
-                    <TableCell className="text-white font-medium">{bodega.nombre}</TableCell>
-                    <TableCell className="text-gray-300 capitalize">{bodega.tipo}</TableCell>
-                    <TableCell className="text-gray-400">{bodega.direccion || '-'}</TableCell>
+                  <TableRow key={bodega.id} className="border-[#F97316]/10 hover:bg-gray-50">
+                    <TableCell className="text-gray-900 font-mono">{bodega.codigo}</TableCell>
+                    <TableCell className="text-gray-900 font-medium">{bodega.nombre}</TableCell>
+                    <TableCell className="text-gray-600 capitalize">{bodega.tipo}</TableCell>
+                    <TableCell className="text-gray-600">{bodega.direccion || '-'}</TableCell>
                     <TableCell>
-                      <Badge className={bodega.activa ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}>
+                      <Badge className={bodega.activa ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-600'}>
                         {bodega.activa ? 'Activa' : 'Inactiva'}
                       </Badge>
                     </TableCell>
@@ -1088,7 +1197,7 @@ export default function Inventario() {
                 ))}
                 {bodegas.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-gray-400 py-8">
+                    <TableCell colSpan={6} className="text-center text-gray-600 py-8">
                       No hay bodegas registradas
                     </TableCell>
                   </TableRow>
@@ -1101,28 +1210,28 @@ export default function Inventario() {
           {view === 'suppliers' && (
             <Table>
               <TableHeader>
-                <TableRow className="border-[#00E5FF]/20 hover:bg-white/5">
-                  <TableHead className="text-gray-400">RUC/NIT</TableHead>
-                  <TableHead className="text-gray-400">Nombre</TableHead>
-                  <TableHead className="text-gray-400">Email</TableHead>
-                  <TableHead className="text-gray-400">Teléfono</TableHead>
-                  <TableHead className="text-gray-400 text-right">Días Crédito</TableHead>
-                  <TableHead className="text-gray-400 text-right">Límite Crédito</TableHead>
-                  <TableHead className="text-gray-400">Estado</TableHead>
-                  <TableHead className="text-gray-400 text-right">Acciones</TableHead>
+                <TableRow className="border-[#F97316]/20 hover:bg-gray-50">
+                  <TableHead className="text-gray-600">RUC/NIT</TableHead>
+                  <TableHead className="text-gray-600">Nombre</TableHead>
+                  <TableHead className="text-gray-600">Email</TableHead>
+                  <TableHead className="text-gray-600">Teléfono</TableHead>
+                  <TableHead className="text-gray-600 text-right">Días Crédito</TableHead>
+                  <TableHead className="text-gray-600 text-right">Límite Crédito</TableHead>
+                  <TableHead className="text-gray-600">Estado</TableHead>
+                  <TableHead className="text-gray-600 text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {proveedores.map((proveedor) => (
-                  <TableRow key={proveedor.id} className="border-[#00E5FF]/10 hover:bg-white/5">
-                    <TableCell className="text-white font-mono">{proveedor.ruc_nit}</TableCell>
-                    <TableCell className="text-white font-medium">{proveedor.nombre}</TableCell>
-                    <TableCell className="text-gray-300">{proveedor.email || '-'}</TableCell>
-                    <TableCell className="text-gray-300">{proveedor.telefono || '-'}</TableCell>
-                    <TableCell className="text-white text-right">{proveedor.dias_credito || 0}</TableCell>
-                    <TableCell className="text-[#00E5FF] text-right font-bold">${(proveedor.limite_credito || 0).toFixed(2)}</TableCell>
+                  <TableRow key={proveedor.id} className="border-[#F97316]/10 hover:bg-gray-50">
+                    <TableCell className="text-gray-900 font-mono">{proveedor.ruc_nit}</TableCell>
+                    <TableCell className="text-gray-900 font-medium">{proveedor.nombre}</TableCell>
+                    <TableCell className="text-gray-600">{proveedor.email || '-'}</TableCell>
+                    <TableCell className="text-gray-600">{proveedor.telefono || '-'}</TableCell>
+                    <TableCell className="text-gray-900 text-right">{proveedor.dias_credito || 0}</TableCell>
+                    <TableCell className="text-[#F97316] text-right font-bold">${(proveedor.limite_credito || 0).toFixed(2)}</TableCell>
                     <TableCell>
-                      <Badge className={proveedor.activo ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}>
+                      <Badge className={proveedor.activo ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-600'}>
                         {proveedor.activo ? 'Activo' : 'Inactivo'}
                       </Badge>
                     </TableCell>
@@ -1155,7 +1264,7 @@ export default function Inventario() {
                 ))}
                 {proveedores.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-gray-400 py-8">
+                    <TableCell colSpan={8} className="text-center text-gray-600 py-8">
                       No hay proveedores registrados
                     </TableCell>
                   </TableRow>
@@ -1167,23 +1276,46 @@ export default function Inventario() {
           {/* Vista de Movimientos */}
           {view === 'movements' && (
             <div className="space-y-4">
+              {/* Filtros de movimientos */}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Calendar className="w-4 h-4" />
+                  <span>Desde</span>
+                  <Input type="date" value={movsFi} onChange={e => setMovsFi(e.target.value)}
+                    className="h-8 w-36 bg-gray-50 border-gray-100 text-gray-900 text-xs" />
+                  <span>Hasta</span>
+                  <Input type="date" value={movsFf} onChange={e => setMovsFf(e.target.value)}
+                    className="h-8 w-36 bg-gray-50 border-gray-100 text-gray-900 text-xs" />
+                  <Button size="sm" onClick={() => fetchMovimientos(1, movsFi, movsFf)}
+                    className="h-8 bg-[#F97316]/20 text-[#F97316] hover:bg-[#F97316]/30 text-xs">
+                    Filtrar
+                  </Button>
+                  {(movsFi || movsFf) && (
+                    <Button size="sm" variant="ghost" onClick={() => { setMovsFi(''); setMovsFf(''); fetchMovimientos(1, '', ''); }}
+                      className="h-8 text-gray-600 text-xs">
+                      Limpiar
+                    </Button>
+                  )}
+                </div>
+                <span className="ml-auto text-xs text-gray-600">{movsTotal} movimiento(s) total</span>
+              </div>
               <Table>
                 <TableHeader>
-                  <TableRow className="border-[#00E5FF]/20 hover:bg-white/5">
-                    <TableHead className="text-gray-400">Fecha</TableHead>
-                    <TableHead className="text-gray-400">Tipo</TableHead>
-                    <TableHead className="text-gray-400">Producto</TableHead>
-                    <TableHead className="text-gray-400">Bodega</TableHead>
-                    <TableHead className="text-gray-400 text-right">Cantidad</TableHead>
-                    <TableHead className="text-gray-400 text-right">Costo Unit.</TableHead>
-                    <TableHead className="text-gray-400">Referencia</TableHead>
-                    <TableHead className="text-gray-400">Usuario</TableHead>
+                  <TableRow className="border-[#F97316]/20 hover:bg-gray-50">
+                    <TableHead className="text-gray-600">Fecha</TableHead>
+                    <TableHead className="text-gray-600">Tipo</TableHead>
+                    <TableHead className="text-gray-600">Producto</TableHead>
+                    <TableHead className="text-gray-600">Bodega</TableHead>
+                    <TableHead className="text-gray-600 text-right">Cantidad</TableHead>
+                    <TableHead className="text-gray-600 text-right">Costo Unit.</TableHead>
+                    <TableHead className="text-gray-600">Referencia</TableHead>
+                    <TableHead className="text-gray-600">Usuario</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {movimientos.slice(0, 50).map((mov) => (
-                    <TableRow key={mov.id} className="border-[#00E5FF]/10 hover:bg-white/5">
-                      <TableCell className="text-gray-300">
+                  {movimientos.map((mov) => (
+                    <TableRow key={mov.id} className="border-[#F97316]/10 hover:bg-gray-50">
+                      <TableCell className="text-gray-600">
                         {new Date(mov.created_at || mov.fecha).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </TableCell>
                       <TableCell>
@@ -1196,23 +1328,55 @@ export default function Inventario() {
                           {mov.tipo}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-white">{mov.productos?.nombre || 'N/A'}</TableCell>
-                      <TableCell className="text-gray-300">{mov.bodegas?.nombre || 'N/A'}</TableCell>
-                      <TableCell className="text-white text-right font-bold">{mov.cantidad}</TableCell>
-                      <TableCell className="text-white text-right">${(mov.costo_unitario || 0).toFixed(2)}</TableCell>
-                      <TableCell className="text-gray-400">{mov.referencia || '-'}</TableCell>
-                      <TableCell className="text-gray-300">{mov.usuarios?.nombre_completo || '-'}</TableCell>
+                      <TableCell className="text-gray-900">{mov.productos?.nombre || 'N/A'}</TableCell>
+                      <TableCell className="text-gray-600">{mov.bodegas?.nombre || 'N/A'}</TableCell>
+                      <TableCell className="text-gray-900 text-right font-bold">{mov.cantidad}</TableCell>
+                      <TableCell className="text-gray-900 text-right">${(mov.costo_unitario || 0).toFixed(2)}</TableCell>
+                      <TableCell className="text-gray-600">{mov.referencia || '-'}</TableCell>
+                      <TableCell className="text-gray-600">{mov.usuarios?.nombre_completo || '-'}</TableCell>
                     </TableRow>
                   ))}
                   {movimientos.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-gray-400 py-8">
+                      <TableCell colSpan={8} className="text-center text-gray-600 py-8">
                         No hay movimientos registrados
                       </TableCell>
                     </TableRow>
                   )}
                 </TableBody>
               </Table>
+
+              {/* Paginación movimientos */}
+              {movsPages > 1 && (
+                <Pagination className="mt-2">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={() => movsPage > 1 && fetchMovimientos(movsPage - 1)}
+                        className={movsPage <= 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer text-gray-900'}
+                      />
+                    </PaginationItem>
+                    {Array.from({ length: Math.min(5, movsPages) }, (_, i) => {
+                      const p = movsPage <= 3 ? i + 1 : movsPage - 2 + i;
+                      if (p < 1 || p > movsPages) return null;
+                      return (
+                        <PaginationItem key={p}>
+                          <PaginationLink isActive={p === movsPage} onClick={() => fetchMovimientos(p)}
+                            className="cursor-pointer text-gray-900">
+                            {p}
+                          </PaginationLink>
+                        </PaginationItem>
+                      );
+                    })}
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={() => movsPage < movsPages && fetchMovimientos(movsPage + 1)}
+                        className={movsPage >= movsPages ? 'pointer-events-none opacity-40' : 'cursor-pointer text-gray-900'}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              )}
             </div>
           )}
 
@@ -1253,41 +1417,74 @@ export default function Inventario() {
                       onClick={backfillAsientos}
                       disabled={backfilling || compras.length === 0}
                       variant="outline"
-                      className="border-[#7B61FF]/40 text-[#7B61FF] hover:bg-[#7B61FF]/10 text-sm"
+                      className="border-[#FB923C]/40 text-[#FB923C] hover:bg-[#FB923C]/10 text-sm"
                     >
                       <Calculator className="w-4 h-4 mr-2" />
                       {backfilling ? 'Procesando...' : 'Generar asientos faltantes'}
                     </Button>
-                    <Button onClick={() => setShowCompraForm(true)} className="bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]">
-                      <Plus className="w-4 h-4 mr-2" /> Nueva Compra
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowImportarXML(true)}
+                        className="border-green-500/40 text-green-400 hover:bg-green-500/10"
+                      >
+                        <Download className="w-4 h-4 mr-2" /> Importar XML SRI
+                      </Button>
+                      <Button onClick={() => setShowCompraForm(true)} className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
+                        <Plus className="w-4 h-4 mr-2" /> Nueva Compra
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Filtros fecha + totalizador */}
+                  <div className="flex flex-wrap items-center gap-3 py-2">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Calendar className="w-4 h-4" />
+                      <span>Desde</span>
+                      <Input type="date" value={comprasFi} onChange={e => setComprasFi(e.target.value)}
+                        className="h-8 w-36 bg-gray-50 border-gray-100 text-gray-900 text-xs" />
+                      <span>Hasta</span>
+                      <Input type="date" value={comprasFf} onChange={e => setComprasFf(e.target.value)}
+                        className="h-8 w-36 bg-gray-50 border-gray-100 text-gray-900 text-xs" />
+                      <Button size="sm" onClick={() => fetchCompras(1, comprasFi, comprasFf)}
+                        className="h-8 bg-[#F97316]/20 text-[#F97316] hover:bg-[#F97316]/30 text-xs">
+                        Filtrar
+                      </Button>
+                      {(comprasFi || comprasFf) && (
+                        <Button size="sm" variant="ghost" onClick={() => { setComprasFi(''); setComprasFf(''); fetchCompras(1, '', ''); }}
+                          className="h-8 text-gray-600 text-xs">
+                          Limpiar
+                        </Button>
+                      )}
+                    </div>
+                    <span className="ml-auto text-xs text-gray-600">{comprasTotal} compra(s) total</span>
                   </div>
 
                   {/* Lista de compras */}
                   {compras.length === 0 ? (
-                    <div className="text-center text-gray-400 py-12">
+                    <div className="text-center text-gray-600 py-12">
                       <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-40" />
                       <p>No hay compras registradas</p>
                     </div>
                   ) : (
                     <Table>
                       <TableHeader>
-                        <TableRow className="border-[#00E5FF]/20">
-                          <TableHead className="text-gray-400">Fecha</TableHead>
-                          <TableHead className="text-gray-400">Factura</TableHead>
-                          <TableHead className="text-gray-400">Proveedor</TableHead>
-                          <TableHead className="text-gray-400">Pago</TableHead>
-                          <TableHead className="text-gray-400">Ítems</TableHead>
-                          <TableHead className="text-gray-400 text-right">Total Compra</TableHead>
-                          <TableHead className="text-gray-400 text-right">Ver</TableHead>
+                        <TableRow className="border-[#F97316]/20">
+                          <TableHead className="text-gray-600">Fecha</TableHead>
+                          <TableHead className="text-gray-600">Factura</TableHead>
+                          <TableHead className="text-gray-600">Proveedor</TableHead>
+                          <TableHead className="text-gray-600">Pago</TableHead>
+                          <TableHead className="text-gray-600">Ítems</TableHead>
+                          <TableHead className="text-gray-600 text-right">Total Compra</TableHead>
+                          <TableHead className="text-gray-600 text-right">Ver</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {compras.map((compra) => (
-                          <TableRow key={compra.id} className="border-[#00E5FF]/10 hover:bg-white/5">
-                            <TableCell className="text-gray-300">{new Date(compra.fecha || compra.created_at).toLocaleDateString('es-EC')}</TableCell>
-                            <TableCell className="text-white font-mono">{compra.numero_factura || '—'}</TableCell>
-                            <TableCell className="text-gray-300">{compra.proveedor?.nombre || '—'}</TableCell>
+                          <TableRow key={compra.id} className="border-[#F97316]/10 hover:bg-gray-50">
+                            <TableCell className="text-gray-600">{new Date(compra.fecha || compra.created_at).toLocaleDateString('es-EC')}</TableCell>
+                            <TableCell className="text-gray-900 font-mono text-xs">{compra.numero_factura || '—'}</TableCell>
+                            <TableCell className="text-gray-600">{compra.proveedor?.nombre || '—'}</TableCell>
                             <TableCell>
                               <Badge className={compra.tipo_pago === 'credito'
                                 ? (compra.estado_pago === 'pagada' ? 'bg-green-500/20 text-green-400' : 'bg-orange-500/20 text-orange-400')
@@ -1295,61 +1492,114 @@ export default function Inventario() {
                                 {compra.tipo_pago === 'credito' ? (compra.estado_pago === 'pagada' ? 'Crédito pagado' : 'Crédito pend.') : 'Contado'}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-gray-400">{(compra.items || []).length} producto(s)</TableCell>
-                            <TableCell className="text-[#00E5FF] font-bold text-right">${(compra.total_compra || 0).toFixed(2)}</TableCell>
+                            <TableCell className="text-gray-600">{(compra.items || []).length} producto(s)</TableCell>
+                            <TableCell className="text-[#F97316] font-bold text-right">${(compra.total_compra || 0).toFixed(2)}</TableCell>
                             <TableCell className="text-right">
-                              <Button size="sm" variant="ghost" onClick={() => setViewingCompra(compra)} className="text-gray-400 hover:text-white">
-                                <Eye className="w-4 h-4" />
-                              </Button>
+                              <div className="flex items-center justify-end gap-1">
+                                {/* Ver detalle */}
+                                <Button size="sm" variant="ghost" onClick={() => setViewingCompra(compra)}
+                                  className="text-gray-600 hover:text-gray-900" title="Ver detalle">
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                                {/* Descargar PDF */}
+                                <Button size="sm" variant="ghost" onClick={() => descargarPDFCompra(compra)}
+                                  className="text-red-400 hover:text-red-300" title="Descargar PDF">
+                                  <FileText className="w-4 h-4" />
+                                </Button>
+                                {/* Descargar XML (solo si fue importado) */}
+                                {compra.metadata?.xml_original && (
+                                  <Button size="sm" variant="ghost" onClick={() => descargarXML(compra)}
+                                    className="text-green-400 hover:text-green-300" title="Descargar XML original">
+                                    <FileCode className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                {/* Emitir Retención */}
+                                <Button size="sm" variant="ghost" onClick={() => setRetenciónCompra(compra)}
+                                  className="text-blue-500 hover:text-blue-700" title="Emitir comprobante de retención">
+                                  <FileCheck className="w-4 h-4" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   )}
+
+                  {/* Paginación compras */}
+                  {comprasPages > 1 && (
+                    <Pagination className="mt-2">
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            onClick={() => comprasPage > 1 && fetchCompras(comprasPage - 1)}
+                            className={comprasPage <= 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer text-gray-900'}
+                          />
+                        </PaginationItem>
+                        {Array.from({ length: Math.min(5, comprasPages) }, (_, i) => {
+                          const p = comprasPage <= 3 ? i + 1 : comprasPage - 2 + i;
+                          if (p < 1 || p > comprasPages) return null;
+                          return (
+                            <PaginationItem key={p}>
+                              <PaginationLink isActive={p === comprasPage} onClick={() => fetchCompras(p)}
+                                className="cursor-pointer text-gray-900">
+                                {p}
+                              </PaginationLink>
+                            </PaginationItem>
+                          );
+                        })}
+                        <PaginationItem>
+                          <PaginationNext
+                            onClick={() => comprasPage < comprasPages && fetchCompras(comprasPage + 1)}
+                            className={comprasPage >= comprasPages ? 'pointer-events-none opacity-40' : 'cursor-pointer text-gray-900'}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  )}
                 </>
               ) : (
                 /* Formulario de nueva compra */
                 <div className="space-y-6">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-white font-semibold text-lg">Nueva Compra</h3>
-                    <Button variant="ghost" onClick={() => setShowCompraForm(false)} className="text-gray-400 hover:text-white">Cancelar</Button>
+                    <h3 className="text-gray-900 font-semibold text-lg">Nueva Compra</h3>
+                    <Button variant="ghost" onClick={() => setShowCompraForm(false)} className="text-gray-600 hover:text-gray-900">Cancelar</Button>
                   </div>
 
                   {/* Datos generales */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-1">
-                      <label className="text-sm text-gray-400">Proveedor</label>
+                      <label className="text-sm text-gray-600">Proveedor</label>
                       <Select value={compraForm.proveedor_id} onValueChange={v => setCompraForm(f => ({ ...f, proveedor_id: v }))}>
-                        <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white">
+                        <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900">
                           <SelectValue placeholder="Seleccionar..." />
                         </SelectTrigger>
-                        <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white">
+                        <SelectContent className="bg-white border-[#F97316]/30 text-gray-900">
                           {proveedores.map(p => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-sm text-gray-400">Fecha de compra</label>
-                      <Input type="date" value={compraForm.fecha} onChange={e => setCompraForm(f => ({ ...f, fecha: e.target.value }))} className="bg-white/5 border-[#00E5FF]/20 text-white" />
+                      <label className="text-sm text-gray-600">Fecha de compra</label>
+                      <Input type="date" value={compraForm.fecha} onChange={e => setCompraForm(f => ({ ...f, fecha: e.target.value }))} className="bg-gray-50 border-[#F97316]/20 text-gray-900" />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-sm text-gray-400">N° Factura (opcional)</label>
-                      <Input value={compraForm.numero_factura} onChange={e => setCompraForm(f => ({ ...f, numero_factura: e.target.value }))} className="bg-white/5 border-[#00E5FF]/20 text-white" placeholder="001-001-000001" />
+                      <label className="text-sm text-gray-600">N° Factura (opcional)</label>
+                      <Input value={compraForm.numero_factura} onChange={e => setCompraForm(f => ({ ...f, numero_factura: e.target.value }))} className="bg-gray-50 border-[#F97316]/20 text-gray-900" placeholder="001-001-000001" />
                     </div>
                   </div>
 
                   {/* Tipo de pago */}
-                  <div className="bg-white/3 border border-[#00E5FF]/20 rounded-lg p-4 space-y-3">
-                    <label className="text-sm text-[#00E5FF] font-semibold">Tipo de Pago</label>
+                  <div className="bg-gray-50 border border-[#F97316]/20 rounded-lg p-4 space-y-3">
+                    <label className="text-sm text-[#F97316] font-semibold">Tipo de Pago</label>
                     <div className="flex gap-3">
                       <button
                         type="button"
                         onClick={() => setCompraForm(f => ({ ...f, tipo_pago: 'contado' }))}
                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-semibold transition-all ${
                           compraForm.tipo_pago === 'contado'
-                            ? 'bg-[#00E5FF]/15 border-[#00E5FF] text-[#00E5FF]'
-                            : 'border-white/10 text-gray-400 hover:border-white/30'
+                            ? 'bg-[#F97316]/15 border-[#F97316] text-[#F97316]'
+                            : 'border-gray-100 text-gray-600 hover:border-white/30'
                         }`}
                       >
                         <CheckCircle className="w-4 h-4" /> Pago al Contado
@@ -1360,7 +1610,7 @@ export default function Inventario() {
                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-semibold transition-all ${
                           compraForm.tipo_pago === 'credito'
                             ? 'bg-orange-500/15 border-orange-500 text-orange-400'
-                            : 'border-white/10 text-gray-400 hover:border-white/30'
+                            : 'border-gray-100 text-gray-600 hover:border-white/30'
                         }`}
                       >
                         <CreditCard className="w-4 h-4" /> Crédito (CxP)
@@ -1368,12 +1618,12 @@ export default function Inventario() {
                     </div>
                     {compraForm.tipo_pago === 'credito' && (
                       <div className="space-y-1 pt-1">
-                        <label className="text-sm text-gray-400">Fecha de vencimiento del pago *</label>
+                        <label className="text-sm text-gray-600">Fecha de vencimiento del pago *</label>
                         <Input
                           type="date"
                           value={compraForm.fecha_vencimiento}
                           onChange={e => setCompraForm(f => ({ ...f, fecha_vencimiento: e.target.value }))}
-                          className="bg-white/5 border-orange-500/40 text-white max-w-xs"
+                          className="bg-gray-50 border-orange-500/40 text-gray-900 max-w-xs"
                           required
                         />
                         <p className="text-xs text-orange-400/70">Se enviará una alerta 5 días antes del vencimiento</p>
@@ -1384,20 +1634,20 @@ export default function Inventario() {
                   {/* Tabla de ítems */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <label className="text-sm text-[#00E5FF] font-semibold">Productos comprados</label>
-                      <Button type="button" size="sm" variant="ghost" onClick={addCompraItem} className="text-[#00E5FF] hover:bg-[#00E5FF]/10">
+                      <label className="text-sm text-[#F97316] font-semibold">Productos comprados</label>
+                      <Button type="button" size="sm" variant="ghost" onClick={addCompraItem} className="text-[#F97316] hover:bg-[#F97316]/10">
                         <Plus className="w-4 h-4 mr-1" /> Agregar ítem
                       </Button>
                     </div>
 
-                    <div className="rounded-lg border border-[#00E5FF]/20 overflow-hidden">
+                    <div className="rounded-lg border border-[#F97316]/20 overflow-hidden">
                       <Table>
                         <TableHeader>
-                          <TableRow className="border-[#00E5FF]/20 bg-white/5">
-                            <TableHead className="text-gray-400">Producto</TableHead>
-                            <TableHead className="text-gray-400 w-32">Cantidad</TableHead>
-                            <TableHead className="text-gray-400 w-36">Costo Total ($)</TableHead>
-                            <TableHead className="text-gray-400 w-36">Costo por unidad</TableHead>
+                          <TableRow className="border-[#F97316]/20 bg-gray-50">
+                            <TableHead className="text-gray-600">Producto</TableHead>
+                            <TableHead className="text-gray-600 w-32">Cantidad</TableHead>
+                            <TableHead className="text-gray-600 w-36">Costo Total ($)</TableHead>
+                            <TableHead className="text-gray-600 w-36">Costo por unidad</TableHead>
                             <TableHead className="w-10"></TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1408,13 +1658,13 @@ export default function Inventario() {
                               : 0;
                             const prod = productos.find(p => p.id === item.producto_id);
                             return (
-                              <TableRow key={idx} className="border-[#00E5FF]/10">
+                              <TableRow key={idx} className="border-[#F97316]/10">
                                 <TableCell>
                                   <Select value={item.producto_id} onValueChange={v => updateCompraItem(idx, 'producto_id', v)}>
-                                    <SelectTrigger className="bg-white/5 border-[#00E5FF]/20 text-white h-8 text-sm">
+                                    <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-8 text-sm">
                                       <SelectValue placeholder="Seleccionar producto..." />
                                     </SelectTrigger>
-                                    <SelectContent className="bg-[#0A1A2F] border-[#00E5FF]/30 text-white">
+                                    <SelectContent className="bg-white border-[#F97316]/30 text-gray-900">
                                       {productos.map(p => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
                                     </SelectContent>
                                   </Select>
@@ -1424,26 +1674,26 @@ export default function Inventario() {
                                     type="number" min="0" step="0.001"
                                     value={item.cantidad}
                                     onChange={e => updateCompraItem(idx, 'cantidad', e.target.value)}
-                                    className="bg-white/5 border-[#00E5FF]/20 text-white h-8 text-sm"
+                                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-8 text-sm"
                                     placeholder="0"
                                   />
-                                  {prod?.unidad_medida && <span className="text-xs text-gray-500 mt-0.5 block">{prod.unidad_medida}</span>}
+                                  {prod?.unidad_medida && <span className="text-xs text-gray-600 mt-0.5 block">{prod.unidad_medida}</span>}
                                 </TableCell>
                                 <TableCell>
                                   <Input
                                     type="number" min="0" step="0.01"
                                     value={item.costo_total}
                                     onChange={e => updateCompraItem(idx, 'costo_total', e.target.value)}
-                                    className="bg-white/5 border-[#00E5FF]/20 text-white h-8 text-sm"
+                                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-8 text-sm"
                                     placeholder="0.00"
                                   />
                                 </TableCell>
                                 <TableCell>
-                                  <span className={`text-sm font-bold ${costoUnit > 0 ? 'text-[#00E5FF]' : 'text-gray-500'}`}>
+                                  <span className={`text-sm font-bold ${costoUnit > 0 ? 'text-[#F97316]' : 'text-gray-600'}`}>
                                     {costoUnit > 0 ? `$${costoUnit.toFixed(4)}` : '—'}
                                   </span>
                                   {prod?.unidad_medida && costoUnit > 0 && (
-                                    <span className="text-xs text-gray-500 block">por {prod.unidad_medida}</span>
+                                    <span className="text-xs text-gray-600 block">por {prod.unidad_medida}</span>
                                   )}
                                 </TableCell>
                                 <TableCell>
@@ -1460,9 +1710,9 @@ export default function Inventario() {
 
                     {/* Total */}
                     <div className="flex justify-end">
-                      <div className="bg-[#00E5FF]/10 border border-[#00E5FF]/30 rounded-lg px-6 py-3 text-right">
-                        <span className="text-gray-400 text-sm">Total de compra</span>
-                        <div className="text-[#00E5FF] text-2xl font-bold">
+                      <div className="bg-[#F97316]/10 border border-[#F97316]/30 rounded-lg px-6 py-3 text-right">
+                        <span className="text-gray-600 text-sm">Total de compra</span>
+                        <div className="text-[#F97316] text-2xl font-bold">
                           ${compraItems.reduce((sum, i) => sum + (Number(i.costo_total) || 0), 0).toFixed(2)}
                         </div>
                       </div>
@@ -1470,13 +1720,13 @@ export default function Inventario() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-sm text-gray-400">Observaciones</label>
-                    <Input value={compraForm.observaciones} onChange={e => setCompraForm(f => ({ ...f, observaciones: e.target.value }))} className="bg-white/5 border-[#00E5FF]/20 text-white" placeholder="Notas adicionales..." />
+                    <label className="text-sm text-gray-600">Observaciones</label>
+                    <Input value={compraForm.observaciones} onChange={e => setCompraForm(f => ({ ...f, observaciones: e.target.value }))} className="bg-gray-50 border-[#F97316]/20 text-gray-900" placeholder="Notas adicionales..." />
                   </div>
 
                   <div className="flex gap-3 pt-2">
-                    <Button variant="outline" onClick={() => setShowCompraForm(false)} className="flex-1 border-[#00E5FF]/20 text-gray-300">Cancelar</Button>
-                    <Button onClick={submitCompra} disabled={compraSubmitting} className="flex-1 bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white font-bold">
+                    <Button variant="outline" onClick={() => setShowCompraForm(false)} className="flex-1 border-[#F97316]/20 text-gray-600">Cancelar</Button>
+                    <Button onClick={submitCompra} disabled={compraSubmitting} className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white font-bold">
                       <ShoppingCart className="w-4 h-4 mr-2" />
                       {compraSubmitting ? 'Registrando...' : 'Registrar Compra'}
                     </Button>
@@ -1497,16 +1747,16 @@ export default function Inventario() {
                 const proximas = pendientes.filter(c => c.dias_restantes !== null && c.dias_restantes >= 0 && c.dias_restantes <= 5);
                 return (
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="bg-white/5 border border-[#00E5FF]/20 rounded-xl p-4 text-center">
-                      <p className="text-gray-400 text-sm">Total por pagar</p>
-                      <p className="text-2xl font-black text-[#00E5FF]">${totalPendiente.toFixed(2)}</p>
+                    <div className="bg-gray-50 border border-[#F97316]/20 rounded-xl p-4 text-center">
+                      <p className="text-gray-600 text-sm">Total por pagar</p>
+                      <p className="text-2xl font-black text-[#F97316]">${totalPendiente.toFixed(2)}</p>
                     </div>
                     <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center">
-                      <p className="text-gray-400 text-sm">Facturas vencidas</p>
+                      <p className="text-gray-600 text-sm">Facturas vencidas</p>
                       <p className="text-2xl font-black text-red-400">{vencidas.length}</p>
                     </div>
                     <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-4 text-center">
-                      <p className="text-gray-400 text-sm">Vencen en 5 días</p>
+                      <p className="text-gray-600 text-sm">Vencen en 5 días</p>
                       <p className="text-2xl font-black text-orange-400">{proximas.length}</p>
                     </div>
                   </div>
@@ -1515,22 +1765,22 @@ export default function Inventario() {
 
               {/* Tabla CxP */}
               {cxp.length === 0 ? (
-                <div className="text-center text-gray-400 py-12">
+                <div className="text-center text-gray-600 py-12">
                   <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-40" />
                   <p>No hay cuentas por pagar — solo aparecen compras a crédito</p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-[#00E5FF]/20">
-                      <TableHead className="text-gray-400">Proveedor</TableHead>
-                      <TableHead className="text-gray-400">Factura</TableHead>
-                      <TableHead className="text-gray-400">Emisión</TableHead>
-                      <TableHead className="text-gray-400">Vencimiento</TableHead>
-                      <TableHead className="text-gray-400 text-right">Monto</TableHead>
-                      <TableHead className="text-gray-400 text-right">Saldo</TableHead>
-                      <TableHead className="text-gray-400">Estado</TableHead>
-                      <TableHead className="text-gray-400 text-right">Acción</TableHead>
+                    <TableRow className="border-[#F97316]/20">
+                      <TableHead className="text-gray-600">Proveedor</TableHead>
+                      <TableHead className="text-gray-600">Factura</TableHead>
+                      <TableHead className="text-gray-600">Emisión</TableHead>
+                      <TableHead className="text-gray-600">Vencimiento</TableHead>
+                      <TableHead className="text-gray-600 text-right">Monto</TableHead>
+                      <TableHead className="text-gray-600 text-right">Saldo</TableHead>
+                      <TableHead className="text-gray-600">Estado</TableHead>
+                      <TableHead className="text-gray-600 text-right">Acción</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1538,13 +1788,13 @@ export default function Inventario() {
                       const vencida = item.dias_restantes !== null && item.dias_restantes < 0;
                       const proxima = item.dias_restantes !== null && item.dias_restantes >= 0 && item.dias_restantes <= 5;
                       return (
-                        <TableRow key={item.id} className={`border-[#00E5FF]/10 hover:bg-white/5 ${vencida ? 'bg-red-500/5' : proxima ? 'bg-orange-500/5' : ''}`}>
-                          <TableCell className="text-white font-medium">{item.proveedor?.nombre || '—'}</TableCell>
-                          <TableCell className="text-white font-mono">{item.numero_factura || '—'}</TableCell>
-                          <TableCell className="text-gray-300">{item.fecha_emision ? new Date(item.fecha_emision).toLocaleDateString('es-EC') : '—'}</TableCell>
+                        <TableRow key={item.id} className={`border-[#F97316]/10 hover:bg-gray-50 ${vencida ? 'bg-red-500/5' : proxima ? 'bg-orange-500/5' : ''}`}>
+                          <TableCell className="text-gray-900 font-medium">{item.proveedor?.nombre || '—'}</TableCell>
+                          <TableCell className="text-gray-900 font-mono">{item.numero_factura || '—'}</TableCell>
+                          <TableCell className="text-gray-600">{item.fecha_emision ? new Date(item.fecha_emision).toLocaleDateString('es-EC') : '—'}</TableCell>
                           <TableCell>
                             {item.fecha_vencimiento ? (
-                              <span className={`text-sm font-medium ${vencida ? 'text-red-400' : proxima ? 'text-orange-400' : 'text-gray-300'}`}>
+                              <span className={`text-sm font-medium ${vencida ? 'text-red-400' : proxima ? 'text-orange-400' : 'text-gray-600'}`}>
                                 {new Date(item.fecha_vencimiento).toLocaleDateString('es-EC')}
                                 {item.dias_restantes !== null && (
                                   <span className="block text-xs">
@@ -1554,7 +1804,7 @@ export default function Inventario() {
                               </span>
                             ) : '—'}
                           </TableCell>
-                          <TableCell className="text-white text-right">${(item.monto || 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-gray-900 text-right">${(item.monto || 0).toFixed(2)}</TableCell>
                           <TableCell className="text-right">
                             <span className={`font-bold ${item.estado === 'pagada' ? 'text-green-400' : 'text-orange-400'}`}>
                               ${(item.saldo_pendiente || 0).toFixed(2)}
@@ -1579,16 +1829,16 @@ export default function Inventario() {
                                     placeholder="Monto"
                                     value={cxpMontoPago}
                                     onChange={e => setCxpMontoPago(e.target.value)}
-                                    className="bg-white/5 border-[#00E5FF]/20 text-white h-8 w-28 text-sm"
+                                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-8 w-28 text-sm"
                                     autoFocus
                                   />
                                   <Button size="sm" onClick={() => pagarCxP(item.id, Number(cxpMontoPago))}
                                     disabled={!cxpMontoPago || Number(cxpMontoPago) <= 0}
-                                    className="h-8 bg-green-600 hover:bg-green-500 text-white text-xs px-2">
+                                    className="h-8 bg-green-600 hover:bg-green-500 text-gray-900 text-xs px-2">
                                     <CheckCircle className="w-3.5 h-3.5" />
                                   </Button>
                                   <Button size="sm" variant="ghost" onClick={() => { setCxpPagandoId(null); setCxpMontoPago(''); }}
-                                    className="h-8 text-gray-400 px-2">
+                                    className="h-8 text-gray-600 px-2">
                                     <X className="w-3.5 h-3.5" />
                                   </Button>
                                 </div>
@@ -1615,23 +1865,23 @@ export default function Inventario() {
           {view === 'analysis' && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card className="bg-white/5 border-[#00E5FF]/20">
+                <Card className="bg-gray-50 border-[#F97316]/20">
                   <CardHeader>
-                    <CardTitle className="text-sm text-gray-400 flex items-center gap-2">
+                    <CardTitle className="text-sm text-gray-600 flex items-center gap-2">
                       <DollarSign className="w-4 h-4" />
                       Valorización Total
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold text-[#00E5FF]">
+                    <div className="text-2xl font-bold text-[#F97316]">
                       ${inventarioMetrics.valorTotal.toFixed(2)}
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="bg-white/5 border-orange-500/20">
+                <Card className="bg-gray-50 border-orange-500/20">
                   <CardHeader>
-                    <CardTitle className="text-sm text-gray-400 flex items-center gap-2">
+                    <CardTitle className="text-sm text-gray-600 flex items-center gap-2">
                       <AlertCircle className="w-4 h-4" />
                       Productos Bajo Mínimo
                     </CardTitle>
@@ -1643,15 +1893,15 @@ export default function Inventario() {
                   </CardContent>
                 </Card>
 
-                <Card className="bg-white/5 border-[#7B61FF]/20">
+                <Card className="bg-gray-50 border-[#FB923C]/20">
                   <CardHeader>
-                    <CardTitle className="text-sm text-gray-400 flex items-center gap-2">
+                    <CardTitle className="text-sm text-gray-600 flex items-center gap-2">
                       <TrendingUp className="w-4 h-4" />
                       Total Movimientos
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold text-[#7B61FF]">
+                    <div className="text-2xl font-bold text-[#FB923C]">
                       {movimientos.length}
                     </div>
                   </CardContent>
@@ -1667,7 +1917,7 @@ export default function Inventario() {
                 const normales = total - criticos - bajos;
 
                 const estadoData = [
-                  { name: 'Normal', value: normales, color: '#00E5FF' },
+                  { name: 'Normal', value: normales, color: '#F97316' },
                   { name: 'Bajo mínimo', value: bajos, color: '#F59E0B' },
                   { name: 'Sin stock', value: criticos, color: '#EF4444' },
                 ];
@@ -1698,16 +1948,16 @@ export default function Inventario() {
                     minimo: p.stock_minimo ?? 0,
                   }));
 
-                const COLORS = ['#00E5FF', '#F59E0B', '#EF4444', '#7B61FF', '#10B981'];
+                const COLORS = ['#F97316', '#F59E0B', '#EF4444', '#FB923C', '#10B981'];
 
                 return (
                   <div className="space-y-6">
                     {/* Fila 1: Donut + Movimientos por tipo */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {/* Estado del stock */}
-                      <div className="bg-white/5 border border-[#00E5FF]/20 rounded-xl p-5">
-                        <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-                          <Package className="w-4 h-4 text-[#00E5FF]" /> Estado del Stock
+                      <div className="bg-gray-50 border border-[#F97316]/20 rounded-xl p-5">
+                        <h3 className="text-gray-900 font-semibold mb-4 flex items-center gap-2">
+                          <Package className="w-4 h-4 text-[#F97316]" /> Estado del Stock
                         </h3>
                         <div className="flex items-center gap-6">
                           <div className="w-36 h-36">
@@ -1731,7 +1981,7 @@ export default function Inventario() {
                                   return el;
                                 });
                               })()}
-                              <circle cx="50" cy="50" r="28" fill="#0A1A2F" />
+                              <circle cx="50" cy="50" r="28" fill="#0C0C0C" />
                             </svg>
                           </div>
                           <div className="space-y-2 flex-1">
@@ -1739,42 +1989,42 @@ export default function Inventario() {
                               <div key={s.name} className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: s.color }} />
-                                  <span className="text-sm text-gray-300">{s.name}</span>
+                                  <span className="text-sm text-gray-600">{s.name}</span>
                                 </div>
                                 <div className="text-right">
-                                  <span className="text-white font-bold">{s.value}</span>
-                                  <span className="text-gray-500 text-xs ml-1">({Math.round(s.value / total * 100)}%)</span>
+                                  <span className="text-gray-900 font-bold">{s.value}</span>
+                                  <span className="text-gray-600 text-xs ml-1">({Math.round(s.value / total * 100)}%)</span>
                                 </div>
                               </div>
                             ))}
-                            <div className="border-t border-white/10 pt-2 mt-2 flex justify-between">
-                              <span className="text-gray-400 text-sm">Total productos</span>
-                              <span className="text-white font-bold">{total}</span>
+                            <div className="border-t border-gray-100 pt-2 mt-2 flex justify-between">
+                              <span className="text-gray-600 text-sm">Total productos</span>
+                              <span className="text-gray-900 font-bold">{total}</span>
                             </div>
                           </div>
                         </div>
                       </div>
 
                       {/* Movimientos por tipo */}
-                      <div className="bg-white/5 border border-[#00E5FF]/20 rounded-xl p-5">
-                        <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-                          <ArrowLeftRight className="w-4 h-4 text-[#00E5FF]" /> Movimientos por Tipo
+                      <div className="bg-gray-50 border border-[#F97316]/20 rounded-xl p-5">
+                        <h3 className="text-gray-900 font-semibold mb-4 flex items-center gap-2">
+                          <ArrowLeftRight className="w-4 h-4 text-[#F97316]" /> Movimientos por Tipo
                         </h3>
                         {movData.length === 0 ? (
-                          <div className="flex items-center justify-center h-28 text-gray-500 text-sm">Sin movimientos registrados</div>
+                          <div className="flex items-center justify-center h-28 text-gray-600 text-sm">Sin movimientos registrados</div>
                         ) : (
                           <div className="space-y-3">
                             {movData.map((m, i) => {
                               const max = Math.max(...movData.map(x => x.value));
                               const pct = Math.round((m.value / max) * 100);
-                              const colors = ['#00E5FF', '#10B981', '#F59E0B', '#7B61FF'];
+                              const colors = ['#F97316', '#10B981', '#F59E0B', '#FB923C'];
                               return (
                                 <div key={m.name} className="space-y-1">
                                   <div className="flex justify-between text-sm">
-                                    <span className="text-gray-300 capitalize">{m.name}</span>
-                                    <span className="text-white font-bold">{m.value}</span>
+                                    <span className="text-gray-600 capitalize">{m.name}</span>
+                                    <span className="text-gray-900 font-bold">{m.value}</span>
                                   </div>
-                                  <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                                     <div
                                       className="h-full rounded-full transition-all"
                                       style={{ width: `${pct}%`, backgroundColor: colors[i % colors.length] }}
@@ -1789,12 +2039,12 @@ export default function Inventario() {
                     </div>
 
                     {/* Top 10 por valor de inventario */}
-                    <div className="bg-white/5 border border-[#00E5FF]/20 rounded-xl p-5">
-                      <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-[#00E5FF]" /> Top 10 — Mayor Valor en Inventario
+                    <div className="bg-gray-50 border border-[#F97316]/20 rounded-xl p-5">
+                      <h3 className="text-gray-900 font-semibold mb-4 flex items-center gap-2">
+                        <DollarSign className="w-4 h-4 text-[#F97316]" /> Top 10 — Mayor Valor en Inventario
                       </h3>
                       {topProductos.length === 0 ? (
-                        <div className="text-center text-gray-500 text-sm py-6">
+                        <div className="text-center text-gray-600 text-sm py-6">
                           Sin datos — registra compras para ver la valorización
                         </div>
                       ) : (
@@ -1804,17 +2054,17 @@ export default function Inventario() {
                             const pct = Math.round((p.valor / max) * 100);
                             return (
                               <div key={i} className="grid grid-cols-[1.5rem_1fr_auto] items-center gap-3">
-                                <span className="text-gray-500 text-sm text-right">{i + 1}</span>
+                                <span className="text-gray-600 text-sm text-right">{i + 1}</span>
                                 <div className="space-y-0.5">
                                   <div className="flex justify-between text-sm">
                                     <span className="text-gray-200">{p.nombre}</span>
-                                    <span className="text-[#00E5FF] font-bold">${p.valor.toFixed(2)}</span>
+                                    <span className="text-[#F97316] font-bold">${p.valor.toFixed(2)}</span>
                                   </div>
-                                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full bg-gradient-to-r from-[#1e64a7] to-[#00E5FF]" style={{ width: `${pct}%` }} />
+                                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                    <div className="h-full rounded-full bg-gradient-to-r from-[#C2410C] to-[#F97316]" style={{ width: `${pct}%` }} />
                                   </div>
                                 </div>
-                                <span className="text-gray-500 text-xs text-right">{p.stock} u.</span>
+                                <span className="text-gray-600 text-xs text-right">{p.stock} u.</span>
                               </div>
                             );
                           })}
@@ -1823,12 +2073,12 @@ export default function Inventario() {
                     </div>
 
                     {/* Top 10 por nivel de stock */}
-                    <div className="bg-white/5 border border-[#00E5FF]/20 rounded-xl p-5">
-                      <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-                        <TrendingUp className="w-4 h-4 text-[#00E5FF]" /> Top 10 — Nivel de Stock Actual
+                    <div className="bg-gray-50 border border-[#F97316]/20 rounded-xl p-5">
+                      <h3 className="text-gray-900 font-semibold mb-4 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-[#F97316]" /> Top 10 — Nivel de Stock Actual
                       </h3>
                       {topStock.length === 0 ? (
-                        <div className="text-center text-gray-500 text-sm py-6">Sin productos con stock</div>
+                        <div className="text-center text-gray-600 text-sm py-6">Sin productos con stock</div>
                       ) : (
                         <div className="space-y-2">
                           {topStock.map((p, i) => {
@@ -1838,21 +2088,21 @@ export default function Inventario() {
                             const alerta = p.stock <= p.minimo;
                             return (
                               <div key={i} className="grid grid-cols-[1.5rem_1fr_auto] items-center gap-3">
-                                <span className="text-gray-500 text-sm text-right">{i + 1}</span>
+                                <span className="text-gray-600 text-sm text-right">{i + 1}</span>
                                 <div className="space-y-0.5">
                                   <div className="flex justify-between text-sm">
                                     <span className={alerta ? 'text-orange-400' : 'text-gray-200'}>{p.nombre}</span>
-                                    <span className={`font-bold ${alerta ? 'text-orange-400' : 'text-white'}`}>{p.stock}</span>
+                                    <span className={`font-bold ${alerta ? 'text-orange-400' : 'text-gray-900'}`}>{p.stock}</span>
                                   </div>
-                                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden relative">
-                                    <div className={`h-full rounded-full ${alerta ? 'bg-orange-400' : 'bg-[#00E5FF]'}`} style={{ width: `${pct}%` }} />
+                                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden relative">
+                                    <div className={`h-full rounded-full ${alerta ? 'bg-orange-400' : 'bg-[#F97316]'}`} style={{ width: `${pct}%` }} />
                                     {bejoPct > 0 && (
                                       <div className="absolute top-0 bottom-0 w-0.5 bg-yellow-400/70" style={{ left: `${bejoPct}%` }} />
                                     )}
                                   </div>
                                 </div>
                                 {p.minimo > 0 && (
-                                  <span className="text-gray-500 text-xs text-right">mín {p.minimo}</span>
+                                  <span className="text-gray-600 text-xs text-right">mín {p.minimo}</span>
                                 )}
                               </div>
                             );
@@ -1888,65 +2138,65 @@ export default function Inventario() {
       {/* Modal de vista detalle de compra (solo lectura) */}
       {viewingCompra && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0A1A2F] rounded-xl border border-[#00E5FF]/30 w-full max-w-3xl max-h-[85vh] overflow-y-auto">
-            <div className="sticky top-0 bg-[#0A1A2F] border-b border-[#00E5FF]/20 p-5 flex justify-between items-center z-10">
+          <div className="bg-white rounded-xl border border-[#F97316]/30 w-full max-w-3xl max-h-[85vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-[#F97316]/20 p-5 flex justify-between items-center z-10">
               <div>
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <ShoppingCart className="w-5 h-5 text-[#00E5FF]" />
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5 text-[#F97316]" />
                   Factura de Compra
-                  <span className="font-mono text-[#00E5FF] text-base">{viewingCompra.numero_factura || '—'}</span>
+                  <span className="font-mono text-[#F97316] text-base">{viewingCompra.numero_factura || '—'}</span>
                 </h2>
-                <p className="text-gray-400 text-sm mt-0.5">Solo lectura — no se puede editar</p>
+                <p className="text-gray-600 text-sm mt-0.5">Solo lectura — no se puede editar</p>
               </div>
-              <button onClick={() => setViewingCompra(null)} className="text-gray-400 hover:text-white">
+              <button onClick={() => setViewingCompra(null)} className="text-gray-600 hover:text-gray-900">
                 <X className="w-6 h-6" />
               </button>
             </div>
             <div className="p-6 space-y-5">
               {/* Encabezado */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div><p className="text-gray-400">Proveedor</p><p className="text-white font-medium">{viewingCompra.proveedor?.nombre || '—'}</p></div>
-                <div><p className="text-gray-400">Fecha</p><p className="text-white">{new Date(viewingCompra.fecha || viewingCompra.created_at).toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit', year:'numeric' })}</p></div>
-                <div><p className="text-gray-400">Tipo de Pago</p>
+                <div><p className="text-gray-600">Proveedor</p><p className="text-gray-900 font-medium">{viewingCompra.proveedor?.nombre || '—'}</p></div>
+                <div><p className="text-gray-600">Fecha</p><p className="text-gray-900">{new Date(viewingCompra.fecha || viewingCompra.created_at).toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit', year:'numeric' })}</p></div>
+                <div><p className="text-gray-600">Tipo de Pago</p>
                   <Badge className={viewingCompra.tipo_pago === 'credito' ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'}>
                     {viewingCompra.tipo_pago === 'credito' ? 'Crédito' : 'Contado'}
                   </Badge>
                 </div>
                 {viewingCompra.tipo_pago === 'credito' && viewingCompra.fecha_vencimiento && (
-                  <div><p className="text-gray-400">Vencimiento</p><p className="text-orange-400 font-medium">{new Date(viewingCompra.fecha_vencimiento).toLocaleDateString('es-EC')}</p></div>
+                  <div><p className="text-gray-600">Vencimiento</p><p className="text-orange-400 font-medium">{new Date(viewingCompra.fecha_vencimiento).toLocaleDateString('es-EC')}</p></div>
                 )}
               </div>
               {viewingCompra.observaciones && (
-                <div className="bg-white/5 rounded-lg p-3 text-sm text-gray-300">
-                  <span className="text-gray-500">Obs.: </span>{viewingCompra.observaciones}
+                <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+                  <span className="text-gray-600">Obs.: </span>{viewingCompra.observaciones}
                 </div>
               )}
               {/* Tabla de ítems */}
               <Table>
                 <TableHeader>
-                  <TableRow className="border-[#00E5FF]/20 bg-white/5">
-                    <TableHead className="text-gray-400">Producto</TableHead>
-                    <TableHead className="text-gray-400 text-right">Cantidad</TableHead>
-                    <TableHead className="text-gray-400 text-right">Costo Unit.</TableHead>
-                    <TableHead className="text-gray-400 text-right">Total</TableHead>
+                  <TableRow className="border-[#F97316]/20 bg-gray-50">
+                    <TableHead className="text-gray-600">Producto</TableHead>
+                    <TableHead className="text-gray-600 text-right">Cantidad</TableHead>
+                    <TableHead className="text-gray-600 text-right">Costo Unit.</TableHead>
+                    <TableHead className="text-gray-600 text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(viewingCompra.items || []).map((item: any, idx: number) => (
-                    <TableRow key={idx} className="border-[#00E5FF]/10">
-                      <TableCell className="text-white">{item.producto?.nombre || `Producto ${item.producto_id?.slice(0,8)}`}</TableCell>
-                      <TableCell className="text-gray-300 text-right">{item.cantidad} {item.producto?.unidad_medida || ''}</TableCell>
-                      <TableCell className="text-gray-300 text-right">${(item.costo_unitario || 0).toFixed(4)}</TableCell>
-                      <TableCell className="text-[#00E5FF] font-bold text-right">${(item.costo_total || 0).toFixed(2)}</TableCell>
+                    <TableRow key={idx} className="border-[#F97316]/10">
+                      <TableCell className="text-gray-900">{item.producto?.nombre || `Producto ${item.producto_id?.slice(0,8)}`}</TableCell>
+                      <TableCell className="text-gray-600 text-right">{item.cantidad} {item.producto?.unidad_medida || ''}</TableCell>
+                      <TableCell className="text-gray-600 text-right">${(item.costo_unitario || 0).toFixed(4)}</TableCell>
+                      <TableCell className="text-[#F97316] font-bold text-right">${(item.costo_total || 0).toFixed(2)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
               {/* Total */}
               <div className="flex justify-end">
-                <div className="bg-[#00E5FF]/10 border border-[#00E5FF]/30 rounded-lg px-6 py-3 text-right">
-                  <span className="text-gray-400 text-sm">Total de compra</span>
-                  <div className="text-[#00E5FF] text-2xl font-black">${(viewingCompra.total_compra || 0).toFixed(2)}</div>
+                <div className="bg-[#F97316]/10 border border-[#F97316]/30 rounded-lg px-6 py-3 text-right">
+                  <span className="text-gray-600 text-sm">Total de compra</span>
+                  <div className="text-[#F97316] text-2xl font-black">${(viewingCompra.total_compra || 0).toFixed(2)}</div>
                   {viewingCompra.tipo_pago === 'credito' && viewingCompra.saldo_pendiente > 0 && (
                     <div className="text-orange-400 text-sm mt-1">Saldo pendiente: ${(viewingCompra.saldo_pendiente || 0).toFixed(2)}</div>
                   )}
@@ -2093,6 +2343,30 @@ export default function Inventario() {
             : 'Esta acción eliminará el proveedor y su historial.'
         }
       />
+
+      {/* Modal: Importar XML SRI */}
+      <ImportarXMLModal
+        open={showImportarXML}
+        onClose={() => setShowImportarXML(false)}
+        onCompraRegistrada={() => {
+          fetchCompras();
+          fetchInventario();
+          fetchCxP();
+        }}
+        proveedores={proveedores}
+        productos={productos}
+        getAuthHeaders={getAuthHeaders}
+      />
+
+      {/* Diálogo de retención */}
+      {retenciónCompra && (
+        <RetenciónDialog
+          open={!!retenciónCompra}
+          onOpenChange={(v) => { if (!v) setRetenciónCompra(null); }}
+          compra={retenciónCompra}
+          onSuccess={() => setRetenciónCompra(null)}
+        />
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { setupRRHHRoutes } from "./rrhh-routes.tsx";
 import { setupIngenieriaMenuRoutes } from "./ingenieria-menu-routes.tsx";
 import { setupUsuariosRoutes } from "./usuarios-routes.tsx";
 import { handleGetConfiguracionFacturacion, handleSaveConfiguracionFacturacion, handleGenerarFactura, handleGetFacturas, handleAutorizarFactura, handleReintentarAutorizacion, handleEnviarEmailFactura, handleReenviarEmailFactura, handleUploadCertificado, handleGetCertificadoInfo, handleTestSRI } from "./facturacion-routes.tsx";
+import { handleEmitirRetencion, handleGetRetenciones, handleGetRetencion, handleAutorizarRetencion, handleGetXMLRetencion } from "./retenciones-routes.tsx";
 import { setupAuditoriaRoutes } from "./auditoria-routes.tsx";
 import { setupContabilidadRoutes } from "./contabilidad-routes.tsx";
 import { setupMesasRoutes } from "./mesas-routes.tsx";
@@ -21,7 +22,7 @@ import { setupTransferenciasRoutes } from "./transferencias-routes.tsx";
 import { setupStockBodegaRoutes } from "./stock-bodega-routes.tsx";
 import notificacionesApp from "./notificaciones-routes.tsx";
 import { registrarAuditoria } from "./audit-helper.tsx";
-import { inicializarDatosDemo, cargarDatosDemo, limpiarTodosLosDatos, obtenerProductos, obtenerCategorias, obtenerVentas, obtenerComandas, guardarVenta, guardarComanda, actualizarComanda, guardarProducto, obtenerBodegas, obtenerRecetas, ajustarStockBodega, registrarAsientoAutomatico } from "./kv-helpers.tsx";
+import { limpiarTodosLosDatos, obtenerProductos, obtenerCategorias, obtenerVentas, obtenerComandas, guardarVenta, obtenerBodegas, obtenerRecetas, ajustarStockBodega, registrarAsientoAutomatico } from "./kv-helpers.tsx";
 
 const app = new Hono();
 
@@ -607,12 +608,6 @@ app.use('/server/notificaciones/*', authMiddleware);
 app.use('/server/notificaciones', authMiddleware);
 app.route('/server/notificaciones', notificacionesApp);
 
-// Rutas de compatibilidad para evitar 404
-// NOTA: /server/compras ya está registrado por setupInventarioRoutes — NO duplicar aquí
-app.get("/server/dashboard/kpis", authMiddleware, (c) => c.json({ kpis: [] }));
-app.get("/server/centros-costos", authMiddleware, (c) => c.json({ centros_costos: [] }));
-app.post("/server/categorias/inicializar", authMiddleware, (c) => c.json({ success: true }));
-
 // Inventario: vista de stock (productos con sus datos de inventario)
 app.get("/server/inventario", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
@@ -929,6 +924,37 @@ app.get("/server/facturacion/certificado/info", authMiddleware, async (c) => {
   }
 });
 
+// ── RETENCIONES ─────────────────────────────────────────────────────────────
+app.post("/server/facturacion/retenciones", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try { return await handleEmitirRetencion(c.req.raw, auth.empresaId); }
+  catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+app.get("/server/facturacion/retenciones", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try { return await handleGetRetenciones(c.req.raw, auth.empresaId); }
+  catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+app.get("/server/facturacion/retenciones/:id", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try { return await handleGetRetencion(c.req.raw, auth.empresaId, c.req.param('id')); }
+  catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+app.post("/server/facturacion/retenciones/:id/autorizar", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try { return await handleAutorizarRetencion(c.req.raw, auth.empresaId, c.req.param('id')); }
+  catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+app.get("/server/facturacion/retenciones/:id/xml", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try { return await handleGetXMLRetencion(c.req.raw, auth.empresaId, c.req.param('id')); }
+  catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
 // ── GET /admin/diagnostico-completo — comparar KV vs SQL ────────────────────
 app.get("/server/admin/diagnostico-completo", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
@@ -1168,7 +1194,7 @@ app.get("/server/admin/inspeccionar-kv", authMiddleware, async (c) => {
   const db = createClient(supabaseUrl, supabaseServiceKey);
   const eid = c.req.query('empresa_id') || auth.empresaId;
   const resultado: Record<string, any> = { empresa_id: eid };
-  const tablas = ['productos','recetas','compras','ventas','clientes','proveedores','bodegas','configuracion'];
+  const tablas = ['productos','recetas','compras','ventas','clientes','proveedores','bodegas','configuracion','cuentas_contables','asientos_contables'];
   for (const tabla of tablas) {
     try {
       // Intentar formato underscore y colon
@@ -1201,6 +1227,41 @@ app.get("/server/admin/inspeccionar-kv", authMiddleware, async (c) => {
     resultado._claves_kv = (kvRows || []).map((r: any) => r.key);
   } catch (e: any) {
     resultado._claves_kv = [];
+  }
+  return c.json(resultado);
+});
+
+// ── GET /admin/columnas-sql — muestra columnas reales de tablas contables en la BD ──────────
+app.get("/server/admin/columnas-sql", authMiddleware, async (c) => {
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  const tablas = ['cuentas_contables', 'asientos_contables', 'categorias', 'bodegas', 'ventas', 'productos'];
+  const resultado: Record<string, any> = {};
+  for (const tabla of tablas) {
+    try {
+      const { data, error } = await db.rpc('_columnas_tabla', { tabla_nombre: tabla }).select();
+      if (error) {
+        // Fallback: intentar insertar un objeto vacío para ver qué columnas acepta
+        const { error: e2 } = await db.from(tabla).select('*').limit(1);
+        resultado[tabla] = e2 ? `ERROR: ${e2.message}` : 'OK (sin RPC)';
+      } else {
+        resultado[tabla] = data;
+      }
+    } catch (e: any) {
+      resultado[tabla] = `ERROR: ${e.message}`;
+    }
+  }
+  // Alternativa: usar information_schema vía rpc raw
+  try {
+    const { data: cols } = await db
+      .from('information_schema.columns' as any)
+      .select('table_name, column_name, data_type, column_default, is_nullable')
+      .in('table_name', tablas)
+      .eq('table_schema', 'public')
+      .order('table_name')
+      .order('ordinal_position');
+    resultado._information_schema = cols || [];
+  } catch (e: any) {
+    resultado._information_schema = `ERROR: ${e.message}`;
   }
   return c.json(resultado);
 });
@@ -1314,7 +1375,12 @@ app.post("/server/admin/restaurar-completo", authMiddleware, async (c) => {
           producto_id: productoId,
           rendimiento: Number(d.rendimiento || d.porciones || 1),
           costo_total: Number(d.costo_total || d.costo || 0),
-          ingredientes: d.ingredientes || [],
+          // Remap insumo_id en ingredientes: IDs no-UUID recibieron nuevo UUID al restaurar productos
+          ingredientes: (d.ingredientes || []).map((ing: any) => ({
+            ...ing,
+            insumo_id: ing.insumo_id ? (idMap[ing.insumo_id] || ing.insumo_id) : ing.insumo_id,
+            producto_id: ing.producto_id ? (idMap[ing.producto_id] || ing.producto_id) : ing.producto_id,
+          })),
           categoria: d.categoria || meta.categoria || null,
           tiempo_preparacion: Number(d.tiempo_preparacion || 0),
           porciones: Number(d.porciones || 1),
@@ -1401,7 +1467,7 @@ app.post("/server/admin/restaurar-completo", authMiddleware, async (c) => {
           total: Number(d.total_compra || d.total || 0),
           estado: d.estado || 'pagado',
           fecha: d.fecha || d.created_at || new Date().toISOString(),
-          items: d.items || d.productos || [],
+          items: d.items || d.productos || [],  // compras no necesitan remap de producto_id
           // observaciones en KV (no notas)
           notas: d.observaciones || d.notas || null,
           estado_pago: d.estado_pago || 'pagado',
@@ -1445,14 +1511,19 @@ app.post("/server/admin/restaurar-completo", authMiddleware, async (c) => {
           // metodo_pago en KV (no forma_pago)
           forma_pago: d.metodo_pago || d.forma_pago || 'efectivo',
           estado: d.estado || 'completada',
-          items: d.items || d.productos || [],
+          // Remap producto_id en items: IDs no-UUID recibieron nuevo UUID al restaurar productos
+          items: (d.items || d.productos || []).map((item: any) => ({
+            ...item,
+            producto_id: item.producto_id ? (idMap[item.producto_id] || item.producto_id) : item.producto_id,
+          })),
           notas: d.notas || null,
           cajero_id: d.cajero_id || d.usuario_id || null,
           // mesa_id NO existe en ventas SQL — usa campo "mesa" TEXT
           mesa: d.mesa || null,
           // tipo_servicio, bodega_id, numero_orden, anulada sí existen (desde migración 006)
           tipo_servicio: d.tipo_servicio || null,
-          bodega_id: d.bodega_id || null,
+          // bodega_id: si no es UUID, dejar null — se remapea en segunda pasada tras restaurar bodegas
+          bodega_id: isUUID(d.bodega_id) ? d.bodega_id : null,
           anulada: d.anulada ?? false,
           // fecha NO existe como columna — mapear a created_at para que el dashboard filtre bien
           created_at: d.fecha || d.created_at || new Date().toISOString(),
@@ -1536,6 +1607,155 @@ app.post("/server/admin/restaurar-completo", authMiddleware, async (c) => {
     }
   } catch (e: any) { res.bodegas = `ERROR: ${e.message}`; }
 
+  // ── Segunda pasada: remap bodega_id en ventas ────────────────────────────────
+  // Las ventas con bodega_id no-UUID quedaron con bodega_id=null durante la restauración.
+  // Ahora que idMap tiene los UUIDs nuevos de bodegas, actualizamos ventas.
+  try {
+    const ventasKV = await getKV('ventas');
+    let ventasRemapeadas = 0;
+    for (const v of ventasKV) {
+      const bodegaIdKV = v.bodega_id;
+      if (!bodegaIdKV || isUUID(bodegaIdKV)) continue;   // ya era UUID o sin bodega
+      const bodegaIdSQL = idMap[bodegaIdKV];
+      if (!bodegaIdSQL) continue;
+      const ventaId = isUUID(v.id) ? v.id : null;
+      if (!ventaId) continue;
+      await db.from('ventas').update({ bodega_id: bodegaIdSQL })
+        .eq('id', ventaId).eq('empresa_id', eid);
+      ventasRemapeadas++;
+    }
+    if (ventasRemapeadas > 0) {
+      res.ventas_bodega_remap = `✅ ${ventasRemapeadas} ventas con bodega_id actualizado`;
+    }
+  } catch (e: any) { res.ventas_bodega_remap = `ERROR: ${e.message}`; }
+
+  // ── Categorías ─────────────────────────────────────────────────────────────
+  try {
+    const datos = await getKV('categorias');
+    if (datos.length > 0) {
+      await db.from('categorias').delete().eq('empresa_id', eid);
+      const filas = datos.map((d: any) => ({
+        id: isUUID(d.id) ? d.id : crypto.randomUUID(),
+        empresa_id: eid,
+        nombre: d.nombre || 'Sin nombre',
+        color: d.color || '#6366f1',
+        icono: d.icono || null,
+        activo: d.activo ?? true,
+        updated_at: d.updated_at || new Date().toISOString(),
+      }));
+      const { error } = await db.from('categorias').insert(filas);
+      res.categorias = error ? `ERROR: ${error.message}` : `✅ ${filas.length} restauradas`;
+    } else { res.categorias = '⚠️ vacío en KV'; }
+  } catch (e: any) { res.categorias = `ERROR: ${e.message}`; }
+
+  // ── Cuentas Contables ──────────────────────────────────────────────────────
+  // KV tiene: id, tipo, nivel, activa, codigo, nombre, es_grupo, empresa_id, naturaleza
+  // La tabla desplegada usa esos campos (NO padre_id, NO activo, NO metadata)
+  try {
+    const datos = await getKV('cuentas_contables');
+    if (datos.length > 0) {
+      await db.from('cuentas_contables').delete().eq('empresa_id', eid);
+      const filas = datos.map((d: any) => ({
+        id: isUUID(d.id) ? d.id : crypto.randomUUID(),
+        empresa_id: eid,
+        codigo: d.codigo || '0',
+        nombre: d.nombre || 'Sin nombre',
+        tipo: d.tipo || null,
+        es_grupo: d.es_grupo ?? false,
+        activa: d.activa ?? true,   // KV usa "activa" (no "activo")
+        nivel: d.nivel ?? null,     // campo real en la tabla desplegada
+        // naturaleza NO existe en la BD desplegada — omitir
+        updated_at: d.updated_at || d.created_at || new Date().toISOString(),
+      }));
+      const filasDedup = filas.filter((f, i, arr) => arr.findIndex(x => x.id === f.id) === i);
+      const { error } = await db.from('cuentas_contables').upsert(filasDedup, { onConflict: 'id' });
+      res.cuentas_contables = error ? `ERROR: ${error.message}` : `✅ ${filasDedup.length} restauradas`;
+    } else { res.cuentas_contables = '⚠️ vacío en KV'; }
+  } catch (e: any) { res.cuentas_contables = `ERROR: ${e.message}`; }
+
+  // ── Asientos Contables ─────────────────────────────────────────────────────
+  // Los asientos fueron generados AUTOMÁTICAMENTE por el sistema y ya están en SQL.
+  // Re-insertarlos dispara el trigger de auditoría que requiere usuario_id (NOT NULL).
+  // → Solo validamos cuántos hay en KV vs SQL y reportamos, sin tocar los datos.
+  try {
+    const datos = await getKV('asientos_contables');
+    const { count: countSQL } = await db.from('asientos_contables')
+      .select('*', { count: 'exact', head: true }).eq('empresa_id', eid);
+    const enKV = datos.length;
+    const enSQL = countSQL || 0;
+    if (enKV === 0) {
+      res.asientos_contables = `ℹ️ Sin asientos en KV — en SQL hay ${enSQL} registros`;
+    } else if (enSQL >= enKV) {
+      res.asientos_contables = `✅ ${enSQL} en SQL (KV tiene ${enKV}) — ya sincronizados`;
+    } else {
+      // Faltan algunos — intentar insertar solo los que no existen en SQL
+      const idsKV = datos.map((d: any) => d.id).filter(isUUID);
+      const { data: existentes } = await db.from('asientos_contables')
+        .select('id').in('id', idsKV);
+      const idsExistentes = new Set((existentes || []).map((r: any) => r.id));
+      const faltantes = datos.filter((d: any) => isUUID(d.id) && !idsExistentes.has(d.id));
+      res.asientos_contables = `⚠️ KV=${enKV}, SQL=${enSQL} — faltan ${faltantes.length} (no se insertan para evitar el trigger de auditoría)`;
+    }
+  } catch (e: any) { res.asientos_contables = `ERROR: ${e.message}`; }
+
+  // ── Stock por Bodega (stock_bodegas_sql) ────────────────────────────────────
+  // KV clave especial: stock_bodegas_${eid} → { [bodegaId]: { [productoNombre]: cantidad } }
+  // Si no hay datos KV, sembrar desde productos.stock_actual asignando a la bodega principal
+  try {
+    const kvStock: any = await kv.get(`stock_bodegas_${eid}`) || {};
+    const { data: bodegasSQL } = await db.from('bodegas').select('id,nombre').eq('empresa_id', eid);
+    const bodegaPrincipal = (bodegasSQL || [])[0];
+
+    await db.from('stock_bodegas_sql').delete().eq('empresa_id', eid);
+
+    if (Object.keys(kvStock).length > 0) {
+      // Hay datos de stock por bodega en KV — restaurar respetando el layout por bodega
+      const filas: any[] = [];
+      for (const [bodegaIdKV, stockMap] of Object.entries(kvStock as Record<string, any>)) {
+        const bodegaIdSQL = idMap[bodegaIdKV] || (isUUID(bodegaIdKV) ? bodegaIdKV : bodegaPrincipal?.id);
+        if (!bodegaIdSQL) continue;
+        for (const [productoNombre, cantidad] of Object.entries(stockMap as Record<string, any>)) {
+          if (Number(cantidad) > 0) {
+            filas.push({
+              empresa_id: eid,
+              bodega_id: bodegaIdSQL,
+              producto_nombre: productoNombre,
+              cantidad: Number(cantidad),
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }
+      }
+      if (filas.length > 0) {
+        const { error } = await db.from('stock_bodegas_sql').insert(filas);
+        res.stock_bodegas = error ? `ERROR: ${error.message}` : `✅ ${filas.length} registros restaurados desde KV`;
+      } else {
+        res.stock_bodegas = '⚠️ KV stock sin cantidades > 0';
+      }
+    } else if (bodegaPrincipal) {
+      // Sin datos KV → sembrar desde productos.stock_actual en la bodega principal
+      const { data: prods } = await db.from('productos')
+        .select('nombre,stock_actual').eq('empresa_id', eid).gt('stock_actual', 0);
+      const filas = (prods || []).map((p: any) => ({
+        empresa_id: eid,
+        bodega_id: bodegaPrincipal.id,
+        producto_nombre: p.nombre,
+        cantidad: Number(p.stock_actual || 0),
+        updated_at: new Date().toISOString(),
+      }));
+      if (filas.length > 0) {
+        const { error } = await db.from('stock_bodegas_sql').insert(filas);
+        res.stock_bodegas = error
+          ? `ERROR: ${error.message}`
+          : `✅ ${filas.length} sembrados desde stock_actual → bodega "${bodegaPrincipal.nombre}"`;
+      } else {
+        res.stock_bodegas = '⚠️ Sin productos con stock > 0 para sembrar';
+      }
+    } else {
+      res.stock_bodegas = '⚠️ Sin bodega en SQL — ejecuta la restauración de bodegas primero';
+    }
+  } catch (e: any) { res.stock_bodegas = `ERROR: ${e.message}`; }
+
   return c.json({ ok: true, empresa_id: eid, resultado: res });
 });
 
@@ -1582,13 +1802,6 @@ app.get("/server/admin/fix-precios", authMiddleware, async (c) => {
   } catch (e: any) {
     return c.json({ ok: false, error: e.message, resultado }, 500);
   }
-});
-
-app.get("/server/inventario/lotes", authMiddleware, async (c) => {
-  const auth: AuthContext = c.get('auth');
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const { data } = await supabase.from('inventario_lotes').select('*').eq('empresa_id', auth.empresaId);
-  return c.json({ lotes: data || [] });
 });
 
 // =====================================================

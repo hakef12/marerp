@@ -4,11 +4,10 @@ import {
   LayoutDashboard, ShoppingCart, Package, Calculator, Users, ChefHat,
   Shield, BarChart3, Settings, LogOut, UserCog,
   FolderKanban, TrendingUp, FileText, Bell, X, CheckCheck,
-  Utensils, Wallet, CreditCard, Crown, Warehouse, Play,
+  Utensils, Wallet, CreditCard, Crown, Warehouse, Play, FileCheck,
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { DiagnosticoPanel } from '../DiagnosticoPanel';
-import { MARLogo } from '../MARLogo';
 import { tieneAcceso, labelRol, badgeRol, type Modulo } from '../../utils/permisos';
 import { BodegaSelector } from '../BodegaSelector';
 
@@ -127,6 +126,7 @@ export default function Sidebar() {
     ['cocina',           '/cocina',                  ChefHat,         'Cocina (KDS)',          !!ma.cocina],
     ['ingenieria_menu',  '/ingenieria-menu',         TrendingUp,      'Ingeniería de Menú',   !!ma.cocina],
     ['facturacion',      '/facturacion/consulta',    FileText,        'Consulta Facturas',     !!ma.contabilidad],
+    ['retenciones',      '/facturacion/retenciones', FileCheck,       'Retenciones',           !!ma.contabilidad],
     ['facturacion_config','/facturacion/configuracion', FileText,     'Config. Facturación',  !!ma.contabilidad],
     ['contabilidad',     '/contabilidad',            Calculator,      'Contabilidad',          !!ma.contabilidad],
     ['proyectos',        '/proyectos',               FolderKanban,    'Proyectos',             true],
@@ -145,16 +145,33 @@ export default function Sidebar() {
   );
 
   return (
-    <div className="w-72 md:w-64 h-full min-h-screen bg-gradient-to-b from-[#0A1A2F]/95 via-[#0F2640]/90 to-[#1a3a52]/95 backdrop-blur-xl border-r border-white/5 flex flex-col flex-shrink-0">
+    <div className="w-72 md:w-64 h-full min-h-screen bg-[#F5F3EF] border-r border-gray-200 flex flex-col flex-shrink-0">
       {/* Header */}
-      <div className="p-6 border-b border-white/5">
+      <div className="p-6 border-b border-gray-100">
         <div className="flex items-center gap-3 mb-2">
-          <div className="relative flex-shrink-0">
-            <MARLogo className="w-12 h-12" />
-          </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-white font-bold text-xl tracking-wider">M.A.R</h1>
-            <p className="text-[#00E5FF] text-xs font-medium">{user?.empresa?.plan?.toUpperCase() ?? ''}</p>
+            {/* Marca M.A.R COCINA LOCAL */}
+            <div className="leading-none">
+              <span
+                className="font-black text-xs tracking-[0.2em] block"
+                style={{
+                  color: 'transparent',
+                  WebkitTextStroke: '1px #F97316',
+                  fontFamily: "'Arial Black', Arial, sans-serif",
+                }}
+              >M.A.R</span>
+              <div className="flex items-baseline leading-none">
+                <span
+                  className="font-black text-base tracking-tight"
+                  style={{ color: '#F97316', fontFamily: "'Arial Black', Arial, sans-serif" }}
+                >COCINA</span>
+                <span
+                  className="font-black text-base tracking-tight"
+                  style={{ color: '#1a1a1a', fontFamily: "'Arial Black', Arial, sans-serif" }}
+                >LOCAL</span>
+              </div>
+            </div>
+            <p className="text-[#F97316] text-[10px] font-medium opacity-80 mt-0.5">{user?.empresa?.plan?.toUpperCase() ?? ''}</p>
           </div>
           {/* Notification Bell */}
           <div className="relative flex-shrink-0">
@@ -167,10 +184,10 @@ export default function Sidebar() {
                 }
                 setShowNotifs(v => !v);
               }}
-              className="relative p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-all duration-200"
+              className="relative p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-all duration-200"
               title="Notificaciones"
             >
-              <Bell className={`w-5 h-5 ${notifs.length > 0 ? 'text-[#00E5FF]' : ''}`} />
+              <Bell className={`w-5 h-5 ${notifs.length > 0 ? 'text-[#F97316]' : ''}`} />
               {notifs.length > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-[10px] text-white font-bold leading-none animate-pulse">
                   {notifs.length > 9 ? '9+' : notifs.length}
@@ -182,11 +199,11 @@ export default function Sidebar() {
               <div
                 ref={dropdownRef}
                 style={{ top: dropdownPos.top, left: dropdownPos.left }}
-                className="fixed w-80 bg-[#0A1A2F] border border-[#00E5FF]/20 rounded-xl shadow-2xl shadow-black/60 z-[9999] overflow-hidden"
+                className="fixed w-80 bg-white border border-[#F97316]/20 rounded-xl shadow-2xl shadow-black/60 z-[9999] overflow-hidden"
               >
-                <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-                  <span className="text-white text-sm font-semibold flex items-center gap-2">
-                    <Bell className="w-4 h-4 text-[#00E5FF]" />
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <span className="text-gray-900 text-sm font-semibold flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-[#F97316]" />
                     Notificaciones
                     {notifs.length > 0 && (
                       <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
@@ -197,7 +214,7 @@ export default function Sidebar() {
                   {notifs.length > 0 && (
                     <button
                       onClick={dismissAll}
-                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-[#00E5FF] transition-colors"
+                      className="flex items-center gap-1 text-xs text-gray-600 hover:text-[#F97316] transition-colors"
                       title="Marcar todas como leídas"
                     >
                       <CheckCheck className="w-3.5 h-3.5" />
@@ -210,23 +227,23 @@ export default function Sidebar() {
                   {notifs.length === 0 ? (
                     <div className="px-4 py-8 text-center">
                       <Bell className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                      <p className="text-gray-500 text-sm">Sin notificaciones pendientes</p>
+                      <p className="text-gray-600 text-sm">Sin notificaciones pendientes</p>
                     </div>
                   ) : (
                     notifs.map(n => (
                       <button
                         key={n.id}
                         onClick={() => handleNotifClick(n)}
-                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-[#00E5FF]/5 transition-colors border-b border-white/5 last:border-0 text-left group"
+                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-[#F97316]/5 transition-colors border-b border-gray-100 last:border-0 text-left group"
                       >
                         <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${NOTIF_DOT[n.type] ?? 'bg-gray-400'}`} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-white text-xs font-medium leading-snug group-hover:text-[#00E5FF] transition-colors">
+                          <p className="text-gray-900 text-xs font-medium leading-snug group-hover:text-[#F97316] transition-colors">
                             {n.title}
                           </p>
-                          <p className="text-gray-500 text-xs mt-0.5 flex items-center gap-1">
+                          <p className="text-gray-600 text-xs mt-0.5 flex items-center gap-1">
                             {n.time}
-                            <span className="text-[#00E5FF]/60">· Ir a {NOTIF_LABEL[n.type] ?? 'módulo'} →</span>
+                            <span className="text-[#F97316]/60">· Ir a {NOTIF_LABEL[n.type] ?? 'módulo'} →</span>
                           </p>
                         </div>
                         <span
@@ -243,7 +260,7 @@ export default function Sidebar() {
                 </div>
 
                 {notifs.length > 0 && (
-                  <div className="px-4 py-2 border-t border-white/5 text-center">
+                  <div className="px-4 py-2 border-t border-gray-100 text-center">
                     <p className="text-xs text-gray-600">Haz clic en una notificación para ir al módulo</p>
                   </div>
                 )}
@@ -251,12 +268,12 @@ export default function Sidebar() {
             )}
           </div>
         </div>
-        <p className="text-gray-400 text-sm truncate">{user?.empresa.nombre}</p>
+        <p className="text-gray-600 text-sm truncate">{user?.empresa.nombre}</p>
       </div>
 
       {/* Bodega Selector */}
       {['admin','gerente','super_admin','bodeguero'].includes(rol) && (
-        <div className="border-b border-white/5">
+        <div className="border-b border-gray-100">
           <BodegaSelector />
         </div>
       )}
@@ -271,15 +288,15 @@ export default function Sidebar() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 group ${
                 isActive
-                  ? 'bg-gradient-to-r from-[#1e64a7] to-[#00E5FF] text-white shadow-lg shadow-[#00E5FF]/20'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-md shadow-[#F97316]/25'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
               }`
             }
           >
             {({ isActive }) => (
               <>
-                <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-[#00E5FF]'}`} />
-                <span className={`text-sm font-medium ${isActive ? 'text-white' : ''}`}>{label}</span>
+                <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-600 group-hover:text-[#F97316]'}`} />
+                <span className={`text-sm font-medium ${isActive ? 'text-white' : 'text-gray-700'}`}>{label}</span>
               </>
             )}
           </NavLink>
@@ -287,13 +304,13 @@ export default function Sidebar() {
       </nav>
 
       {/* User Section */}
-      <div className="p-4 border-t border-white/5">
+      <div className="p-4 border-t border-gray-100">
         <div className="flex items-center gap-3 mb-3 px-2">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#7B61FF] to-[#00E5FF] flex items-center justify-center flex-shrink-0 font-bold text-white text-sm">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FB923C] to-[#F97316] flex items-center justify-center flex-shrink-0 font-bold text-white text-sm">
             {user?.nombre?.charAt(0)?.toUpperCase() ?? '?'}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-white text-sm font-medium truncate">{user?.nombre}</p>
+            <p className="text-gray-900 text-sm font-medium truncate">{user?.nombre}</p>
             <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${badgeRol(user?.rol ?? '')}`}>
               {labelRol(user?.rol ?? '')}
             </span>
@@ -307,16 +324,16 @@ export default function Sidebar() {
         {/* Tour del sistema */}
         <button
           onClick={() => window.dispatchEvent(new CustomEvent('open-onboarding'))}
-          className="w-full flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-[#00E5FF]/10 transition-all duration-200 group mb-1"
+          className="w-full flex items-center gap-2 px-4 py-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-[#F97316]/10 transition-all duration-200 group mb-1"
           title="Ver tour del sistema"
         >
-          <Play className="w-4 h-4 flex-shrink-0 text-[#00E5FF] group-hover:text-[#00E5FF]" />
+          <Play className="w-4 h-4 flex-shrink-0 text-[#F97316] group-hover:text-[#F97316]" />
           <span className="text-sm">Tour del sistema</span>
         </button>
 
         <button
           onClick={logout}
-          className="w-full flex items-center gap-2 px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-red-500/10 transition-all duration-200 group"
+          className="w-full flex items-center gap-2 px-4 py-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-red-500/10 transition-all duration-200 group"
         >
           <LogOut className="w-4 h-4 flex-shrink-0" />
           <span className="text-sm">Cerrar Sesión</span>
