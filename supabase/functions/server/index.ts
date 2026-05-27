@@ -955,6 +955,39 @@ app.get("/server/facturacion/retenciones/:id/xml", authMiddleware, async (c) => 
   catch (e: any) { return c.json({ error: e.message }, 500); }
 });
 
+// ── GET /compras/debug — diagnóstico de compras ─────────────────────────────
+app.get("/server/compras/debug", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const eid = auth.empresaId;
+    // Cuántas compras hay en SQL para esta empresa
+    const { count: sqlCount } = await db.from('compras').select('*', { count: 'exact', head: true }).eq('empresa_id', eid);
+    // Primeras 3 compras raw
+    const { data: sample } = await db.from('compras').select('id,empresa_id,numero,total,fecha,created_at').eq('empresa_id', eid).limit(3);
+    // CxP count
+    const { count: cxpCount } = await db.from('cuentas_por_pagar').select('*', { count: 'exact', head: true }).eq('empresa_id', eid);
+    // Cuántas compras hay en TOTAL en SQL (sin filtro empresa)
+    const { count: totalSinFiltro } = await db.from('compras').select('*', { count: 'exact', head: true });
+    // Empresa IDs distintos en compras
+    const { data: empresasEnCompras } = await db.from('compras').select('empresa_id').limit(10);
+    const idsUnicos = [...new Set((empresasEnCompras || []).map((r: any) => r.empresa_id))];
+    // KV key
+    const kvData = await kv.get(`empresa_${eid}_compras`);
+    return c.json({
+      empresa_id_actual: eid,
+      compras_sql_esta_empresa: sqlCount || 0,
+      compras_sql_total_sin_filtro: totalSinFiltro || 0,
+      empresa_ids_en_compras: idsUnicos,
+      cxp_esta_empresa: cxpCount || 0,
+      kv_compras_count: Array.isArray(kvData) ? kvData.length : (kvData ? 1 : 0),
+      sample_compras: sample || [],
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 // ── GET /admin/diagnostico-completo — comparar KV vs SQL ────────────────────
 app.get("/server/admin/diagnostico-completo", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
