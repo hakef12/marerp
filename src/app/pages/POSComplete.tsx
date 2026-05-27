@@ -183,6 +183,9 @@ export default function POS() {
   const [facturaGenerada, setFacturaGenerada] = useState<any>(null);
   const [autoImprimirRIDE, setAutoImprimirRIDE] = useState(false);
   const [generandoFactura, setGenerandoFactura] = useState(false);
+  // Polling SRI en background (id de la factura pendiente, null = no pollear)
+  const [sriPollingId, setSriPollingId] = useState<string | null>(null);
+  const sriPollingCancelled = useRef(false);
 
   // Vista móvil: alternar entre productos y orden
   const [vistaMovil, setVistaMovil] = useState<'productos' | 'orden'>('productos');
@@ -586,6 +589,69 @@ export default function POS() {
     }
   };
 
+  // ── Polling SRI en background ────────────────────────────────────────────────
+  // Se activa cuando sriPollingId tiene valor y el diálogo RIDE está abierto.
+  // Consulta el estado de autorización cada 5s hasta 60s o hasta que el SRI responda.
+  useEffect(() => {
+    if (!sriPollingId || !dialogRIDE) return;
+
+    sriPollingCancelled.current = false;
+    let attempts = 0;
+    const MAX = 12; // 12 × 5s = 60s máximo
+    let timerId: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      if (sriPollingCancelled.current || attempts >= MAX) {
+        // Agotamos intentos — mantener PENDIENTE, avisar al usuario
+        if (!sriPollingCancelled.current) {
+          toast.dismiss('sri-bg');
+          toast.warning('⏱ SRI aún no responde — usa "Reintentar" en Consulta de Facturas', { duration: 6000 });
+          setSriPollingId(null);
+        }
+        return;
+      }
+      attempts++;
+
+      try {
+        const res = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/facturacion/facturas/${sriPollingId}/autorizar`,
+          { method: 'POST', headers: apiHeaders(token), body: JSON.stringify({ factura_id: sriPollingId }) }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const f = data.factura;
+          if (f && f.estado !== 'PENDIENTE') {
+            if (!sriPollingCancelled.current) {
+              setFacturaGenerada(f);
+              setSriPollingId(null);
+              toast.dismiss('sri-bg');
+              if (f.estado === 'AUTORIZADO') {
+                toast.success('✅ Factura AUTORIZADA por el SRI');
+                setAutoImprimirRIDE(true); // imprimir ahora que está autorizada
+              } else {
+                toast.error('❌ El SRI no autorizó la factura — revisa Consulta de Facturas');
+              }
+            }
+            return;
+          }
+        }
+      } catch { /* ignorar errores de red y reintentar */ }
+
+      if (!sriPollingCancelled.current) {
+        timerId = setTimeout(poll, 5000);
+      }
+    };
+
+    // Primer intento a los 5s (dar tiempo al SRI)
+    timerId = setTimeout(poll, 5000);
+
+    return () => {
+      sriPollingCancelled.current = true;
+      clearTimeout(timerId);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sriPollingId, dialogRIDE]);
+
   const generarFactura = async (datosCliente: DatosCliente) => {
     if (!ventaCompletada) return;
     setProcesando(true);
@@ -593,7 +659,7 @@ export default function POS() {
     setDialogDatosCliente(false);
 
     try {
-      // ── 1. Generar factura ─────────────────────────────────────────────────
+      // ── 1. Generar factura en el backend ───────────────────────────────────
       const body = {
         numero_ticket: ventaCompletada.numero_ticket,
         items: ventaCompletada.items,
@@ -617,72 +683,53 @@ export default function POS() {
         const err = await res.json().catch(() => ({}));
         if (err.requiere_configuracion) toast.error('Configure la facturación electrónica en Facturación → Configuración');
         else toast.error(err.error || 'Error al generar factura');
-        limpiarVenta(true); // limpiar aunque falle la factura
+        limpiarVenta(true);
         return;
       }
 
       const data = await res.json();
-      let factura = data.factura;
+      const factura = data.factura;
       const facturaId: string = data.factura_id || factura?.id || '';
 
-      // ── 2. Polling SRI — hasta 4 intentos cada 3s si queda PENDIENTE ──────
-      if (factura?.estado === 'PENDIENTE' && facturaId) {
-        toast.loading('⏳ Esperando autorización del SRI…', { id: 'sri-polling' });
-        for (let intento = 0; intento < 4; intento++) {
-          await new Promise(r => setTimeout(r, 3000));
-          try {
-            const authRes = await fetch(
-              `https://${projectId}.supabase.co/functions/v1/server/facturacion/facturas/${facturaId}/autorizar`,
-              { method: 'POST', headers: apiHeaders(token), body: JSON.stringify({ factura_id: facturaId }) }
-            );
-            if (authRes.ok) {
-              const authData = await authRes.json();
-              if (authData.factura) factura = authData.factura;
-            }
-          } catch { /* continuar aunque falle un intento */ }
-          if (factura.estado !== 'PENDIENTE') break;
-        }
-        toast.dismiss('sri-polling');
-      }
-
-      // ── 3. Toast según estado final ────────────────────────────────────────
-      if (factura.estado === 'AUTORIZADO') {
-        toast.success('✅ Factura AUTORIZADA por el SRI');
-      } else if (factura.estado === 'NO_AUTORIZADO') {
-        toast.error('❌ El SRI no autorizó la factura — revisa Consulta de Facturas');
-      } else {
-        toast.warning('⏱ Factura pendiente de autorización — revisa Consulta de Facturas');
-      }
-
-      // ── 4. Mostrar RIDE y auto-imprimir ────────────────────────────────────
+      // ── 2. Mostrar RIDE de inmediato (incluso si está PENDIENTE) ───────────
       setFacturaGenerada(factura);
-      setAutoImprimirRIDE(true);
       setDialogRIDE(true);
 
-      // ── 5. Auto-enviar email si hay correo del cliente ─────────────────────
+      if (factura.estado === 'AUTORIZADO') {
+        // Ya está autorizada — imprimir de una vez
+        toast.success('✅ Factura AUTORIZADA por el SRI');
+        setAutoImprimirRIDE(true);
+      } else if (factura.estado === 'NO_AUTORIZADO') {
+        toast.error('❌ El SRI no autorizó la factura');
+      } else {
+        // PENDIENTE — iniciar polling silencioso en background
+        toast.loading('⏳ Consultando autorización SRI…', { id: 'sri-bg', duration: 65000 });
+        setSriPollingId(facturaId);
+      }
+
+      // ── 3. Auto-enviar email en background (si tiene correo) ──────────────
       const emailCliente = datosCliente.email || factura.cliente_email || '';
       if (emailCliente && facturaId) {
-        // Envío en background — no bloquear la UI
         fetch(
           `https://${projectId}.supabase.co/functions/v1/server/facturacion/reenviar-email`,
           { method: 'POST', headers: apiHeaders(token), body: JSON.stringify({ factura_id: facturaId, destinatario: emailCliente }) }
         )
           .then(r => r.json())
-          .then(r => {
-            if (r.success) toast.success(`📧 Factura enviada a ${emailCliente}`, { duration: 4000 });
-          })
+          .then(r => { if (r.success) toast.success(`📧 Factura enviada a ${emailCliente}`, { duration: 4000 }); })
           .catch(() => { /* silencioso */ });
       }
 
     } finally {
       setProcesando(false);
       setGenerandoFactura(false);
-      // limpiarVenta se llama al cerrar el diálogo RIDE (ver cerrarRIDE)
     }
   };
 
-  /** Cierra el diálogo RIDE y limpia la venta (incluyendo navegación a mesas si aplica) */
+  /** Cierra el RIDE, cancela polling y limpia la venta */
   const cerrarRIDE = () => {
+    sriPollingCancelled.current = true;
+    setSriPollingId(null);
+    toast.dismiss('sri-bg');
     setDialogRIDE(false);
     setAutoImprimirRIDE(false);
     setFacturaGenerada(null);
@@ -1498,8 +1545,9 @@ export default function POS() {
                 </span>
               )}
               {facturaGenerada?.estado === 'PENDIENTE' && (
-                <span className="ml-2 text-xs font-normal bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full border border-yellow-200">
-                  ⏱ Pendiente SRI
+                <span className="ml-2 text-xs font-normal bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full border border-yellow-200 flex items-center gap-1">
+                  <Clock className="w-3 h-3 animate-spin" />
+                  {sriPollingId ? 'Consultando SRI…' : '⏱ Pendiente'}
                 </span>
               )}
             </DialogTitle>
