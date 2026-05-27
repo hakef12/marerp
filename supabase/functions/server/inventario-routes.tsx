@@ -360,7 +360,7 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
 
       return c.json({ proveedor }, 201);
     } catch (error: any) {
-      return c.json({ error: 'Error al crear proveedor' }, 500);
+      return c.json({ error: 'Error al crear proveedor', details: error.message }, 500);
     }
   });
 
@@ -423,37 +423,66 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
   app.get("/server/inventario/movimientos", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
-      const movimientos = await obtenerMovimientos(auth.empresaId);
-      const productos = await obtenerProductos(auth.empresaId);
-      const bodegas = await obtenerBodegas(auth.empresaId);
+      const db = getDB();
+      const {
+        page = '1', limit = '50',
+        fecha_inicio, fecha_fin, tipo, producto_id,
+      } = c.req.query() as any;
 
-      // Obtener nombres de usuarios desde Supabase
-      const { createClient } = await import("npm:@supabase/supabase-js");
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      const pageNum  = Math.max(1, parseInt(page)  || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 50));
+      const from = (pageNum - 1) * limitNum;
+      const to   = from + limitNum - 1;
 
-      const usuarioIds = [...new Set(movimientos.map((m: any) => m.usuario_id).filter(Boolean))];
+      let q = db.from('movimientos_inventario')
+        .select('*', { count: 'exact' })
+        .eq('empresa_id', auth.empresaId)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (fecha_inicio) q = q.gte('created_at', fecha_inicio);
+      if (fecha_fin)    q = q.lte('created_at', fecha_fin + 'T23:59:59');
+      if (tipo)         q = q.eq('tipo', tipo);
+      if (producto_id)  q = q.eq('producto_id', producto_id);
+
+      const { data, error, count } = await q;
+      if (error) throw error;
+
+      const [productos, bodegas] = await Promise.all([
+        obtenerProductos(auth.empresaId),
+        obtenerBodegas(auth.empresaId),
+      ]);
+      const productosMap = new Map(productos.map((p: any) => [p.id, p]));
+      const bodegasMap   = new Map(bodegas.map((b: any)   => [b.id, b]));
+
+      // Usuarios de esta página solamente
+      const usuarioIds = [...new Set((data || []).map((m: any) => m.usuario_id).filter(Boolean))];
       let usuariosMap: Record<string, any> = {};
       if (usuarioIds.length > 0) {
-        const { data: usuarios } = await supabase.from('usuarios').select('id, nombre_completo').in('id', usuarioIds);
+        const { data: usuarios } = await db.from('usuarios').select('id, nombre_completo').in('id', usuarioIds);
         if (usuarios) usuariosMap = Object.fromEntries(usuarios.map((u: any) => [u.id, u]));
       }
 
-      const enriquecidos = movimientos.map((mov: any) => {
-        const producto = productos.find((p: any) => p.id === mov.producto_id);
-        const bodega = bodegas.find((b: any) => b.id === mov.bodega_id);
+      const enriquecidos = (data || []).map((mov: any) => {
+        const producto = productosMap.get(mov.producto_id);
+        const bodega   = bodegasMap.get(mov.bodega_id);
         return {
           ...mov,
           productos: producto ? { id: producto.id, codigo: producto.codigo, nombre: producto.nombre } : null,
-          bodegas: bodega ? { id: bodega.id, codigo: bodega.codigo, nombre: bodega.nombre } : null,
-          usuarios: usuariosMap[mov.usuario_id] || null
+          bodegas:   bodega   ? { id: bodega.id,   codigo: bodega.codigo,   nombre: bodega.nombre   } : null,
+          usuarios:  usuariosMap[mov.usuario_id] || null,
         };
-      }).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      });
 
-      return c.json({ movimientos: enriquecidos });
+      return c.json({
+        movimientos: enriquecidos,
+        total: count || 0,
+        page:  pageNum,
+        limit: limitNum,
+        pages: Math.ceil((count || 0) / limitNum),
+      });
     } catch (error: any) {
-      return c.json({ error: 'Error al obtener movimientos' }, 500);
+      return c.json({ error: 'Error al obtener movimientos', details: error.message }, 500);
     }
   });
 
@@ -488,14 +517,17 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
             ],
           });
         } else if (body.tipo === 'entrada' || body.tipo === 'ajuste_positivo') {
+          // Entrada manual/ajuste positivo: el crédito va a Otros Ingresos (4.2.02)
+          // NO a CxP (2.1.01) — las compras reales tienen su propio asiento en POST /compras
+          // Usar 2.1.01 aquí generaría un pasivo ficticio sin factura de respaldo
           await registrarAsientoAutomatico(auth.empresaId, {
             tipo: 'ajuste_inventario',
             descripcion: descMov,
             referencia: movimiento.id,
             fecha: fechaMov,
             items: [
-              { codigo: '1.1.05', debito: costo,  descripcion: 'Entrada inventario' },
-              { codigo: '2.1.01', credito: costo, descripcion: 'CxP proveedores' },
+              { codigo: '1.1.05', debito: costo,  descripcion: 'Entrada / ajuste positivo de inventario' },
+              { codigo: '4.2.02', credito: costo, descripcion: 'Ajuste de inventario (ingreso no operacional)' },
             ],
           });
         }
@@ -549,129 +581,285 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
   app.get("/server/compras", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
-      const compras = await obtenerCompras(auth.empresaId);
-      const productos = await obtenerProductos(auth.empresaId);
-      const proveedores = await obtenerProveedores(auth.empresaId);
-      const productosMap = new Map(productos.map((p: any) => [p.id, p]));
-      const proveedoresMap = new Map(proveedores.map((p: any) => [p.id, p]));
+      const db = getDB();
+      const {
+        page = '1', limit = '20',
+        fecha_inicio, fecha_fin, proveedor_id,
+      } = c.req.query() as any;
 
-      const comprasEnriquecidas = compras.map((c: any) => ({
-        ...c,
-        proveedor: proveedoresMap.get(c.proveedor_id) || null,
-        items: (c.items || []).map((item: any) => ({
-          ...item,
-          producto: productosMap.get(item.producto_id) || null
-        }))
-      })).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      const pageNum  = Math.max(1, parseInt(page)  || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
 
-      return c.json({ compras: comprasEnriquecidas });
+      // ── Intentar SQL primero, con fallback a obtenerCompras (KV) ─────────
+      let todasLasCompras: any[] = [];
+      let usandoSQL = false;
+
+      try {
+        const from = (pageNum - 1) * limitNum;
+        const to   = from + limitNum - 1;
+
+        let q = db.from('compras')
+          .select('*', { count: 'exact' })
+          .eq('empresa_id', auth.empresaId)
+          .order('created_at', { ascending: false })
+          .range(from, to);
+
+        if (fecha_inicio) q = q.gte('fecha', fecha_inicio);
+        if (fecha_fin)    q = q.lte('fecha', fecha_fin);
+        if (proveedor_id) q = q.eq('proveedor_id', proveedor_id);
+
+        const { data, error, count } = await q;
+        if (error) throw error;
+
+        if ((count || 0) > 0 || data?.length) {
+          // SQL tiene datos — usarlo directamente con paginación
+          usandoSQL = true;
+          const [productos, proveedores] = await Promise.all([
+            obtenerProductos(auth.empresaId),
+            obtenerProveedores(auth.empresaId),
+          ]);
+          const productosMap  = new Map(productos.map((p: any)  => [p.id, p]));
+          const proveedoresMap = new Map(proveedores.map((p: any) => [p.id, p]));
+
+          const comprasEnriquecidas = (data || []).map((row: any) => ({
+            ...row,
+            numero_factura: row.numero || row.numero_factura,
+            total_compra:   row.total  || row.total_compra,
+            proveedor: proveedoresMap.get(row.proveedor_id) || null,
+            items: (row.items || []).map((item: any) => ({
+              ...item,
+              producto: productosMap.get(item.producto_id) || null,
+            })),
+          }));
+
+          return c.json({
+            compras: comprasEnriquecidas,
+            total:   count || 0,
+            page:    pageNum,
+            limit:   limitNum,
+            pages:   Math.ceil((count || 0) / limitNum),
+          });
+        }
+      } catch (_sqlErr) {
+        console.warn('[compras] SQL falló, intentando KV fallback');
+      }
+
+      // ── Fallback: usar obtenerCompras (SQL + KV) y paginar en memoria ────
+      if (!usandoSQL) {
+        todasLasCompras = await obtenerCompras(auth.empresaId);
+
+        // Filtros en memoria
+        if (fecha_inicio) todasLasCompras = todasLasCompras.filter((c: any) => (c.fecha || c.created_at || '') >= fecha_inicio);
+        if (fecha_fin)    todasLasCompras = todasLasCompras.filter((c: any) => (c.fecha || c.created_at || '') <= fecha_fin + 'T23:59:59');
+        if (proveedor_id) todasLasCompras = todasLasCompras.filter((c: any) => c.proveedor_id === proveedor_id);
+
+        // Ordenar por fecha desc
+        todasLasCompras.sort((a: any, b: any) => {
+          const da = a.created_at || a.fecha || '';
+          const db2 = b.created_at || b.fecha || '';
+          return db2.localeCompare(da);
+        });
+
+        const [productos, proveedores] = await Promise.all([
+          obtenerProductos(auth.empresaId),
+          obtenerProveedores(auth.empresaId),
+        ]);
+        const productosMap  = new Map(productos.map((p: any)  => [p.id, p]));
+        const proveedoresMap = new Map(proveedores.map((p: any) => [p.id, p]));
+
+        const total = todasLasCompras.length;
+        const slice = todasLasCompras.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+
+        const enriquecidas = slice.map((row: any) => ({
+          ...row,
+          proveedor: proveedoresMap.get(row.proveedor_id) || null,
+          items: (row.items || []).map((item: any) => ({
+            ...item,
+            producto: productosMap.get(item.producto_id) || null,
+          })),
+        }));
+
+        return c.json({
+          compras: enriquecidas,
+          total,
+          page:  pageNum,
+          limit: limitNum,
+          pages: Math.ceil(total / limitNum),
+        });
+      }
     } catch (error: any) {
-      return c.json({ error: 'Error al obtener compras' }, 500);
+      return c.json({ error: 'Error al obtener compras', details: error.message }, 500);
     }
   });
 
   app.post("/server/compras", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
+    let paso = 'inicio';
     try {
       const body = await c.req.json();
       const {
         proveedor_id, fecha, numero_factura, items, observaciones,
-        tipo_pago = 'contado',   // 'contado' | 'credito'
-        fecha_vencimiento,       // solo para crédito
+        tipo_pago = 'contado',
+        fecha_vencimiento,
+        // Opcionales del XML SRI:
+        numero_autorizacion, clave_acceso,
+        total_sin_impuestos, total_iva, total_descuento, info_sri,
+        xml_original,
       } = body;
 
       if (!items || items.length === 0) {
         return c.json({ error: 'Debes agregar al menos un ítem a la compra' }, 400);
       }
 
-      // Validar y calcular costo unitario de cada ítem
-      const itemsCalculados = items.map((item: any) => {
-        const cantidad = Number(item.cantidad) || 0;
-        const costo_total = Number(item.costo_total) || 0;
-        const costo_unitario = cantidad > 0 ? costo_total / cantidad : 0;
-        return { ...item, cantidad, costo_total, costo_unitario };
-      });
-
-      const total_compra = itemsCalculados.reduce((sum: number, i: any) => sum + i.costo_total, 0);
-
-      // Crear movimiento de entrada por cada ítem y actualizar precio_compra
-      for (const item of itemsCalculados) {
-        await guardarMovimiento(auth.empresaId, {
-          tipo: 'entrada',
-          producto_id: item.producto_id,
-          bodega_id: item.bodega_id || null,
-          cantidad: item.cantidad,
-          costo_unitario: item.costo_unitario,
-          referencia: numero_factura ? `Compra ${numero_factura}` : 'Compra directa',
-          observaciones: observaciones || '',
-          usuario_id: auth.userId,
-        });
-
-        // Actualizar precio_compra del producto con el nuevo costo unitario
-        if (item.costo_unitario > 0) {
-          const productos = await obtenerProductos(auth.empresaId);
-          const prod = productos.find((p: any) => p.id === item.producto_id);
-          if (prod) {
-            await guardarProducto(auth.empresaId, { ...prod, precio_compra: item.costo_unitario });
-          }
+      // ── Verificar factura duplicada ────────────────────────────────────────
+      if (numero_factura) {
+        const db = (await import("npm:@supabase/supabase-js")).createClient(
+          Deno.env.get('SUPABASE_URL')!,
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+        );
+        const { data: existente } = await db
+          .from('compras')
+          .select('id, fecha, total')
+          .eq('empresa_id', auth.empresaId)
+          .eq('numero', numero_factura)
+          .maybeSingle();
+        if (existente) {
+          return c.json({
+            error: `La factura N° ${numero_factura} ya fue registrada anteriormente`,
+            compra_existente: existente,
+          }, 409);
         }
       }
 
-      // Guardar la compra con tipo de pago
-      const compra = await guardarCompra(auth.empresaId, {
-        proveedor_id: proveedor_id || null,
-        fecha: fecha || new Date().toISOString(),
-        numero_factura: numero_factura || '',
-        items: itemsCalculados,
-        total_compra,
-        observaciones: observaciones || '',
-        usuario_id: auth.userId,
-        tipo_pago,
-        fecha_vencimiento: tipo_pago === 'credito' ? (fecha_vencimiento || null) : null,
-        estado_pago: tipo_pago === 'contado' ? 'pagada' : 'pendiente',
-        saldo_pendiente: tipo_pago === 'credito' ? total_compra : 0,
+      paso = 'mapear_items';
+      // Cada item: cantidad = unidades a ingresar al stock
+      //            a_inventario: true (default) = actualiza stock | false = solo gasto
+      const itemsCalculados = items.map((item: any) => {
+        const cantidad       = Number(item.cantidad)    || 0;
+        const costo_total    = Number(item.costo_total) || 0;
+        const a_inventario   = item.a_inventario !== false;
+        const costo_unitario = a_inventario && cantidad > 0 ? costo_total / cantidad : 0;
+        return {
+          ...item,            // mantiene todos los campos originales (fiscal, xml, etc.)
+          cantidad,
+          costo_total,
+          costo_unitario,
+          a_inventario,
+        };
       });
 
+      const total_compra = itemsCalculados.reduce((s: number, i: any) => s + i.costo_total, 0);
+
+      paso = 'movimientos';
+      for (const item of itemsCalculados) {
+        // Solo ítems de inventario con producto asignado crean movimientos de stock
+        if (!item.a_inventario || !item.producto_id) continue;
+
+        await guardarMovimiento(auth.empresaId, {
+          tipo: 'entrada',
+          producto_id:    item.producto_id,
+          bodega_id:      item.bodega_id || null,
+          cantidad:       item.cantidad,
+          costo_unitario: item.costo_unitario,
+          referencia:     numero_factura ? `Compra ${numero_factura}` : 'Compra directa',
+          observaciones:  observaciones || '',
+          usuario_id:     auth.userId,
+        });
+
+        // Actualizar SOLO el precio de compra del producto — NO el stock
+        // (el stock ya fue actualizado dentro de guardarMovimiento)
+        // Usar update directo para evitar sobreescribir el stock recién actualizado
+        if (item.costo_unitario > 0) {
+          const db = (await import("npm:@supabase/supabase-js")).createClient(
+            Deno.env.get('SUPABASE_URL')!,
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+          );
+          await db.from('productos')
+            .update({
+              precio_costo:   item.costo_unitario,
+              costo_unitario: item.costo_unitario,
+              updated_at:     new Date().toISOString(),
+            })
+            .eq('id', item.producto_id)
+            .eq('empresa_id', auth.empresaId);
+        }
+      }
+
+      paso = 'guardar_compra';
+      // Metadata fiscal del SRI (opcional — solo cuando viene de XML)
+      const metadataSRI: Record<string, any> = {};
+      if (numero_autorizacion)  metadataSRI.numero_autorizacion  = numero_autorizacion;
+      if (clave_acceso)         metadataSRI.clave_acceso         = clave_acceso;
+      if (total_sin_impuestos != null) metadataSRI.total_sin_impuestos = Number(total_sin_impuestos);
+      if (total_iva != null)    metadataSRI.total_iva            = Number(total_iva);
+      if (total_descuento)      metadataSRI.total_descuento      = Number(total_descuento);
+      if (info_sri)             metadataSRI.info_sri             = info_sri;
+      if (xml_original)         metadataSRI.xml_original         = xml_original;
+
+      const compra = await guardarCompra(auth.empresaId, {
+        proveedor_id:      proveedor_id || null,
+        fecha:             fecha || new Date().toISOString(),
+        numero_factura:    numero_factura || '',
+        items:             itemsCalculados,
+        total_compra,
+        observaciones:     observaciones || '',
+        usuario_id:        auth.userId,
+        tipo_pago,
+        fecha_vencimiento: tipo_pago === 'credito' ? (fecha_vencimiento || null) : null,
+        estado_pago:       tipo_pago === 'contado' ? 'pagada' : 'pendiente',
+        saldo_pendiente:   tipo_pago === 'credito' ? total_compra : 0,
+        // metadata va por separado dentro de guardarCompra (try-catch interno)
+        ...(Object.keys(metadataSRI).length > 0 ? { metadata: metadataSRI } : {}),
+      });
+
+      paso = 'auditoria';
       await registrarAuditoria(
         auth.empresaId, auth.userId, 'crear', 'inventario', 'compras',
         compra.id, null, { total_compra, tipo_pago, items: itemsCalculados.length },
         c.req.header('x-forwarded-for') || null
       );
 
-      // ── Crear registro de CxP para compras a crédito ──────────
+      paso = 'cxp';
       if (tipo_pago === 'credito' && total_compra > 0) {
         await guardarCuentaPorPagar(auth.empresaId, {
-          proveedor_id: proveedor_id || null,
-          compra_id: compra.id,
-          numero_factura: numero_factura || '',
-          monto: total_compra,
-          saldo_pendiente: total_compra,
-          monto_pagado: 0,
-          fecha_emision: (fecha || new Date().toISOString()).split('T')[0],
+          proveedor_id:      proveedor_id || null,
+          compra_id:         compra.id,
+          numero_factura:    numero_factura || '',
+          monto:             total_compra,
+          saldo_pendiente:   total_compra,
+          monto_pagado:      0,
+          fecha_emision:     (fecha || new Date().toISOString()).split('T')[0],
           fecha_vencimiento: fecha_vencimiento || null,
-          estado: 'pendiente',
+          estado:            'pendiente',
         });
       }
 
-      // ── Asiento contable según tipo de pago ───────────────────
+      paso = 'asiento';
       if (total_compra > 0) {
         const cuentaCredito = tipo_pago === 'contado' ? '1.1.01' : '2.1.01';
         const descCredito   = tipo_pago === 'contado' ? 'Pago en efectivo/banco' : 'CxP proveedores';
+
+        // Calcular split inventario/gastos para el asiento
+        const totalStock  = itemsCalculados.filter((i: any) => i.a_inventario && i.producto_id).reduce((s: number, i: any) => s + i.costo_total, 0);
+        const totalGasto  = total_compra - totalStock;
+        const asientoItems: any[] = [];
+        if (totalStock > 0)  asientoItems.push({ codigo: '1.1.05', debito: parseFloat(totalStock.toFixed(2)),  descripcion: 'Inventario de alimentos y bebidas' });
+        if (totalGasto > 0)  asientoItems.push({ codigo: '6.1.01', debito: parseFloat(totalGasto.toFixed(2)),  descripcion: 'Gastos generales (flete, embalaje u otros)' });
+        asientoItems.push({ codigo: cuentaCredito, credito: parseFloat(total_compra.toFixed(2)), descripcion: descCredito });
+
         await registrarAsientoAutomatico(auth.empresaId, {
           tipo: 'compra_inventario',
           descripcion: `Compra ${numero_factura || compra.id} (${tipo_pago === 'contado' ? 'Contado' : 'Crédito'})`,
-          referencia: compra.id,
-          fecha: (fecha || new Date().toISOString()).split('T')[0],
-          items: [
-            { codigo: '1.1.05', debito: total_compra,  descripcion: 'Inventario de alimentos y bebidas' },
-            { codigo: cuentaCredito, credito: total_compra, descripcion: descCredito },
-          ],
+          referencia:  compra.id,
+          fecha:       (fecha || new Date().toISOString()).split('T')[0],
+          items:       asientoItems,
         });
       }
 
       return c.json({ compra }, 201);
     } catch (error: any) {
-      return c.json({ error: 'Error al registrar compra', details: error.message }, 500);
+      console.error(`[compras POST] Error en paso "${paso}":`, error?.message);
+      return c.json({ error: 'Error al registrar compra', details: error.message, paso }, 500);
     }
   });
 
@@ -688,7 +876,16 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
           const diasRestantes = cxp.fecha_vencimiento
             ? Math.ceil((new Date(cxp.fecha_vencimiento).getTime() - hoy.getTime()) / 86400000)
             : null;
-          return { ...cxp, proveedor: provMap.get(cxp.proveedor_id) || null, dias_restantes: diasRestantes };
+          // numero_factura y fecha_emision se guardan en metadata (no son columnas directas)
+          const numeroFactura = cxp.numero_factura ?? cxp.metadata?.numero_factura ?? null;
+          const fechaEmision  = cxp.fecha_emision  ?? cxp.metadata?.fecha_emision  ?? null;
+          return {
+            ...cxp,
+            numero_factura: numeroFactura,
+            fecha_emision:  fechaEmision,
+            proveedor:      provMap.get(cxp.proveedor_id) || null,
+            dias_restantes: diasRestantes,
+          };
         })
         .sort((a: any, b: any) => {
           if (!a.fecha_vencimiento) return 1;
@@ -726,6 +923,216 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
       return c.json({ cxp });
     } catch (error: any) {
       return c.json({ error: 'Error al registrar pago', details: error.message }, 500);
+    }
+  });
+
+  // ── POST /compras/parsear-xml — Parsear XML del SRI ─────────────────────────
+  app.post("/server/compras/parsear-xml", authMiddleware, async (c: any) => {
+    try {
+      const body = await c.req.json();
+      const xmlRaw: string = body.xmlContent || '';
+      if (!xmlRaw.trim()) return c.json({ error: 'xmlContent vacío' }, 400);
+
+      // Helper: extract first tag content (strips nested tags for simple values)
+      const tag = (xml: string, t: string): string => {
+        const m = xml.match(new RegExp(`<${t}[^>]*>([\\s\\S]*?)<\\/${t}>`, 'i'));
+        return m ? m[1].trim() : '';
+      };
+
+      // Helper: extract all occurrences of a block tag
+      const allTags = (xml: string, t: string): string[] => {
+        const re = new RegExp(`<${t}[^>]*>([\\s\\S]*?)<\\/${t}>`, 'gi');
+        const out: string[] = [];
+        let m;
+        while ((m = re.exec(xml)) !== null) out.push(m[1].trim());
+        return out;
+      };
+
+      // ── Nivel 1: extraer número de autorización y CDATA del comprobante ──────
+      const numeroAutorizacion = tag(xmlRaw, 'numeroAutorizacion') ||
+                                  tag(xmlRaw, 'claveAcceso') || '';
+      const cdataMatch = xmlRaw.match(/<comprobante><!\[CDATA\[([\s\S]*?)\]\]><\/comprobante>/i);
+      const innerXml = cdataMatch ? cdataMatch[1] : xmlRaw;
+
+      // ── Nivel 2: parsear factura interna ──────────────────────────────────────
+      const infoTrib = tag(innerXml, 'infoTributaria');
+      const infoFact = tag(innerXml, 'infoFactura');
+      const detallesXml = tag(innerXml, 'detalles');
+
+      const ruc            = tag(infoTrib, 'ruc');
+      const razonSocial    = tag(infoTrib, 'razonSocial');
+      const nombreComercial= tag(infoTrib, 'nombreComercial') || razonSocial;
+      const dirMatriz      = tag(infoTrib, 'dirMatriz') || '';
+      const estab          = tag(infoTrib, 'estab');
+      const ptoEmi         = tag(infoTrib, 'ptoEmi');
+      const secuencial     = tag(infoTrib, 'secuencial');
+      const claveAcceso    = tag(infoTrib, 'claveAcceso') || numeroAutorizacion;
+      const numeroFactura  = `${estab}-${ptoEmi}-${secuencial}`;
+
+      // Fecha emisión: "DD/MM/YYYY" → "YYYY-MM-DD"
+      const fechaRaw = tag(infoFact, 'fechaEmision');
+      let fecha = fechaRaw;
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(fechaRaw)) {
+        const [d, m, y] = fechaRaw.split('/');
+        fecha = `${y}-${m}-${d}`;
+      }
+
+      const totalSinImpuestos = parseFloat(tag(infoFact, 'totalSinImpuestos') || '0');
+      const importeTotal      = parseFloat(tag(infoFact, 'importeTotal')       || '0');
+      const totalDescuento    = parseFloat(tag(infoFact, 'totalDescuento')     || '0');
+      const totalIva          = parseFloat(tag(infoFact, 'totalImpuesto')      || '0') ||
+                                 (importeTotal - totalSinImpuestos);
+
+      // Dirección / info extra
+      const guiaRemision  = tag(infoFact, 'guiaRemision') || '';
+      const obligadoLlevarContabilidad = tag(infoFact, 'obligadoContabilidad') || '';
+
+      // Forma(s) de pago del XML → mapeamos a nuestra terminología
+      const pagosXml = tag(infoFact, 'pagos');
+      const pagoBlocks = allTags(pagosXml, 'pago');
+      const formasPagoMap: Record<string, string> = {
+        '01': 'efectivo', '15': 'compensacion', '16': 'tarjeta_debito',
+        '17': 'transferencia', '18': 'debito', '19': 'tarjeta_credito',
+        '20': 'otros', '21': 'endoso_titulo',
+      };
+      const pagosDetalle = pagoBlocks.map(p => ({
+        codigo: tag(p, 'formaPago'),
+        descripcion: formasPagoMap[tag(p, 'formaPago')] || tag(p, 'formaPago'),
+        total: parseFloat(tag(p, 'total') || '0'),
+        plazo: tag(p, 'plazo') || '',
+        unidadTiempo: tag(p, 'unidadTiempo') || '',
+      }));
+      const formaPago = pagosDetalle[0]?.descripcion || 'efectivo';
+
+      // ── Detalles (ítems de la factura) ────────────────────────────────────────
+      const detalleBlocks = allTags(detallesXml, 'detalle');
+      const items = detalleBlocks.map((d) => {
+        const codigoPrincipal    = tag(d, 'codigoPrincipal');
+        const codigoAuxiliar     = tag(d, 'codigoAuxiliar');
+        const descripcion        = tag(d, 'descripcion');
+        const cantidad           = parseFloat(tag(d, 'cantidad')              || '0');
+        const precioUnitario     = parseFloat(tag(d, 'precioUnitario')        || '0');
+        const descuento          = parseFloat(tag(d, 'descuento')             || '0');
+        const precioTotalSinImp  = parseFloat(tag(d, 'precioTotalSinImpuesto')|| '0');
+
+        // Puede haber múltiples impuestos por ítem
+        const impuestosXml = tag(d, 'impuestos');
+        const impuestoBlocks = allTags(impuestosXml, 'impuesto');
+        let valorIvaItem = 0;
+        let codigoPorcentaje = '0';
+        let porcentajeIva = 0;
+        for (const imp of impuestoBlocks) {
+          const cod = tag(imp, 'codigo'); // 2=IVA, 3=ICE
+          if (cod === '2') {
+            codigoPorcentaje = tag(imp, 'codigoPorcentaje'); // 0=0%, 2=12%, 3=14%, 4=15%
+            porcentajeIva = parseFloat(tag(imp, 'tarifa') || '0');
+            valorIvaItem += parseFloat(tag(imp, 'valor') || '0');
+          }
+        }
+
+        return {
+          codigo: codigoPrincipal,
+          codigo_auxiliar: codigoAuxiliar,
+          descripcion,
+          cantidad_xml: cantidad,          // cantidad original del XML (unidades de factura)
+          precio_unitario: precioUnitario,
+          descuento,
+          subtotal: precioTotalSinImp,
+          iva: parseFloat(valorIvaItem.toFixed(2)),
+          porcentaje_iva: porcentajeIva,
+          codigo_iva: codigoPorcentaje,
+          total: parseFloat((precioTotalSinImp + valorIvaItem).toFixed(2)),
+        };
+      });
+
+      return c.json({
+        success: true,
+        proveedor: { ruc, nombre: razonSocial, nombre_comercial: nombreComercial, direccion: dirMatriz },
+        factura: {
+          numero: numeroFactura,
+          clave_acceso: claveAcceso,
+          numero_autorizacion: numeroAutorizacion,
+          fecha,
+          total_sin_impuestos: totalSinImpuestos,
+          total_descuento: totalDescuento,
+          total_iva: parseFloat(totalIva.toFixed(2)),
+          importe_total: importeTotal,
+          forma_pago: formaPago,
+          pagos: pagosDetalle,
+          guia_remision: guiaRemision,
+          obligado_llevar_contabilidad: obligadoLlevarContabilidad,
+        },
+        items,
+      });
+    } catch (error: any) {
+      return c.json({ error: 'Error al parsear XML', details: error.message }, 500);
+    }
+  });
+
+  // ── POST /compras/match-xml-items — Fuzzy-match items XML → inventario ──────
+  app.post("/server/compras/match-xml-items", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const { items } = await c.req.json();
+      if (!Array.isArray(items)) return c.json({ error: 'items debe ser un array' }, 400);
+
+      const productos = await obtenerProductos(auth.empresaId);
+
+      // Normalizar texto: minúsculas, sin tildes, sin caracteres especiales
+      const norm = (s: string) => s
+        .toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      // Similarity: Jaccard sobre bigramas + word overlap
+      const similarity = (a: string, b: string): number => {
+        const na = norm(a);
+        const nb = norm(b);
+        const wa = na.split(' ').filter(w => w.length > 1);
+        const wb = nb.split(' ').filter(w => w.length > 1);
+        if (!wa.length || !wb.length) return 0;
+
+        // Word overlap con substring matching
+        let matches = 0;
+        for (const w of wa) {
+          if (wb.some(x => x.includes(w) || w.includes(x))) matches++;
+        }
+        const recall = matches / wa.length;
+        const precision = matches / wb.length;
+        if (recall + precision === 0) return 0;
+        return 2 * recall * precision / (recall + precision); // F1
+      };
+
+      const matchedItems = items.map((item: any) => {
+        let bestScore = 0;
+        let bestProducto: any = null;
+
+        for (const p of productos) {
+          const score = similarity(item.descripcion, p.nombre);
+          if (score > bestScore) {
+            bestScore = score;
+            bestProducto = p;
+          }
+        }
+
+        return {
+          ...item,
+          match: bestProducto && bestScore >= 0.25 ? {
+            producto_id: bestProducto.id,
+            nombre: bestProducto.nombre,
+            score: Math.round(bestScore * 100),
+            unidad_medida: bestProducto.unidad_medida,
+            precio_compra: bestProducto.precio_compra,
+          } : null,
+          auto_matched: bestScore >= 0.5,
+        };
+      });
+
+      return c.json({ success: true, items: matchedItems });
+    } catch (error: any) {
+      return c.json({ error: 'Error al hacer matching', details: error.message }, 500);
     }
   });
 
