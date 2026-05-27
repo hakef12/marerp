@@ -614,9 +614,10 @@ export default function POS() {
       );
 
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         if (err.requiere_configuracion) toast.error('Configure la facturación electrónica en Facturación → Configuración');
         else toast.error(err.error || 'Error al generar factura');
+        limpiarVenta(true); // limpiar aunque falle la factura
         return;
       }
 
