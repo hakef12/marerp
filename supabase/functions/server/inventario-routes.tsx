@@ -1,3 +1,4 @@
+import { createClient } from "npm:@supabase/supabase-js";
 import {
   inicializarDatosDemo,
   obtenerProductos,
@@ -23,6 +24,11 @@ import {
   obtenerAsientos
 } from "./kv-helpers.tsx";
 import { registrarAuditoria, verificarPassword } from "./audit-helper.tsx";
+
+const getDB = () => createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
 
 export function setupInventarioRoutes(app: any, authMiddleware: any) {
 

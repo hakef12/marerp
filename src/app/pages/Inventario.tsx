@@ -428,14 +428,18 @@ export default function Inventario() {
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/server/compras?${params}`, { headers }
       );
+      const data = await response.json();
       if (response.ok) {
-        const data = await response.json();
         setCompras(data.compras || []);
         setComprasTotal(data.total || 0);
         setComprasPages(data.pages || 1);
         setComprasPage(page);
+      } else {
+        console.error('[compras] Error API:', response.status, data);
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error('[compras] Error fetch:', error);
+    }
   };
 
   const fetchCxP = async () => {
