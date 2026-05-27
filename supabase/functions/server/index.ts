@@ -955,6 +955,45 @@ app.get("/server/facturacion/retenciones/:id/xml", authMiddleware, async (c) => 
   catch (e: any) { return c.json({ error: e.message }, 500); }
 });
 
+// ── GET /clientes/buscar — autocomplete de clientes ─────────────────────────
+app.get("/server/clientes/buscar", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  const q = (c.req.query('q') || '').trim();
+  try {
+    let query = db.from('clientes')
+      .select('id, nombre, identificacion, tipo_identificacion, email, telefono, total_compras, ultima_compra')
+      .eq('empresa_id', auth.empresaId)
+      .order('ultima_compra', { ascending: false })
+      .limit(10);
+
+    if (q.length >= 2) {
+      query = query.or(`nombre.ilike.%${q}%,identificacion.ilike.%${q}%`);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    return c.json({ clientes: data || [] });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ── GET /clientes — lista completa ───────────────────────────────────────────
+app.get("/server/clientes", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { data, error } = await db.from('clientes')
+      .select('*')
+      .eq('empresa_id', auth.empresaId)
+      .order('ultima_compra', { ascending: false, nullsFirst: false });
+    if (error) throw error;
+    return c.json({ clientes: data || [] });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 // ── GET /compras/debug — diagnóstico de compras ─────────────────────────────
 app.get("/server/compras/debug", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');

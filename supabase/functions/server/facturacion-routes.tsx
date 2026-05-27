@@ -1744,6 +1744,47 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
       }
     } catch { /* silencioso */ }
 
+    // ── Auto-guardar cliente (si no es Consumidor Final) ──────────
+    try {
+      const ruc = factura.cliente_identificacion;
+      const esConsumidorFinal = !ruc || ruc === '9999999999999' || ruc === '0000000000000';
+      if (!esConsumidorFinal) {
+        const db = getDB();
+        // Buscar si ya existe por identificación
+        const { data: existente } = await db.from('clientes')
+          .select('id, total_compras, ultima_compra')
+          .eq('empresa_id', empresaId)
+          .eq('identificacion', ruc)
+          .maybeSingle();
+
+        if (existente) {
+          // Actualizar estadísticas
+          await db.from('clientes').update({
+            nombre: factura.cliente_razon_social,
+            email: factura.cliente_email || existente.email || null,
+            total_compras: (Number(existente.total_compras) || 0) + factura.total,
+            ultima_compra: nowUtc.toISOString(),
+            updated_at: nowUtc.toISOString(),
+          }).eq('id', existente.id);
+        } else {
+          // Crear nuevo cliente
+          await db.from('clientes').insert({
+            empresa_id: empresaId,
+            identificacion: ruc,
+            tipo_identificacion: factura.cliente_tipo_identificacion || '04',
+            nombre: factura.cliente_razon_social,
+            email: factura.cliente_email || null,
+            total_compras: factura.total,
+            ultima_compra: nowUtc.toISOString(),
+            created_at: nowUtc.toISOString(),
+            updated_at: nowUtc.toISOString(),
+          });
+        }
+      }
+    } catch (clienteErr: any) {
+      console.warn('[factura] No se pudo guardar cliente:', clienteErr.message);
+    }
+
     return new Response(
       JSON.stringify({ success: true, factura_id: facturaId, factura, firmada: factura.firmado_digitalmente }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
