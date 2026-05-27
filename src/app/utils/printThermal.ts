@@ -1,6 +1,9 @@
 /**
  * Utilidad de impresión para impresoras térmicas de rollo continuo.
  * Soporta 58 mm y 80 mm.
+ *
+ * Usa un <iframe> oculto como primera estrategia (no requiere permisos de popup).
+ * Si falla, cae a window.open() como respaldo.
  */
 
 export type AnchoPapel = 58 | 80;
@@ -21,13 +24,13 @@ export function cssTermico(ancho: AnchoPapel = 58): string {
     }
     html, body {
       width: ${ancho}mm;
+      background: #fff;
     }
     body {
       font-family: 'Courier New', Courier, monospace;
       font-size: ${ancho === 58 ? '10px' : '11px'};
       line-height: 1.35;
-      padding: 2mm 2mm 3mm 2mm;
-      background: #fff;
+      padding: 2mm 2mm 6mm 2mm;
       color: #000;
     }
     div, p, tr, .item {
@@ -65,56 +68,111 @@ export function cssTermico(ancho: AnchoPapel = 58): string {
       text-align: center;
       letter-spacing: 0.5px;
     }
-    .feed { height: 3mm; display: block; }
+    .feed { height: 6mm; display: block; }
+
+    /* Ocultar en pantalla; mostrar al imprimir */
+    @media screen {
+      body { display: none; }
+    }
+    @media print {
+      body { display: block; }
+    }
   `;
 }
 
 /**
- * Abre una ventana de impresión y lanza print().
- * Usa setTimeout desde la ventana padre — evita el problema de onload
- * que no dispara cuando se usa document.write().
+ * Imprime HTML en una impresora térmica.
+ *
+ * Estrategia:
+ *   1. Crea un <iframe> oculto e imprime desde él (sin popup blocker).
+ *   2. Si falla, abre window.open() como fallback.
  */
 export function printHtml(html: string, titulo = 'Impresión', ancho: AnchoPapel = 58): void {
-  const win = window.open('', '_blank', 'width=400,height=600,toolbar=0,menubar=0');
+  const fullHtml = buildFullHtml(html, titulo, ancho);
+
+  // ── Estrategia 1: iframe oculto (sin popup blocker) ──────────────────────
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('title', titulo);
+  Object.assign(iframe.style, {
+    position: 'fixed',
+    top: '-9999px',
+    left: '-9999px',
+    width: `${ancho}mm`,
+    height: '1px',
+    border: 'none',
+    visibility: 'hidden',
+  });
+
+  document.body.appendChild(iframe);
+
+  const cleanup = () => {
+    setTimeout(() => {
+      try { document.body.removeChild(iframe); } catch { /* ya removido */ }
+    }, 4000);
+  };
+
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) throw new Error('No se pudo acceder al documento del iframe');
+
+    doc.open();
+    doc.write(fullHtml);
+    doc.close();
+
+    // Esperar a que el CSS calcule los estilos antes de imprimir
+    setTimeout(() => {
+      try {
+        if (!iframe.contentWindow) throw new Error('iframe.contentWindow es null');
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        cleanup();
+      } catch (printErr) {
+        console.warn('[printHtml] iframe.print() falló, usando window.open():', printErr);
+        cleanup();
+        fallbackWindowOpen(fullHtml);
+      }
+    }, 700);
+
+  } catch (setupErr) {
+    console.warn('[printHtml] Setup iframe falló, usando window.open():', setupErr);
+    cleanup();
+    fallbackWindowOpen(fullHtml);
+  }
+}
+
+/** Construye el documento HTML completo para imprimir */
+function buildFullHtml(body: string, titulo: string, ancho: AnchoPapel): string {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>${esc(titulo)}</title>
+  <style>${cssTermico(ancho)}</style>
+</head>
+<body>${body}</body>
+</html>`;
+}
+
+/** Fallback: abre ventana emergente si el iframe falla */
+function fallbackWindowOpen(fullHtml: string): void {
+  const win = window.open('', '_blank', 'width=420,height=700,toolbar=0,menubar=0,scrollbars=1');
   if (!win) {
-    alert('Por favor permite ventanas emergentes para imprimir.');
+    alert('Permite las ventanas emergentes en este sitio para poder imprimir.');
     return;
   }
-
   win.document.open();
-  win.document.write(`<!DOCTYPE html><html lang="es"><head>
-    <meta charset="utf-8"/>
-    <title>${titulo}</title>
-  </head><body>${html}</body></html>`);
+  win.document.write(fullHtml.replace(
+    // Quitar la regla @media screen { body { display:none } } para que se vea en el popup
+    '@media screen {\n      body { display: none; }\n    }',
+    ''
+  ));
   win.document.close();
-
-  // Paso 1: esperar 500ms para que el layout calcule estilos y fuentes
   setTimeout(() => {
-    try {
-      // Paso 2: medir altura real del contenido
-      const altoPx = win.document.body.scrollHeight + 6;
-
-      // Paso 3: inyectar @page con altura exacta (sobreescribe el "auto")
-      const s = win.document.createElement('style');
-      s.textContent = `@page { size: ${ancho}mm ${altoPx}px !important; margin: 0 !important; }`;
-      win.document.head.appendChild(s);
-
-      // Paso 4: imprimir
-      setTimeout(() => {
-        win.focus();
-        win.print();
-        win.onafterprint = () => win.close();
-        setTimeout(() => { try { win.close(); } catch { /* ya cerrada */ } }, 4000);
-      }, 150);
-
-    } catch {
-      // Fallback: imprimir sin ajuste de altura (funciona igual, solo puede sobrar papel)
-      win.focus();
-      win.print();
-      win.onafterprint = () => win.close();
-      setTimeout(() => { try { win.close(); } catch { /* ya cerrada */ } }, 4000);
-    }
-  }, 500);
+    win.focus();
+    win.print();
+    win.onafterprint = () => { try { win.close(); } catch { /**/ } };
+    setTimeout(() => { try { win.close(); } catch { /**/ } }, 5000);
+  }, 600);
 }
 
 /** Escapa HTML básico para evitar XSS en contenido dinámico */

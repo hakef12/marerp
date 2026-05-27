@@ -15,6 +15,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { ExportButtons } from '../components/ExportButtons';
 import { exportToPDF, exportToExcel } from '../utils/exportUtils';
 import { RIDE } from '../components/facturacion/RIDE';
+import { printHtml, cssTermico, esc } from '../utils/printThermal';
 import { 
   FileText, 
   Search, 
@@ -651,16 +652,9 @@ export default function ConsultaFacturas() {
 
             <div className="flex justify-end gap-2 pt-4 border-t border-[#F97316]/20">
               <Button
-                onClick={() => window.print()}
-                className="bg-gradient-to-r from-[#C2410C] to-[#F97316]"
-              >
-                <Printer className="w-4 h-4 mr-2" />
-                Imprimir
-              </Button>
-              <Button
-                onClick={() => setDialogRIDE(false)}
                 variant="outline"
                 className="border-[#F97316]/20 text-gray-900"
+                onClick={() => setDialogRIDE(false)}
               >
                 Cerrar
               </Button>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { printHtml, esc } from '../utils/printThermal';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -41,66 +42,50 @@ function RIDERetencion({ retencion }: { retencion: any }) {
   const estado = retencion.estado || 'PENDIENTE';
 
   const handlePrint = () => {
-    const win = window.open('', '_blank', 'width=400,height=700');
-    if (!win) return;
-    win.document.write(`
-      <html><head><title>Retención ${retencion.numero_retencion}</title>
-      <style>
-        body { font-family: 'Courier New', monospace; font-size: 11px; width: 300px; margin: 0 auto; }
-        .c { text-align: center; }
-        .bold { font-weight: bold; }
-        .sep { border-top: 1px dashed #000; margin: 4px 0; }
-        .row { display: flex; justify-content: space-between; }
-        table { width: 100%; border-collapse: collapse; font-size: 10px; }
-        th, td { padding: 1px 2px; }
-        .total { font-size: 14px; }
-        @media print { @page { margin: 0; } }
-      </style>
-      </head><body>
-      <div class="c bold">${retencion.razon_social || ''}</div>
-      <div class="c">RUC: ${retencion.ruc || ''}</div>
-      <div class="c">${retencion.direccion_matriz || ''}</div>
+    const html = `
+      <div class="c bold" style="font-size:13px;">${esc(retencion.razon_social)}</div>
+      <div class="c sm">RUC: ${esc(retencion.ruc)}</div>
+      <div class="c sm">${esc(retencion.direccion_matriz)}</div>
       <div class="sep"></div>
-      <div class="c bold">COMPROBANTE DE RETENCIÓN</div>
-      <div class="c bold">${retencion.numero_retencion || ''}</div>
-      <div class="c">Fecha: ${retencion.fecha_emision || ''}</div>
-      <div class="c">Período: ${retencion.periodo_fiscal || ''}</div>
+      <div class="c bold" style="font-size:14px;">COMPROBANTE DE RETENCIÓN</div>
+      <div class="c bold">${esc(retencion.numero_retencion)}</div>
+      <div class="c sm">Fecha: ${esc(retencion.fecha_emision)}</div>
+      <div class="c sm">Período fiscal: ${esc(retencion.periodo_fiscal)}</div>
       <div class="sep"></div>
-      <div class="bold">SUJETO RETENIDO:</div>
-      <div>${retencion.proveedor_razon_social || ''}</div>
-      <div>RUC/ID: ${retencion.proveedor_identificacion || ''}</div>
+      <div class="bold sm">SUJETO RETENIDO:</div>
+      <div class="sm">${esc(retencion.proveedor_razon_social)}</div>
+      <div class="sm">RUC/ID: ${esc(retencion.proveedor_identificacion)}</div>
       <div class="sep"></div>
-      <div class="bold">DOC. SUSTENTO:</div>
-      <div>Tipo: ${retencion.doc_sustento_tipo === '01' ? 'Factura' : retencion.doc_sustento_tipo || ''}</div>
-      <div>N°: ${retencion.doc_sustento_numero || ''}</div>
-      <div>Fecha: ${retencion.doc_sustento_fecha || ''}</div>
+      <div class="bold sm">DOC. SUSTENTO:</div>
+      <div class="sm">Tipo: ${retencion.doc_sustento_tipo === '01' ? 'Factura' : esc(retencion.doc_sustento_tipo)}</div>
+      <div class="sm">N°: ${esc(retencion.doc_sustento_numero)}</div>
+      <div class="sm">Fecha: ${esc(retencion.doc_sustento_fecha)}</div>
       <div class="sep"></div>
-      <div class="bold">DETALLE:</div>
+      <div class="bold sm">DETALLE DE RETENCIÓN:</div>
       <table>
-        <tr><th>Imp.</th><th>Cód.</th><th>Base</th><th>%</th><th>Valor</th></tr>
+        <thead><tr><th>Imp.</th><th>Cód.</th><th>Base</th><th>%</th><th class="price">Valor</th></tr></thead>
+        <tbody>
         ${impuestos.map(imp => `
           <tr>
             <td>${imp.codigo === '1' ? 'IR' : 'IVA'}</td>
-            <td>${imp.codigo_retencion || ''}</td>
+            <td>${esc(imp.codigo_retencion)}</td>
             <td>$${Number(imp.base_imponible).toFixed(2)}</td>
             <td>${Number(imp.porcentaje).toFixed(0)}%</td>
-            <td>$${Number(imp.valor_retenido).toFixed(2)}</td>
-          </tr>
-        `).join('')}
+            <td class="price">$${Number(imp.valor_retenido).toFixed(2)}</td>
+          </tr>`).join('')}
+        </tbody>
       </table>
-      <div class="sep"></div>
-      <div class="row total"><span class="bold">TOTAL RETENIDO:</span><span class="bold">$${Number(retencion.total_retenido).toFixed(2)}</span></div>
+      <div class="sep-solid"></div>
+      <div class="row big"><span class="lbl">TOTAL RETENIDO</span><span class="val">$${Number(retencion.total_retenido).toFixed(2)}</span></div>
       <div class="sep"></div>
       <div class="c bold">${estado === 'AUTORIZADO' ? '✓ AUTORIZADO POR EL SRI' : estado === 'NO_AUTORIZADO' ? '✗ NO AUTORIZADO' : '⏱ PENDIENTE'}</div>
-      ${retencion.fecha_autorizacion ? `<div class="c">${retencion.fecha_autorizacion}</div>` : ''}
+      ${retencion.fecha_autorizacion ? `<div class="c sm">${esc(retencion.fecha_autorizacion)}</div>` : ''}
       <div class="sep"></div>
-      <div class="c">CLAVE DE ACCESO:</div>
-      <div style="word-break:break-all;font-size:8px;">${retencion.clave_acceso || ''}</div>
-      </body></html>
-    `);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 300);
+      <div class="c bold sm">CLAVE DE ACCESO:</div>
+      <div class="clave">${esc(retencion.clave_acceso)}</div>
+      <div class="feed"></div>
+    `;
+    printHtml(html, `Retención ${retencion.numero_retencion}`, 58);
   };
 
   return (

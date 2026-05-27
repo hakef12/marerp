@@ -97,8 +97,6 @@ function buildRideHtml(factura: RIDEProps['factura'], ancho: AnchoPapel): string
        </div>`;
 
   return `
-    <style>${cssTermico(ancho)}</style>
-
     <!-- EMISOR -->
     <div class="c bold" style="font-size:${ancho===58?'12px':'14px'};">${esc(factura.razon_social)}</div>
     ${factura.nombre_comercial && factura.nombre_comercial !== factura.razon_social

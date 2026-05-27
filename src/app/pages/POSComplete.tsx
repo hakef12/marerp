@@ -97,7 +97,6 @@ function imprimirComanda(comanda: {
   `).join('');
 
   const html = `
-    <style>${cssTermico(ancho)}</style>
     <div class="huge" style="border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:5px;">
       ★ COMANDA ★
     </div>

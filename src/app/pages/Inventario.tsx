@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { printHtml } from '../utils/printThermal';
 import { useAuth } from '../context/AuthContext';
 import { useBodega } from '../context/BodegaContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -410,12 +411,7 @@ export default function Inventario() {
       <div class="footer">Generado por M.A.R Cocina Local — ${new Date().toLocaleString('es-EC')}</div>
       </body></html>`;
 
-    const win = window.open('', '_blank');
-    if (!win) { toast.error('Permite ventanas emergentes para imprimir'); return; }
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 500);
+    printHtml(html, `Compra ${compra.numero_factura || compra.id}`, 80);
   };
 
   const fetchCompras = async (page = comprasPage, fi = comprasFi, ff = comprasFf) => {
