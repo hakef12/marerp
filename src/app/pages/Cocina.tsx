@@ -90,7 +90,7 @@ export default function Cocina() {
     try {
       const { projectId, publicAnonKey } = await import('/utils/supabase/info');
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/productos`,
+        `https://${projectId}.supabase.co/functions/v1/server/pos/productos`,
         { 
           headers: { 
             'Authorization': `Bearer ${publicAnonKey}`,
@@ -476,6 +476,7 @@ export default function Cocina() {
           getElapsedTime={getElapsedTime}
           getTimeColor={getTimeColor}
           cambiarEstado={cambiarEstado}
+          onRefresh={() => fetchComandas(true)}
         />
       )}
 
@@ -590,15 +591,18 @@ export default function Cocina() {
                       </p>
                       <div className="space-y-1 max-h-32 overflow-y-auto">
                         {(recipe.ingredientes || recipe.receta_ingredientes)?.map((ing: any, idx: number) => {
-                          const idBuscado = String(ing.insumo_id || ing.producto_id || ing.insumo?.id || ing.productos?.id);
-                          const prodCatalogo = inventoryProducts.find(p => String(p.id) === idBuscado);
-                          
-                          const nombreTraducido = 
-                            ing.insumo?.nombre || 
-                            ing.productos?.nombre || 
-                            ing.nombre_producto || 
-                            prodCatalogo?.nombre || 
-                            'Ingrediente no encontrado';
+                          const rawId = ing.insumo_id || ing.producto_id || ing.insumo?.id || ing.productos?.id;
+                          const prodCatalogo = rawId
+                            ? inventoryProducts.find((p: any) => p.id === rawId || String(p.id).toLowerCase() === String(rawId).toLowerCase())
+                            : null;
+
+                          const nombreTraducido =
+                            ing.insumo?.nombre ||
+                            ing.productos?.nombre ||
+                            ing.nombre_producto ||
+                            ing.nombre ||
+                            prodCatalogo?.nombre ||
+                            (rawId ? `(${String(rawId).slice(0,8)})` : 'Ingrediente');
 
                           return (
                             <div key={idx} className="text-sm text-gray-600 flex justify-between bg-gray-50 p-1 px-2 rounded mb-1">
@@ -723,9 +727,13 @@ export default function Cocina() {
                                 </thead>
                                 <tbody>
                                   {ingredientes.map((ing: any, i: number) => {
-                                    const idBuscado = String(ing.insumo_id || ing.producto_id || ing.insumo?.id || ing.productos?.id);
-                                    const prodCatalogo = inventoryProducts.find((p: any) => String(p.id) === idBuscado);
-                                    const nombre = ing.insumo?.nombre || ing.productos?.nombre || ing.nombre_producto || prodCatalogo?.nombre || 'Ingrediente';
+                                    // Buscar por insumo_id/producto_id con comparación robusta
+                                    const rawId = ing.insumo_id || ing.producto_id || ing.insumo?.id || ing.productos?.id;
+                                    const prodCatalogo = rawId
+                                      ? inventoryProducts.find((p: any) => p.id === rawId || String(p.id).toLowerCase() === String(rawId).toLowerCase())
+                                      : null;
+                                    const nombre = ing.insumo?.nombre || ing.productos?.nombre || ing.nombre_producto || ing.nombre || prodCatalogo?.nombre
+                                      || (rawId ? `(${String(rawId).slice(0,8)})` : `Ing. ${i + 1}`);
                                     const cantBase = Number(ing.cantidad) || 0;
                                     const cantEscalada = (cantBase * factor).toFixed(2);
                                     return (
