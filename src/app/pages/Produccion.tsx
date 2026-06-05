@@ -362,7 +362,7 @@ export default function Produccion() {
         body: ingredientes.map((ing: any) => {
           const cantidadEscalada = (ing.cantidad * factor).toFixed(2);
           return [
-            ing.nombre_producto || ing.insumo?.nombre || ing.productos?.nombre || 'Ingrediente',
+            ing.nombre_producto || ing.insumo?.nombre || ing.productos?.nombre || ing.nombre || ing.descripcion || productos.find((p: any) => p.id === ing.insumo_id)?.nombre || 'Ingrediente',
             ing.cantidad,
             ing.unidad_medida || '',
             cantidadEscalada,
@@ -1442,7 +1442,9 @@ export default function Produccion() {
                           </thead>
                           <tbody>
                             {ingredientes.map((ing: any, idx: number) => {
-                              const nombre = ing.nombre_producto || ing.insumo?.nombre || ing.productos?.nombre || `Ingrediente ${idx + 1}`;
+                              // Resolver nombre: primero desde datos enriquecidos, luego desde productos cargados en frontend
+                              const prodLocal = ing.insumo_id ? productos.find((p: any) => p.id === ing.insumo_id) : null;
+                              const nombre = ing.nombre_producto || ing.insumo?.nombre || ing.productos?.nombre || ing.nombre || ing.descripcion || prodLocal?.nombre || (ing.insumo_id ? `(${ing.insumo_id.slice(0,8)})` : `Ingrediente ${idx + 1}`);
                               const cantBase = Number(ing.cantidad) || 0;
                               const cantEscalada = (cantBase * factor).toFixed(2);
                               return (

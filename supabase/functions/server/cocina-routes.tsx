@@ -2,6 +2,8 @@
 // RUTAS: MÓDULO DE COCINA - USANDO KV STORE
 // =====================================================
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 import {
   inicializarDatosDemo,
   obtenerProductos,
@@ -17,25 +19,88 @@ import {
   guardarMovimiento
 } from "./kv-helpers.tsx";
 
-// Calcula el costo por porción de una receta y lo graba como precio_compra del producto final
+// ─── Resolución recursiva de costos de ingredientes ───────────────────────────
+// Soporta ingredientes de tipo 'producto' (inventario) o 'subreceta' (preparación intermedia).
+// El parámetro `visited` protege contra referencias circulares (subreceta A → subreceta A).
+function resolverCostoIngrediente(
+  ing: any,
+  productos: any[],
+  todasRecetas: any[],
+  visited: Set<string> = new Set()
+): number {
+  const cantidad = parseFloat(ing.cantidad) || 0;
+  if (cantidad <= 0) return 0;
+
+  if (ing.tipo_insumo === 'subreceta' && ing.insumo_id) {
+    if (visited.has(ing.insumo_id)) {
+      console.warn(`[subreceta] ⚠️ Referencia circular detectada en sub-receta: ${ing.insumo_id}`);
+      return 0;
+    }
+    const subreceta = todasRecetas.find((r: any) => r.id === ing.insumo_id && r.es_subreceta);
+    if (!subreceta) return (parseFloat(ing.costo_unitario) || 0) * cantidad;
+
+    // Calcular costo total de la sub-receta resolviendo sus propios ingredientes
+    const visitedChild = new Set(visited);
+    visitedChild.add(ing.insumo_id);
+    const costoTotalSub = (subreceta.ingredientes || []).reduce((sum: number, subIng: any) =>
+      sum + resolverCostoIngrediente(subIng, productos, todasRecetas, visitedChild), 0);
+    const porcionesSub = parseInt(subreceta.porciones) || 1;
+    const costoPorUnidad = costoTotalSub / porcionesSub;
+    return costoPorUnidad * cantidad;
+  }
+
+  // Ingrediente normal: buscar en productos del inventario
+  const prod = productos.find((p: any) => p.id === ing.insumo_id);
+  const costoUnit = prod
+    ? (parseFloat(prod.precio_compra)  ||
+       parseFloat(prod.costo_receta)   ||
+       parseFloat(prod.costo_unitario) ||
+       parseFloat(prod.costo_promedio) || 0)
+    : (parseFloat(ing.costo_unitario) || 0);
+  return costoUnit * cantidad;
+}
+
+// ─── Actualizar costo del producto/subreceta ligado a la receta ───────────────
+// Para recetas finales: actualiza precio_compra del producto final
+// Para sub-recetas: actualiza costo_por_unidad en la propia receta (no necesitan producto)
 async function actualizarCostoProductoDesdeReceta(empresaId: string, recetaBody: any) {
   try {
-    const { producto_id, porciones, ingredientes } = recetaBody;
-    if (!producto_id || !porciones || !Array.isArray(ingredientes)) return;
-    const costoTotal = ingredientes.reduce((sum: number, ing: any) =>
-      sum + (parseFloat(ing.costo_total) || (parseFloat(ing.cantidad) * parseFloat(ing.costo_unitario)) || 0), 0);
-    const costoPorPorcion = costoTotal / (parseInt(porciones) || 1);
-    if (costoPorPorcion <= 0) return;
+    const { producto_id, porciones, ingredientes, es_subreceta, id: recetaId } = recetaBody;
+    if (!Array.isArray(ingredientes) || ingredientes.length === 0) return;
+
     const productos = await obtenerProductos(empresaId);
-    const prod = productos.find((p: any) => p.id === producto_id);
-    if (prod) {
-      await guardarProducto(empresaId, {
-        ...prod,
-        precio_compra: parseFloat(costoPorPorcion.toFixed(4)),
-        costo_receta: parseFloat(costoPorPorcion.toFixed(4)),
-      });
+    const todasRecetas = await obtenerRecetas(empresaId);
+
+    const costoTotal = ingredientes.reduce((sum: number, ing: any) =>
+      sum + resolverCostoIngrediente(ing, productos, todasRecetas), 0);
+    const costoPorUnidad = costoTotal / (parseInt(porciones) || 1);
+    if (costoPorUnidad <= 0) return;
+
+    if (es_subreceta) {
+      // Sub-receta: guardar el costo_por_unidad en la propia receta
+      if (recetaId) {
+        const recetaActual = todasRecetas.find((r: any) => r.id === recetaId);
+        if (recetaActual) {
+          await guardarReceta(empresaId, {
+            ...recetaActual,
+            costo_por_unidad: parseFloat(costoPorUnidad.toFixed(6)),
+          });
+        }
+      }
+    } else if (producto_id) {
+      // Receta final: actualizar precio_compra del producto vinculado
+      const prod = productos.find((p: any) => p.id === producto_id);
+      if (prod) {
+        await guardarProducto(empresaId, {
+          ...prod,
+          precio_compra: parseFloat(costoPorUnidad.toFixed(4)),
+          costo_receta:  parseFloat(costoPorUnidad.toFixed(4)),
+        });
+      }
     }
-  } catch (_) { /* no interrumpir el flujo */ }
+  } catch (e: any) {
+    console.error('[actualizarCosto] Error:', e.message);
+  }
 }
 
 export function setupCocinaRoutes(app: any, authMiddleware: any) {
@@ -93,13 +158,27 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
       const body = await c.req.json();
       console.log('🍳 [POST /cocina/comandas] Creando comanda:', body);
 
+      // Solo incluir columnas que existen en la tabla `comandas`
+      const ahora = new Date().toISOString();
       const comandaData = {
-        ...body,
         empresa_id: auth.empresaId,
-        usuario_id: auth.userId,
-        estado: body.estado || 'pendiente',
-        fecha_creacion: new Date().toISOString(),
-        fecha_recepcion: new Date().toISOString()
+        numero_orden: body.numero_orden,
+        mesa:         body.mesa        ?? null,
+        tipo_servicio: body.tipo_servicio || 'mesa',
+        estado:       body.estado       || 'pendiente',
+        notas:        body.notas        ?? null,
+        mesero_id:    body.mesero_id    ?? null,
+        cajero_id:    body.cajero_id    ?? null,
+        items:        body.items        || [],
+        // Guardar campos extra en metadata para no perder info
+        metadata: {
+          ...(body.metadata || {}),
+          cliente:        body.cliente   ?? null,
+          prioridad:      body.prioridad ?? null,
+          usuario_id:     auth.userId,
+          fecha_creacion: ahora,
+          fecha_recepcion: ahora,
+        },
       };
 
       const comanda = await guardarComanda(auth.empresaId, comandaData);
@@ -118,15 +197,30 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
 
     try {
       const body = await c.req.json();
-      const updates: any = { ...body };
 
-      if (body.estado === 'en_preparacion' && !updates.fecha_inicio) {
-        updates.fecha_inicio = new Date().toISOString();
-      }
-      
-      if (body.estado === 'lista' && !updates.fecha_completado) {
-        updates.fecha_completado = new Date().toISOString();
-      }
+      // Construir updates con columnas válidas únicamente
+      const updates: any = {};
+      if (body.estado        !== undefined) updates.estado        = body.estado;
+      if (body.notas         !== undefined) updates.notas         = body.notas;
+      if (body.items         !== undefined) updates.items         = body.items;
+      if (body.mesero_id     !== undefined) updates.mesero_id     = body.mesero_id;
+      if (body.cajero_id     !== undefined) updates.cajero_id     = body.cajero_id;
+      if (body.mesa          !== undefined) updates.mesa          = body.mesa;
+      if (body.tipo_servicio !== undefined) updates.tipo_servicio = body.tipo_servicio;
+
+      // Timestamps de estado — solo si la columna metadata existe en la tabla.
+      // Guardamos en metadata para no requerir columnas extra.
+      // Si la columna no existe (tablas pre-migración 013), se omite silenciosamente.
+      try {
+        const ahora = new Date().toISOString();
+        const metaExtra: Record<string, string> = {};
+        if (body.estado === 'en_preparacion') metaExtra.fecha_inicio     = ahora;
+        if (body.estado === 'lista')          metaExtra.fecha_completado = ahora;
+        if (body.estado === 'entregada')      metaExtra.fecha_entrega    = ahora;
+        if (Object.keys(metaExtra).length > 0) {
+          updates.metadata = { ...(body.metadata || {}), ...metaExtra };
+        }
+      } catch { /* silencioso */ }
 
       const comanda = await actualizarComanda(auth.empresaId, comandaId, updates);
 
@@ -149,74 +243,150 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
   app.get("/server/cocina/recetas", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
 
+    let paso = 'inicio';
     try {
+      paso = 'inicializar';
       await inicializarDatosDemo(auth.empresaId);
-      
+
+      paso = 'obtenerRecetas';
       const recetas = await obtenerRecetas(auth.empresaId);
+      console.log(`[recetas] empresaId=${auth.empresaId} | total=${recetas?.length}`);
+
+      paso = 'obtenerProductos';
       const productos = await obtenerProductos(auth.empresaId);
 
-      // Enriquecer recetas con información de productos
-      const recetasEnriquecidas = recetas.map((receta: any) => {
+      // ── Obtener nombres de productos directamente desde SQL (bypass KV cache)
+      paso = 'queryProductosSQL';
+      const productosDirectoMap: Record<string, any> = {};
+      try {
+        const idsSet = new Set<string>();
+        for (const r of recetas) {
+          for (const ing of (r.ingredientes || [])) {
+            if (ing.insumo_id) idsSet.add(String(ing.insumo_id));
+          }
+        }
+        const ids = Array.from(idsSet);
+        if (ids.length > 0) {
+          const dbDirect = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+          const { data: prodsSQL } = await dbDirect.from('productos')
+            .select('id, nombre, unidad_medida, precio_costo, precio_compra')
+            .eq('empresa_id', auth.empresaId)
+            .in('id', ids);
+          for (const p of (prodsSQL || [])) productosDirectoMap[p.id] = p;
+        }
+      } catch (e: any) {
+        console.warn('[recetas] No se pudo cargar productos directos:', e?.message);
+        // No fatal — continuamos sin nombres directos
+      }
+
+      // Enriquecer recetas con resolución recursiva de costos (soporta sub-recetas)
+      const enriquecerReceta = (receta: any) => {
         const producto = productos.find((p: any) => p.id === receta.producto_id);
-        
-        const ingredientes = receta.ingredientes?.map((ing: any) => {
-          const ingredienteProducto = productos.find((p: any) => p.id === ing.insumo_id);
-          // Costo real del insumo: siempre priorizar el precio actual del producto en BD
-          const costoProducto = ingredienteProducto
-            ? (parseFloat(ingredienteProducto.precio_compra)  ||
-               parseFloat(ingredienteProducto.costo_receta)   ||
-               parseFloat(ingredienteProducto.costo_unitario) ||
-               parseFloat(ingredienteProducto.costo_promedio) || 0)
+
+        const ingredientesEnriquecidos = (receta.ingredientes || []).map((ing: any) => {
+          const cantidad = parseFloat(ing.cantidad) || 0;
+
+          if (ing.tipo_insumo === 'subreceta' && ing.insumo_id) {
+            const subr = recetas.find((r: any) => r.id === ing.insumo_id && r.es_subreceta);
+            if (subr) {
+              const costoUnit = resolverCostoIngrediente(ing, productos, recetas);
+              const costoUnitPorcion = costoUnit / (cantidad || 1);
+              return {
+                ...ing,
+                nombre_producto: subr.nombre,
+                costo_unitario: parseFloat(costoUnitPorcion.toFixed(6)),
+                costo_total: parseFloat(costoUnit.toFixed(4)),
+                insumo: null,
+                subreceta: { id: subr.id, nombre: subr.nombre, unidad_rendimiento: subr.unidad_rendimiento || 'porcion' },
+              };
+            }
+          }
+
+          // Buscar en SQL directo primero, luego en cache KV
+          const prod = productosDirectoMap[ing.insumo_id]
+            || productos.find((p: any) => p.id === ing.insumo_id);
+
+          const costoUnit = prod
+            ? (parseFloat(prod.precio_compra) || parseFloat(prod.precio_costo) ||
+               parseFloat(prod.costo_receta)  || parseFloat(prod.costo_unitario) || 0)
             : (parseFloat(ing.costo_unitario) || 0);
-          const costoUnit = costoProducto || parseFloat(ing.costo_unitario) || 0;
-          const cantidad   = parseFloat(ing.cantidad) || 0;
+
+          const nombreProducto = prod?.nombre || ing.nombre_producto || ing.nombre || '';
+
           return {
             ...ing,
+            nombre_producto: nombreProducto,
             costo_unitario: costoUnit,
             costo_total: costoUnit * cantidad,
-            insumo: ingredienteProducto ? {
-              id: ingredienteProducto.id,
-              codigo: ingredienteProducto.codigo,
-              nombre: ingredienteProducto.nombre,
-              unidad_medida: ingredienteProducto.unidad_medida,
-              costo_unitario: costoUnit
-            } : null
+            insumo: prod ? {
+              id: prod.id, nombre: prod.nombre,
+              unidad_medida: prod.unidad_medida || ing.unidad_medida,
+              costo_unitario: costoUnit,
+            } : null,
           };
-        }) || [];
+        });
 
-        // Recalcular costo por porción dinámicamente desde precios actuales
-        const costoTotalDinamico = ingredientes.reduce(
-          (sum: number, ing: any) => sum + (parseFloat(ing.costo_total) || 0), 0
-        );
+        const costoTotalDinamico = ingredientesEnriquecidos.reduce(
+          (sum: number, ing: any) => sum + (parseFloat(ing.costo_total) || 0), 0);
         const porciones = parseInt(receta.porciones) || 1;
-        const costoPorPorcionDinamico = costoTotalDinamico / porciones;
+        const costoPorUnidad = costoTotalDinamico / porciones;
+
+        if (receta.es_subreceta) {
+          // Sub-receta: no tiene precio de venta ni margen
+          return {
+            ...receta,
+            costo_total: parseFloat(costoTotalDinamico.toFixed(4)),
+            costo_por_porcion: parseFloat(costoPorUnidad.toFixed(6)),
+            costo_por_unidad: parseFloat(costoPorUnidad.toFixed(6)),
+            margen_bruto: null,
+            precio_sugerido: null,
+            producto: null,
+            ingredientes: ingredientesEnriquecidos,
+          };
+        }
+
+        // Receta final: calcular margen respecto al precio de venta
         const precioPorPorcion = parseFloat(receta.precio_sugerido) || parseFloat(receta.precio_venta) || parseFloat(producto?.precio) || 0;
         const margenDinamico = precioPorPorcion > 0
-          ? ((precioPorPorcion - costoPorPorcionDinamico) / precioPorPorcion) * 100
-          : 0;
+          ? ((precioPorPorcion - costoPorUnidad) / precioPorPorcion) * 100 : 0;
 
         return {
           ...receta,
-          // Sobreescribir con valores calculados al vuelo
-          costo_por_porcion: parseFloat(costoPorPorcionDinamico.toFixed(4)),
+          costo_por_porcion: parseFloat(costoPorUnidad.toFixed(4)),
+          costo_por_unidad: parseFloat(costoPorUnidad.toFixed(4)),
           costo_total: parseFloat(costoTotalDinamico.toFixed(4)),
           margen_bruto: parseFloat(margenDinamico.toFixed(2)),
-          // Asegurar que precio_sugerido siempre esté presente
           precio_sugerido: precioPorPorcion,
-          producto: producto ? {
-            id: producto.id,
-            codigo: producto.codigo,
-            nombre: producto.nombre,
-            precio: producto.precio
-          } : null,
-          ingredientes
+          producto: producto ? { id: producto.id, codigo: producto.codigo, nombre: producto.nombre, precio: producto.precio } : null,
+          ingredientes: ingredientesEnriquecidos,
         };
-      });
+      };
 
-      return c.json({ recetas: recetasEnriquecidas });
+      paso = 'enriquecer';
+      const recetasEnriquecidas = recetas.map(receta => {
+        try { return enriquecerReceta(receta); }
+        catch (e: any) {
+          console.warn('[recetas] Error enriqueciendo receta:', receta?.nombre, e?.message);
+          return receta; // devolver receta sin enriquecer si falla
+        }
+      });
+      const soloSubrecetas = recetasEnriquecidas.filter((r: any) => r.es_subreceta);
+      const soloRecetasFinales = recetasEnriquecidas.filter((r: any) => !r.es_subreceta);
+
+      return c.json({ recetas: recetasEnriquecidas, subrecetas: soloSubrecetas, recetas_finales: soloRecetasFinales });
     } catch (error: any) {
-      console.error('❌ Error obteniendo recetas:', error);
-      return c.json({ error: 'Error al obtener recetas', details: error.message }, 500);
+      console.error(`❌ Error en paso "${paso}":`, error?.message, error?.code);
+      // Si hay recetas pero algo falló en el enriquecimiento, intentar devolver recetas crudas
+      if (paso !== 'obtenerRecetas' && paso !== 'inicializar') {
+        try {
+          const recetasCrudas = await obtenerRecetas(auth.empresaId);
+          if (recetasCrudas?.length > 0) {
+            console.log('[recetas] Devolviendo recetas sin enriquecer como fallback');
+            return c.json({ recetas: recetasCrudas, subrecetas: [], recetas_finales: recetasCrudas, _fallback: true });
+          }
+        } catch { /* silencioso */ }
+      }
+      return c.json({ error: 'Error al obtener recetas', paso, details: error?.message, code: error?.code }, 500);
     }
   });
 
@@ -240,20 +410,58 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
     }
   });
 
-  // Crear receta
-  app.post("/server/cocina/recetas", authMiddleware, async (c: any) => {
+  // ── GET /server/cocina/subrecetas — solo sub-recetas (preparaciones intermedias) ──
+  app.get("/server/cocina/subrecetas", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
+      const recetas = await obtenerRecetas(auth.empresaId);
+      const productos = await obtenerProductos(auth.empresaId);
+      const subrecetas = recetas
+        .filter((r: any) => r.es_subreceta === true)
+        .map((sr: any) => {
+          const costoTotal = (sr.ingredientes || []).reduce((sum: number, ing: any) =>
+            sum + resolverCostoIngrediente(ing, productos, recetas), 0);
+          const porciones = parseInt(sr.porciones) || 1;
+          const costoPorUnidad = costoTotal / porciones;
+          return {
+            id: sr.id,
+            nombre: sr.nombre,
+            descripcion: sr.descripcion || '',
+            porciones: sr.porciones,
+            unidad_rendimiento: sr.unidad_rendimiento || 'porcion',
+            costo_total: parseFloat(costoTotal.toFixed(4)),
+            costo_por_unidad: parseFloat(costoPorUnidad.toFixed(6)),
+            ingredientes: sr.ingredientes || [],
+          };
+        });
+      return c.json({ subrecetas });
+    } catch (error: any) {
+      return c.json({ error: 'Error al obtener sub-recetas', details: error.message }, 500);
+    }
+  });
+
+  // Crear receta (o sub-receta)
+  app.post("/server/cocina/recetas", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    let paso = 'init';
+    try {
+      paso = 'parse_body';
       const body = await c.req.json();
+      console.log('[recetas POST] body keys:', Object.keys(body || {}));
+      console.log('[recetas POST] nombre:', body?.nombre, '| es_subreceta:', body?.es_subreceta, '| producto_id:', body?.producto_id);
+
+      paso = 'guardar_receta';
       const recetaData = { ...body, empresa_id: auth.empresaId };
       const receta = await guardarReceta(auth.empresaId, recetaData);
+      console.log('[recetas POST] receta guardada id:', receta?.id);
 
-      // Actualizar precio_compra del producto final con el costo por porción
-      await actualizarCostoProductoDesdeReceta(auth.empresaId, body);
+      paso = 'actualizar_costo';
+      await actualizarCostoProductoDesdeReceta(auth.empresaId, { ...body, id: receta.id });
 
       return c.json({ receta }, 201);
     } catch (error: any) {
-      return c.json({ error: 'Error al crear receta', details: error.message }, 500);
+      console.error(`[recetas POST] Error en paso "${paso}":`, error?.message, error?.code);
+      return c.json({ error: 'Error al crear receta', details: error.message, paso, code: error?.code }, 500);
     }
   });
 
@@ -267,8 +475,8 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
       const receta = await guardarReceta(auth.empresaId, recetaData);
       if (!receta) return c.json({ error: 'Receta no encontrada' }, 404);
 
-      // Actualizar precio_compra del producto final con el costo por porción
-      await actualizarCostoProductoDesdeReceta(auth.empresaId, body);
+      // Actualizar precio_compra/costo_por_unidad según tipo de receta
+      await actualizarCostoProductoDesdeReceta(auth.empresaId, { ...body, id: recetaId });
 
       return c.json({ receta });
     } catch (error: any) {
