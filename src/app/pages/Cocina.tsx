@@ -89,18 +89,26 @@ export default function Cocina() {
   const fetchInventoryProducts = useCallback(async () => {
     try {
       const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+      // Cargar TODOS los productos (inventario completo, no solo POS) para resolver nombres de ingredientes
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/pos/productos`,
-        { 
-          headers: { 
+        `https://${projectId}.supabase.co/functions/v1/server/productos`,
+        {
+          headers: {
             'Authorization': `Bearer ${publicAnonKey}`,
             'X-User-Token': token || ''
-          } 
+          }
         }
       );
       if (response.ok) {
         const data = await response.json();
         setInventoryProducts(data.productos || []);
+      } else {
+        // Fallback a pos/productos si el endpoint general falla
+        const r2 = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/pos/productos`,
+          { headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '' } }
+        );
+        if (r2.ok) { const d2 = await r2.json(); setInventoryProducts(d2.productos || []); }
       }
     } catch (error) {
       console.error('Error cargando productos para traducción:', error);
@@ -659,7 +667,11 @@ export default function Cocina() {
 
           <div className="grid grid-cols-1 gap-4">
             {productionOrders.map((order, idx) => {
-              const receta = order.receta || order.recetas || recipes.find((r: any) => r.id === order.receta_id) || null;
+              // Priorizar el state "recipes" (enriquecido desde backend) sobre el dato embebido en la orden
+              const recetaId = order.receta_id || order.receta?.id || order.recetas?.id;
+              const receta = recipes.find((r: any) => r.id === recetaId)
+                || recipes.find((r: any) => (r.nombre || '').toLowerCase() === (order.producto_nombre || order.receta?.nombre || '').toLowerCase())
+                || order.receta || order.recetas || null;
               const recetaNombre = receta?.nombre || 'Receta N/A';
               const ingredientes = receta ? (receta.ingredientes || receta.receta_ingredientes || []) : [];
               const porciones = receta?.porciones || 1;
