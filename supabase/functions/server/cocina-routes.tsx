@@ -611,10 +611,34 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
       const ordenes = await obtenerOrdenesProduccion(auth.empresaId);
       const recetas = await obtenerRecetas(auth.empresaId);
 
-      const ordenesEnriquecidas = ordenes.map((o: any) => ({
-        ...o,
-        receta: recetas.find((r: any) => r.id === o.receta_id) || { nombre: 'Receta no encontrada' }
-      }));
+      // ── Cargar nombres de productos para enriquecer ingredientes ────────────
+      let productosMap: Record<string, any> = {};
+      try {
+        const dbSvc = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+        const { data: prods } = await dbSvc.from('productos')
+          .select('id, nombre, unidad_medida, precio_compra, precio_costo')
+          .eq('empresa_id', auth.empresaId);
+        for (const p of (prods || [])) productosMap[p.id] = p;
+      } catch (e: any) {
+        console.warn('[ordenes] No se pudo cargar mapa de productos:', e?.message);
+      }
+
+      // ── Enriquecer ingredientes con nombres de productos ─────────────────────
+      const enriquecerIngredientes = (ingredientes: any[]) =>
+        (ingredientes || []).map((ing: any) => {
+          if (ing.nombre_producto) return ing; // ya tiene nombre
+          const prod = productosMap[ing.insumo_id] || productosMap[ing.producto_id];
+          return prod ? { ...ing, nombre_producto: prod.nombre, insumo: { id: prod.id, nombre: prod.nombre, unidad_medida: prod.unidad_medida } } : ing;
+        });
+
+      const ordenesEnriquecidas = ordenes.map((o: any) => {
+        const recetaBase = recetas.find((r: any) => r.id === o.receta_id) || { nombre: 'Receta no encontrada' };
+        const recetaEnriquecida = {
+          ...recetaBase,
+          ingredientes: enriquecerIngredientes(recetaBase.ingredientes || recetaBase.receta_ingredientes || []),
+        };
+        return { ...o, receta: recetaEnriquecida };
+      });
 
       ordenesEnriquecidas.sort((a: any, b: any) =>
         new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
