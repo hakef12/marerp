@@ -86,7 +86,7 @@ export default function Caja() {
   const [fMontoMov, setFMontoMov] = useState('');
   const [fDescMov, setFDescMov] = useState('');
 
-  // Ventas del día + anulación
+  // Ventas de la caja abierta + anulación
   const [ventas, setVentas] = useState<any[]>([]);
   const [ventasLoading, setVentasLoading] = useState(false);
   const [modalAnular, setModalAnular] = useState(false);
@@ -128,27 +128,34 @@ export default function Caja() {
   }, [token, sesion, bodegaActiva]);
 
   const fetchVentas = useCallback(async () => {
-    if (!token) return;
+    if (!token || !sesion) return;
     setVentasLoading(true);
     try {
-      // Fecha "de hoy" en horario de Ecuador (UTC-5, sin horario de verano).
-      // OJO: new Date().toISOString() devuelve la fecha en UTC; entre las 19:00 y
-      // 23:59 hora Ecuador ya es "mañana" en UTC, lo que hacía que se consultara
-      // un día que aún no inicia localmente y se perdieran las ventas del día actual.
-      const hoy = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().split('T')[0];
+      // Mostramos las ventas de la SESIÓN DE CAJA ABIERTA (desde su apertura
+      // hasta ahora), no solo las del día calendario — así el cajero ve
+      // exactamente lo que respalda el efectivo/tarjetas de su turno actual,
+      // incluso si la caja se abrió un día y sigue abierta al siguiente.
+      const offsetEc = 5 * 60 * 60 * 1000; // Ecuador = UTC-5 (sin horario de verano)
+      const aperturaTs = new Date(sesion.fecha_apertura).getTime();
+      const fechaInicio = new Date(aperturaTs - offsetEc).toISOString().split('T')[0];
+      const fechaFin    = new Date(Date.now() - offsetEc).toISOString().split('T')[0];
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/pos/ventas?fecha_inicio=${hoy}&fecha_fin=${hoy}&limit=100`,
+        `https://${projectId}.supabase.co/functions/v1/server/pos/ventas?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}&limit=200`,
         { headers: apiH(token) }
       );
       if (res.ok) {
         const data = await res.json();
-        setVentas((data.ventas || []).sort((a: any, b: any) =>
+        const ventasSesion = (data.ventas || []).filter((v: any) => {
+          const t = new Date(v.created_at || v.fecha).getTime();
+          return !isNaN(t) && t >= aperturaTs;
+        });
+        setVentas(ventasSesion.sort((a: any, b: any) =>
           new Date(b.created_at || b.fecha).getTime() - new Date(a.created_at || a.fecha).getTime()
         ));
       }
     } catch { /* silencioso */ }
     finally { setVentasLoading(false); }
-  }, [token]);
+  }, [token, sesion]);
 
   const handleAnularVenta = async () => {
     if (!motivoAnulacion.trim()) { toast.error('Ingresa el motivo de anulación'); return; }
@@ -374,7 +381,7 @@ export default function Caja() {
             {[
               { id: 'principal', label: 'Resumen' },
               { id: 'movimientos', label: `Movimientos (${movimientos.length})` },
-              { id: 'ventas', label: 'Ventas del día' },
+              { id: 'ventas', label: 'Ventas de esta caja' },
               { id: 'arqueo', label: 'Arqueo' },
               { id: 'historial', label: 'Historial' },
             ].map(t => (
@@ -535,12 +542,12 @@ export default function Caja() {
             </div>
           )}
 
-          {/* ── Tab: Ventas del día ──────────────────────── */}
+          {/* ── Tab: Ventas de la caja abierta ──────────────────────── */}
           {tab === 'ventas' && (
             <Card className="bg-white border-[#F97316]/10">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-gray-900 text-base flex items-center gap-2">
-                  <Receipt className="w-4 h-4 text-[#F97316]" /> Ventas del día
+                  <Receipt className="w-4 h-4 text-[#F97316]" /> Ventas de la caja abierta
                 </CardTitle>
                 <button onClick={fetchVentas} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600" title="Refrescar">
                   <RefreshCw className={`w-4 h-4 ${ventasLoading ? 'animate-spin' : ''}`} />
@@ -550,7 +557,7 @@ export default function Caja() {
                 {ventasLoading ? (
                   <div className="text-center py-8 text-gray-600 text-sm">Cargando ventas...</div>
                 ) : ventas.length === 0 ? (
-                  <div className="text-center py-8 text-gray-600 text-sm">Sin ventas registradas hoy</div>
+                  <div className="text-center py-8 text-gray-600 text-sm">Sin ventas registradas en esta sesión de caja</div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
