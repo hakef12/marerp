@@ -142,17 +142,22 @@ const TIPO_LABELS: Record<string, string> = {
   ingreso: 'Ingreso', costo: 'Costo', gasto: 'Gasto',
 };
 
-type TabType = 'dashboard' | 'asientos' | 'catalogo' | 'mayor' | 'balance' | 'resultados' | 'flujo' | 'presupuesto';
+type TabType = 'dashboard' | 'asientos' | 'catalogo' | 'mayor' | 'balance' | 'resultados' | 'flujo' | 'presupuesto' | 'activos' | 'formularios' | 'conciliacion' | 'cierres' | 'cxc';
 
 const TABS: { id: TabType; label: string; icon: any }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: Activity },
-  { id: 'asientos', label: 'Asientos', icon: FileText },
-  { id: 'catalogo', label: 'Catálogo', icon: BookOpen },
-  { id: 'mayor', label: 'Libro Mayor', icon: Layers },
-  { id: 'balance', label: 'Balance General', icon: DollarSign },
-  { id: 'resultados', label: 'Estado de Resultados', icon: TrendingUp },
-  { id: 'flujo', label: 'Flujo de Efectivo', icon: Wallet },
-  { id: 'presupuesto', label: 'Presupuesto', icon: BarChart2 },
+  { id: 'dashboard',    label: 'Dashboard',           icon: Activity },
+  { id: 'asientos',     label: 'Asientos',             icon: FileText },
+  { id: 'catalogo',     label: 'Catálogo',             icon: BookOpen },
+  { id: 'mayor',        label: 'Libro Mayor',          icon: Layers },
+  { id: 'balance',      label: 'Balance General',      icon: DollarSign },
+  { id: 'resultados',   label: 'Estado Resultados',    icon: TrendingUp },
+  { id: 'flujo',        label: 'Flujo Efectivo',       icon: Wallet },
+  { id: 'presupuesto',  label: 'Presupuesto',          icon: BarChart2 },
+  { id: 'activos',      label: 'Activos Fijos',        icon: Calculator },
+  { id: 'formularios',  label: 'Form. 104 / 103',      icon: CreditCard },
+  { id: 'conciliacion', label: 'Conciliación Bancaria', icon: CheckCircle },
+  { id: 'cierres',      label: 'Cierres de Período',   icon: AlertCircle },
+  { id: 'cxc',          label: 'Cuentas x Cobrar',     icon: TrendingUp },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -190,6 +195,61 @@ export default function Contabilidad() {
   const [flujoFf, setFlujoFf] = useState(hoy.toISOString().split('T')[0]);
   const [mayorCuentaId, setMayorCuentaId] = useState('');
   const [presAnio, setPresAnio] = useState(hoy.getFullYear());
+
+  // ── Activos Fijos ────────────────────────────────────────────────────────
+  const [activos, setActivos]                   = useState<any[]>([]);
+  const [showActivoModal, setShowActivoModal]   = useState(false);
+  const [editActivo, setEditActivo]             = useState<any>(null);
+  const [depAnio, setDepAnio]                   = useState(hoy.getFullYear());
+  const [depMes, setDepMes]                     = useState(hoy.getMonth() + 1);
+  const [depLoading, setDepLoading]             = useState(false);
+  const emptyActivo = () => ({
+    nombre: '', codigo: '', categoria: 'equipo', descripcion: '',
+    fecha_adquisicion: hoy.toISOString().split('T')[0],
+    valor_adquisicion: '', vida_util_meses: 60, metodo_depreciacion: 'lineal',
+    valor_residual: 0, cuenta_activo_codigo: '1.2.02',
+    cuenta_dep_codigo: '1.2.03', cuenta_gasto_codigo: '6.1.05',
+    proveedor: '', factura_compra: '', notas: '',
+  });
+  const [activoForm, setActivoForm]             = useState<any>(emptyActivo());
+
+  // ── Formularios 104 / 103 ────────────────────────────────────────────────
+  const [formTipo, setFormTipo]                 = useState<'104'|'103'|'125'|'102'>('104');
+  const [formSemestre, setFormSemestre]         = useState(1);
+  const [formMes, setFormMes]                   = useState(hoy.getMonth() + 1);
+  const [formAnio, setFormAnio]                 = useState(hoy.getFullYear());
+  const [formData, setFormData]                 = useState<any>(null);
+  const [formLoading, setFormLoading]           = useState(false);
+
+  // ── Cuentas por Cobrar ───────────────────────────────────────────────────
+  const [cxcData, setCxcData]               = useState<any>(null);
+  const [cxcLoading, setCxcLoading]         = useState(false);
+  const [cxcFiltroCliente, setCxcFiltroCliente] = useState('');
+  const [cxcEstado, setCxcEstado]           = useState<'pendiente'|'cobrado'|'todos'>('pendiente');
+  const [cxcCobrando, setCxcCobrando]       = useState<string|null>(null);
+  const [cxcMontoModal, setCxcMontoModal]   = useState('');
+  const [cxcMetodo, setCxcMetodo]           = useState('efectivo');
+  const [cxcFechaCobro, setCxcFechaCobro]   = useState(new Date().toISOString().split('T')[0]);
+  const [cxcNotas, setCxcNotas]             = useState('');
+  const [cxcPagando, setCxcPagando]         = useState(false);
+
+  // ── Conciliación Bancaria ────────────────────────────────────────────────
+  const [conciliaciones, setConciliaciones]     = useState<any[]>([]);
+  const [concSeleccionada, setConcSeleccionada] = useState<any>(null);
+  const [concBanco, setConcBanco]               = useState('');
+  const [concCuenta, setConcCuenta]             = useState('');
+  const [concMes, setConcMes]                   = useState(hoy.getMonth() + 1);
+  const [concAnio, setConcAnio]                 = useState(hoy.getFullYear());
+  const [concSaldoBanco, setConcSaldoBanco]     = useState('');
+  const [concMovimientosTxt, setConcMovimientosTxt] = useState('');
+  const [concLoading, setConcLoading]           = useState(false);
+  const [concResultado, setConcResultado]       = useState<any>(null);
+
+  // ── Cierres de Período ───────────────────────────────────────────────────
+  const [periodos, setPeriodos]                 = useState<any[]>([]);
+  const [cierreAnio, setCierreAnio]             = useState(hoy.getFullYear());
+  const [cierreLoading, setCierreLoading]       = useState(false);
+  const [cierreAnualAnio, setCierreAnualAnio]   = useState(hoy.getFullYear());
 
   // Modals
   const [showAsientoModal, setShowAsientoModal] = useState(false);
@@ -238,6 +298,154 @@ export default function Contabilidad() {
       toast.error('Error cargando dashboard: ' + e.message);
     }
   }, [token]);
+
+  // ── Activos Fijos ─────────────────────────────────────────────────────────
+  const loadActivos = useCallback(async () => {
+    try { const d = await apiFetch(`${BASE}/contabilidad/activos-fijos`, headers); setActivos(d.activos||[]); }
+    catch (e: any) { toast.error('Error activos: ' + e.message); }
+  }, [token]);
+
+  const saveActivo = async () => {
+    try {
+      const method = editActivo?.id ? 'PUT' : 'POST';
+      const url = editActivo?.id ? `${BASE}/contabilidad/activos-fijos/${editActivo.id}` : `${BASE}/contabilidad/activos-fijos`;
+      await apiFetch(url, headers, { method, body: JSON.stringify({ ...activoForm, valor_adquisicion: Number(activoForm.valor_adquisicion) }) });
+      toast.success(editActivo?.id ? 'Activo actualizado' : 'Activo registrado');
+      setShowActivoModal(false); setEditActivo(null); setActivoForm(emptyActivo());
+      loadActivos();
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  const depreciarMes = async () => {
+    if (!confirm(`¿Generar asientos de depreciación para ${depMes}/${depAnio}? Se procesarán todos los activos activos.`)) return;
+    setDepLoading(true);
+    try {
+      const d = await apiFetch(`${BASE}/contabilidad/activos-fijos/depreciar`, headers, {
+        method: 'POST', body: JSON.stringify({ anio: depAnio, mes: depMes }),
+      });
+      toast.success(`✅ ${d.generados} asientos de depreciación generados${d.errores?.length ? ` · ${d.errores.length} errores` : ''}`);
+      if (d.errores?.length) toast.error('Errores: ' + d.errores.slice(0,3).join(' | '));
+      loadActivos(); loadAsientos();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setDepLoading(false); }
+  };
+
+  // ── Formularios ──────────────────────────────────────────────────────────
+  const loadFormulario = async () => {
+    setFormLoading(true);
+    try {
+      const url = formTipo === '125'
+        ? `${BASE}/contabilidad/formulario-125?semestre=${formSemestre}&anio=${formAnio}`
+        : formTipo === '102'
+        ? `${BASE}/contabilidad/formulario-102?anio=${formAnio}`
+        : `${BASE}/contabilidad/formulario-${formTipo}?mes=${formMes}&anio=${formAnio}`;
+      const d = await apiFetch(url, headers);
+      setFormData(d);
+    } catch (e: any) { toast.error(e.message); }
+    finally { setFormLoading(false); }
+  };
+
+  // ── Conciliación ─────────────────────────────────────────────────────────
+  const loadConciliaciones = useCallback(async () => {
+    try { const d = await apiFetch(`${BASE}/contabilidad/conciliacion`, headers); setConciliaciones(d.conciliaciones||[]); }
+    catch (e: any) { /* silencioso */ }
+  }, [token]);
+
+  const importarExtracto = async () => {
+    if (!concBanco || !concMovimientosTxt || !concSaldoBanco) {
+      toast.error('Completa banco, saldo final y pega el extracto'); return;
+    }
+    setConcLoading(true);
+    try {
+      // Parsear CSV del extracto (formato: fecha,descripcion,debito,credito)
+      const lineas = concMovimientosTxt.trim().split('\n').slice(1); // skip header
+      const movimientos = lineas.map((l, i) => {
+        const cols = l.split(',').map(c => c.replace(/"/g,'').trim());
+        return { linea: i+2, fecha: cols[0]||'', descripcion: cols[1]||'', debito: Number(cols[2]||0), credito: Number(cols[3]||0), saldo: Number(cols[4]||0) };
+      }).filter(m => m.fecha);
+
+      const d = await apiFetch(`${BASE}/contabilidad/conciliacion/importar`, headers, {
+        method: 'POST',
+        body: JSON.stringify({ banco: concBanco, cuenta_banco: concCuenta, mes: concMes, anio: concAnio,
+          saldo_banco_final: Number(concSaldoBanco), movimientos_banco: movimientos }),
+      });
+      setConcResultado(d);
+      toast.success(`Conciliación procesada: ${d.resumen?.conciliados_banco} de ${d.resumen?.total_banco} movimientos conciliados`);
+      loadConciliaciones();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setConcLoading(false); }
+  };
+
+  // ── Cierres de Período ───────────────────────────────────────────────────
+  const loadPeriodos = useCallback(async () => {
+    try { const d = await apiFetch(`${BASE}/contabilidad/periodos?anio=${cierreAnio}`, headers); setPeriodos(d.periodos||[]); }
+    catch (e: any) { /* silencioso */ }
+  }, [token, cierreAnio]);
+
+  const cerrarPeriodo = async (mes: number) => {
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    if (!confirm(`¿Cerrar ${meses[mes-1]} ${cierreAnio}? No se podrán crear ni modificar asientos en ese período.`)) return;
+    setCierreLoading(true);
+    try {
+      const d = await apiFetch(`${BASE}/contabilidad/periodos/cerrar`, headers, {
+        method: 'POST', body: JSON.stringify({ anio: cierreAnio, mes }),
+      });
+      toast.success(`✅ Período ${meses[mes-1]} ${cierreAnio} cerrado — ${d.asientos_cerrados} asientos bloqueados`);
+      loadPeriodos();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setCierreLoading(false); }
+  };
+
+  const reabrirPeriodo = async (mes: number) => {
+    const motivo = prompt('Motivo de reapertura (requerido):');
+    if (!motivo) return;
+    try {
+      await apiFetch(`${BASE}/contabilidad/periodos/reabrir`, headers, {
+        method: 'POST', body: JSON.stringify({ anio: cierreAnio, mes, motivo }),
+      });
+      toast.success('Período reabierto');
+      loadPeriodos();
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  // ── Cuentas por Cobrar ────────────────────────────────────────────────────
+  const loadCxC = useCallback(async () => {
+    setCxcLoading(true);
+    try {
+      const params = new URLSearchParams({ estado: cxcEstado });
+      if (cxcFiltroCliente) params.set('cliente', cxcFiltroCliente);
+      const d = await apiFetch(`${BASE}/contabilidad/cxc?${params}`, headers);
+      setCxcData(d);
+    } catch (e: any) { toast.error('Error CxC: ' + e.message); }
+    finally { setCxcLoading(false); }
+  }, [token, cxcEstado, cxcFiltroCliente]);
+
+  const registrarCobro = async () => {
+    if (!cxcCobrando || !cxcMontoModal) return;
+    setCxcPagando(true);
+    try {
+      const factura = cxcData?.facturas?.find((f: any) => f.id === cxcCobrando);
+      await apiFetch(`${BASE}/contabilidad/cxc/cobrar`, headers, {
+        method: 'POST',
+        body: JSON.stringify({ factura_id: cxcCobrando, monto: Number(cxcMontoModal), fecha: cxcFechaCobro, metodo: cxcMetodo, notas: cxcNotas }),
+      });
+      toast.success(`✅ Cobro de $${Number(cxcMontoModal).toFixed(2)} registrado — asiento contable generado`);
+      setCxcCobrando(null); setCxcMontoModal(''); setCxcNotas('');
+      loadCxC(); loadAsientos();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setCxcPagando(false); }
+  };
+
+  const generarCierreAnual = async () => {
+    if (!confirm(`¿Generar asiento de cierre del ejercicio ${cierreAnualAnio}? Esto cerrará cuentas de ingresos y gastos.`)) return;
+    try {
+      const d = await apiFetch(`${BASE}/contabilidad/cierre-anual`, headers, {
+        method: 'POST', body: JSON.stringify({ anio: cierreAnualAnio }),
+      });
+      toast.success(`✅ Cierre generado — Utilidad: $${Number(d.resumen?.utilidad||0).toFixed(2)}`);
+      loadAsientos();
+    } catch (e: any) { toast.error(e.message); }
+  };
 
   const loadAsientos = useCallback(async (page = 1) => {
     try {
@@ -321,13 +529,17 @@ export default function Contabilidad() {
 
   useEffect(() => {
     if (!token) return;
-    if (tab === 'asientos') loadAsientos();
-    if (tab === 'balance') loadBalance();
-    if (tab === 'resultados') loadResultados();
-    if (tab === 'flujo') loadFlujo();
-    if (tab === 'presupuesto') loadPresupuesto();
+    if (tab === 'asientos')     loadAsientos();
+    if (tab === 'balance')      loadBalance();
+    if (tab === 'resultados')   loadResultados();
+    if (tab === 'flujo')        loadFlujo();
+    if (tab === 'presupuesto')  loadPresupuesto();
     if (tab === 'mayor' && mayorCuentaId) loadMayor();
-    if (tab === 'dashboard') loadDashboard();
+    if (tab === 'dashboard')    loadDashboard();
+    if (tab === 'activos')      loadActivos();
+    if (tab === 'conciliacion') loadConciliaciones();
+    if (tab === 'cierres')      loadPeriodos();
+    if (tab === 'cxc')          loadCxC();
   }, [tab]);
 
   useEffect(() => {
@@ -387,10 +599,19 @@ export default function Contabilidad() {
   const handleAnular = async () => {
     if (!motivoAnulacion.trim()) { toast.error('Ingrese motivo de anulación'); return; }
     try {
-      await apiFetch(`${BASE}/contabilidad/asientos/${asientoAnularId}/anular`, headers, {
+      const res = await fetch(`${BASE}/contabilidad/asientos/${asientoAnularId}/anular`, {
         method: 'POST',
+        headers,
         body: JSON.stringify({ motivo: motivoAnulacion, fecha: hoy.toISOString().split('T')[0] }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error('[anular-asiento] error:', data);
+        const paso = data.paso ? ` (paso: ${data.paso.join(' → ')})` : '';
+        const details = data.details ? ` | ${data.details}` : '';
+        toast.error((data.error || `Error ${res.status}`) + paso + details);
+        return;
+      }
       toast.success('Asiento anulado y reversión generada');
       setShowAnularModal(false);
       setMotivoAnulacion('');
@@ -444,6 +665,80 @@ export default function Contabilidad() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ── Reparar asientos faltantes de ventas ─────────────────────────────────
+  const [repararLoading, setRepararLoading] = useState(false);
+
+  const handleRepararAsientos = async () => {
+    const hoyEC = new Date(Date.now() - 5*3600*1000).toISOString().split('T')[0];
+    const fechaInicio = prompt('Fecha inicio (YYYY-MM-DD):', hoyEC);
+    if (!fechaInicio) return;
+    const fechaFin = prompt('Fecha fin (YYYY-MM-DD):', hoyEC);
+    if (!fechaFin) return;
+
+    setRepararLoading(true);
+    try {
+      const res = await fetch(`${BASE}/admin/generar-asientos-ventas`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Error'); return; }
+
+      const generados = data.generados ?? 0;
+      const yaExistian = data.ya_tenian_asiento ?? 0;
+      const total = data.total_ventas_en_rango ?? 0;
+      const duplicados = (data.errores || []).filter((e: string) => e.includes('duplicate')).length;
+
+      toast.success(
+        `✅ ${generados} generados · ${yaExistian + duplicados} ya existían · ${total} ventas en rango`,
+        { duration: 8000 }
+      );
+
+      const otrosErrores = (data.errores || []).filter((e: string) => !e.includes('duplicate'));
+      if (otrosErrores.length) toast.error('Errores: ' + otrosErrores.join(', '), { duration: 10000 });
+
+      // Limpiar filtros de fecha para que aparezcan sin importar el offset UTC/Ecuador
+      setAsientoFiltroFi('');
+      setAsientoFiltroFf('');
+      setTimeout(() => loadAsientos(1), 150);
+    } catch (e: any) {
+      toast.error('Error: ' + e.message);
+    } finally {
+      setRepararLoading(false);
+    }
+  };
+
+  // ── Reparar asientos de COMPRAS ──────────────────────────────────────────────
+  const [repararComprasLoading, setRepararComprasLoading] = useState(false);
+
+  const handleRepararAsientosCompras = async () => {
+    const hoyEC = new Date(Date.now() - 5*3600*1000).toISOString().split('T')[0];
+    const fechaInicio = prompt('Fecha inicio (YYYY-MM-DD):', '2026-05-01');
+    if (!fechaInicio) return;
+    const fechaFin = prompt('Fecha fin (YYYY-MM-DD):', hoyEC);
+    if (!fechaFin) return;
+
+    setRepararComprasLoading(true);
+    try {
+      const res = await fetch(`${BASE}/admin/generar-asientos-compras`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Error'); return; }
+
+      const generados   = data.generados ?? 0;
+      const yaExistian  = data.ya_tenian_asiento ?? 0;
+      const total       = data.total_compras ?? 0;
+      toast.success(`✅ ${generados} asientos de compras generados · ${yaExistian} ya existían · ${total} compras en rango`, { duration: 8000 });
+      if (data.errores?.length) toast.error('Errores: ' + data.errores.slice(0,3).join(' | '));
+      setAsientoFiltroFi(''); setAsientoFiltroFf('');
+      setTimeout(() => loadAsientos(1), 150);
+    } catch (e: any) { toast.error('Error: ' + e.message); }
+    finally { setRepararComprasLoading(false); }
   };
 
   // ── Presupuesto handlers ───────────────────────────────────────────────────
@@ -544,6 +839,26 @@ export default function Contabilidad() {
               <Button onClick={() => setShowAsientoModal(true)}
                 className="bg-gradient-to-r from-green-600 to-green-500">
                 <Plus className="w-4 h-4 mr-2" /> Nuevo Asiento
+              </Button>
+              <Button
+                onClick={handleRepararAsientos}
+                disabled={repararLoading}
+                variant="outline"
+                className="border-orange-400 text-orange-600 hover:bg-orange-50"
+                title="Genera asientos faltantes de ventas POS"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${repararLoading ? 'animate-spin' : ''}`} />
+                {repararLoading ? 'Generando…' : 'Reparar Ventas'}
+              </Button>
+              <Button
+                onClick={handleRepararAsientosCompras}
+                disabled={repararComprasLoading}
+                variant="outline"
+                className="border-blue-400 text-blue-600 hover:bg-blue-50"
+                title="Genera asientos faltantes de compras"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${repararComprasLoading ? 'animate-spin' : ''}`} />
+                {repararComprasLoading ? 'Generando…' : 'Reparar Compras'}
               </Button>
             </>
           )}
@@ -1734,6 +2049,960 @@ export default function Contabilidad() {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          TAB: CUENTAS POR COBRAR (CxC)
+         ══════════════════════════════════════════════════════════════════ */}
+      {tab === 'cxc' && (
+        <div className="space-y-4">
+          {/* Filtros */}
+          <div className="flex flex-wrap gap-3 items-end p-4 bg-gray-50 rounded-xl border border-[#F97316]/20">
+            <div className="flex gap-2">
+              {(['pendiente','cobrado','todos'] as const).map(e => (
+                <button key={e} onClick={() => { setCxcEstado(e); }}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${cxcEstado === e
+                    ? e === 'pendiente' ? 'bg-red-500 text-white'
+                      : e === 'cobrado' ? 'bg-green-500 text-white'
+                      : 'bg-gray-600 text-white'
+                    : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  {e === 'pendiente' ? '⏳ Pendientes' : e === 'cobrado' ? '✅ Cobradas' : '📋 Todas'}
+                </button>
+              ))}
+            </div>
+            <div className="relative flex-1 min-w-[200px]">
+              <input placeholder="Buscar cliente…" value={cxcFiltroCliente}
+                onChange={e => setCxcFiltroCliente(e.target.value)}
+                className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900"/>
+            </div>
+            <Button onClick={loadCxC} disabled={cxcLoading}
+              className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
+              {cxcLoading ? <RefreshCw className="w-4 h-4 animate-spin mr-2"/> : <RefreshCw className="w-4 h-4 mr-2"/>}
+              Actualizar
+            </Button>
+            {cxcData && (
+              <Button variant="outline" size="sm" onClick={() => exportToExcel(
+                (cxcData.facturas || []).map((f: any) => ({
+                  'N° Factura': f.numero_factura,
+                  'Cliente': f.cliente,
+                  'RUC/CI': f.cliente_id,
+                  'Fecha Emisión': f.fecha_emision,
+                  'Días Pendiente': f.dias_pendiente,
+                  'Tramo': f.tramo,
+                  'Total $': f.total.toFixed(2),
+                  'Cobrado $': f.monto_cobrado.toFixed(2),
+                  'Saldo $': f.saldo.toFixed(2),
+                  'Estado': f.cobrado ? 'Cobrado' : 'Pendiente',
+                })),
+                `cxc_${new Date().toISOString().split('T')[0]}`,
+                'Cuentas por Cobrar'
+              )} className="border-green-300 text-green-600 hover:bg-green-50">
+                <Download className="w-4 h-4 mr-1"/> Excel
+              </Button>
+            )}
+          </div>
+
+          {/* Aging cards */}
+          {cxcData && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+                <div className="text-xl font-bold text-blue-600">${Number(cxcData.resumen?.total_cartera||0).toFixed(2)}</div>
+                <div className="text-xs text-blue-500 mt-0.5">Total cartera</div>
+                <div className="text-xs text-blue-400">{cxcData.resumen?.documentos} facturas · {cxcData.resumen?.clientes} clientes</div>
+              </div>
+              {([['0-30','green','Al día'],['31-60','yellow','30-60 días'],['61-90','orange','60-90 días'],['+90','red','+90 días']] as [string,string,string][]).map(([tramo,col,lbl]) => (
+                <div key={tramo} className={`bg-${col}-50 border border-${col}-200 rounded-xl p-3 text-center`}>
+                  <div className={`text-xl font-bold text-${col}-600`}>${Number(cxcData.aging?.[tramo]?.total||0).toFixed(2)}</div>
+                  <div className={`text-xs text-${col}-500 mt-0.5`}>{lbl}</div>
+                  <div className={`text-xs text-${col}-400`}>{cxcData.aging?.[tramo]?.cantidad||0} docs</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Lista de facturas */}
+          {cxcLoading && (
+            <div className="text-center py-12"><RefreshCw className="w-8 h-8 mx-auto animate-spin text-orange-500 mb-2"/><p className="text-gray-500">Cargando…</p></div>
+          )}
+          {!cxcLoading && cxcData && (
+            <div className="overflow-x-auto rounded-xl border border-orange-100">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {['N° Factura','Cliente','Fecha Emisión','Días','Total','Cobrado','Saldo','Estado','Acción'].map(h => (
+                      <th key={h} className="px-3 py-2 text-left text-xs font-bold uppercase text-gray-600">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(cxcData.facturas || []).length === 0 ? (
+                    <tr><td colSpan={9} className="text-center text-gray-400 py-10">
+                      {cxcEstado === 'pendiente' ? 'No hay facturas pendientes de cobro' : 'Sin resultados'}
+                    </td></tr>
+                  ) : (cxcData.facturas || []).map((f: any, i: number) => {
+                    const tramoColor = f.tramo === '+90' ? 'red' : f.tramo === '61-90' ? 'orange' : f.tramo === '31-60' ? 'yellow' : 'green';
+                    return (
+                      <tr key={f.id} className={`border-t border-gray-100 ${i%2===0?'':'bg-gray-50/40'} ${f.cobrado ? 'opacity-60' : ''}`}>
+                        <td className="px-3 py-2 font-mono text-xs text-gray-900">{f.numero_factura}</td>
+                        <td className="px-3 py-2">
+                          <div className="font-medium text-gray-900 text-sm">{f.cliente}</div>
+                          <div className="text-xs text-gray-400">{f.cliente_id}</div>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 text-xs">{f.fecha_emision}</td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold bg-${tramoColor}-100 text-${tramoColor}-700`}>
+                            {f.dias_pendiente}d
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-700">${f.total.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-green-600">${f.monto_cobrado.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-red-600">${f.saldo.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-center">
+                          {f.cobrado
+                            ? <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">✅ Cobrado</span>
+                            : <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-semibold">⏳ Pendiente</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2">
+                          {!f.cobrado && f.saldo > 0 && (
+                            <button onClick={() => { setCxcCobrando(f.id); setCxcMontoModal(f.saldo.toFixed(2)); }}
+                              className="text-xs bg-[#F97316] text-white px-3 py-1 rounded-lg hover:bg-[#C2410C] transition-colors font-bold">
+                              Registrar Cobro
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ MODAL: REGISTRAR COBRO ══════════════════════════════════════════ */}
+      {cxcCobrando && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl border border-[#F97316]/30 w-full max-w-md">
+            <div className="p-5 border-b border-orange-100 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-gray-900">Registrar Cobro</h2>
+              <button onClick={() => { setCxcCobrando(null); setCxcMontoModal(''); }} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5"/>
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {(() => {
+                const f = cxcData?.facturas?.find((x: any) => x.id === cxcCobrando);
+                return f ? (
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm">
+                    <div className="font-bold text-gray-900">{f.numero_factura} — {f.cliente}</div>
+                    <div className="text-gray-600 mt-1">Total: <strong>${f.total.toFixed(2)}</strong> · Saldo pendiente: <strong className="text-red-600">${f.saldo.toFixed(2)}</strong></div>
+                  </div>
+                ) : null;
+              })()}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-gray-600">Monto a cobrar *</Label>
+                  <input type="number" value={cxcMontoModal} onChange={e => setCxcMontoModal(e.target.value)}
+                    className="w-full mt-1 border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900 font-mono"/>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-600">Fecha de cobro</Label>
+                  <input type="date" value={cxcFechaCobro} onChange={e => setCxcFechaCobro(e.target.value)}
+                    className="w-full mt-1 border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900"/>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs text-gray-600">Método de pago</Label>
+                <select value={cxcMetodo} onChange={e => setCxcMetodo(e.target.value)}
+                  className="w-full mt-1 border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900">
+                  <option value="efectivo">Efectivo</option>
+                  <option value="transferencia">Transferencia bancaria</option>
+                  <option value="tarjeta">Tarjeta de crédito/débito</option>
+                  <option value="cheque">Cheque</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs text-gray-600">Notas (opcional)</Label>
+                <textarea value={cxcNotas} onChange={e => setCxcNotas(e.target.value)} rows={2}
+                  className="w-full mt-1 border border-orange-200 rounded px-3 py-1.5 text-sm bg-white text-gray-900 resize-none"/>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs text-blue-700">
+                Se generará automáticamente el asiento contable: Banco/Caja (Dr) → Cuentas por Cobrar (Cr)
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button onClick={() => { setCxcCobrando(null); setCxcMontoModal(''); }} variant="outline" className="flex-1">Cancelar</Button>
+                <Button onClick={registrarCobro} disabled={cxcPagando || !cxcMontoModal}
+                  className="flex-1 bg-gradient-to-r from-green-600 to-green-500 text-white">
+                  {cxcPagando ? <RefreshCw className="w-4 h-4 animate-spin mr-2"/> : <CheckCircle className="w-4 h-4 mr-2"/>}
+                  Confirmar Cobro
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          TAB: ACTIVOS FIJOS
+         ══════════════════════════════════════════════════════════════════ */}
+      {tab === 'activos' && (
+        <div className="space-y-4">
+          {/* Barra de herramientas */}
+          <div className="flex flex-wrap gap-3 items-end p-4 bg-gray-50 rounded-xl border border-[#F97316]/20">
+            <div className="flex gap-2 items-center">
+              <label className="text-sm text-gray-600 font-medium">Depreciar mes:</label>
+              <select value={depMes} onChange={e=>setDepMes(Number(e.target.value))}
+                className="border border-orange-200 rounded px-2 py-1.5 text-sm bg-white text-gray-900">
+                {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m,i)=>(
+                  <option key={i} value={i+1}>{m}</option>
+                ))}
+              </select>
+              <input type="number" value={depAnio} onChange={e=>setDepAnio(Number(e.target.value))}
+                className="border border-orange-200 rounded px-2 py-1.5 text-sm bg-white text-gray-900 w-20" />
+              <Button onClick={depreciarMes} disabled={depLoading} size="sm"
+                className="bg-gradient-to-r from-purple-600 to-purple-500 text-white">
+                {depLoading ? <RefreshCw className="w-4 h-4 animate-spin mr-1"/> : <Calculator className="w-4 h-4 mr-1"/>}
+                Generar Depreciación
+              </Button>
+            </div>
+            <Button onClick={()=>{setEditActivo(null); setActivoForm(emptyActivo()); setShowActivoModal(true);}}
+              className="bg-gradient-to-r from-[#C2410C] to-[#F97316] ml-auto">
+              <Plus className="w-4 h-4 mr-2"/> Nuevo Activo
+            </Button>
+          </div>
+
+          {/* Resumen */}
+          {activos.length > 0 && (() => {
+            const totalValor = activos.reduce((s,a)=>s+Number(a.valor_adquisicion||0),0);
+            const totalDep   = activos.reduce((s,a)=>s+Number(a.dep_acumulada||0),0);
+            const totalLibro = activos.reduce((s,a)=>s+Number(a.valor_en_libros||a.valor_adquisicion-a.dep_acumulada||0),0);
+            return (
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                  <div className="text-xl font-bold text-blue-600">${totalValor.toFixed(2)}</div>
+                  <div className="text-xs text-blue-500 mt-1">Valor adquisición total</div>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                  <div className="text-xl font-bold text-red-600">${totalDep.toFixed(2)}</div>
+                  <div className="text-xs text-red-500 mt-1">Depreciación acumulada</div>
+                </div>
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                  <div className="text-xl font-bold text-green-600">${totalLibro.toFixed(2)}</div>
+                  <div className="text-xs text-green-500 mt-1">Valor en libros</div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Tabla */}
+          <div className="overflow-x-auto rounded-xl border border-[#F97316]/20">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr className="border-b border-[#F97316]/20">
+                  {['Código','Nombre','Categoría','Fecha Adq.','Valor Adq.','Dep. Acum.','Valor Libros','Vida Útil','Estado','Acciones'].map(h=>(
+                    <th key={h} className="px-3 py-2 text-left text-xs font-bold uppercase text-gray-600">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {activos.length === 0 ? (
+                  <tr><td colSpan={10} className="text-center text-gray-400 py-10">
+                    Sin activos registrados. Haz clic en "Nuevo Activo" para comenzar.
+                  </td></tr>
+                ) : activos.map((a,i)=>{
+                  const vidaUsada = a.vida_util_meses > 0 ? Math.round((a.dep_acumulada / (a.valor_adquisicion - (a.valor_residual||0))) * 100) : 0;
+                  return (
+                    <tr key={a.id} className={`border-b border-[#F97316]/10 ${i%2===0?'':'bg-gray-50/40'}`}>
+                      <td className="px-3 py-2 font-mono text-xs text-gray-500">{a.codigo||'—'}</td>
+                      <td className="px-3 py-2 font-medium text-gray-900">{a.nombre}</td>
+                      <td className="px-3 py-2 text-gray-500 text-xs">{a.categoria}</td>
+                      <td className="px-3 py-2 text-gray-500 text-xs">{a.fecha_adquisicion}</td>
+                      <td className="px-3 py-2 text-right font-mono text-gray-700">${Number(a.valor_adquisicion).toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-red-500">${Number(a.dep_acumulada||0).toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-green-600">
+                        ${(Number(a.valor_adquisicion) - Number(a.dep_acumulada||0)).toFixed(2)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="text-xs text-gray-500">{a.vida_util_meses} meses</div>
+                        <div className="w-16 bg-gray-200 rounded-full h-1.5 mt-1">
+                          <div className="h-1.5 rounded-full bg-orange-400" style={{width:`${Math.min(100,vidaUsada)}%`}}/>
+                        </div>
+                        <div className="text-xs text-gray-400">{vidaUsada}% usado</div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                          a.estado==='activo'?'bg-green-100 text-green-700':
+                          a.estado==='totalmente_depreciado'?'bg-gray-100 text-gray-600':
+                          'bg-red-100 text-red-600'
+                        }`}>{a.estado}</span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <button onClick={()=>{setEditActivo(a); setActivoForm({...a}); setShowActivoModal(true);}}
+                          className="p-1 text-orange-500 hover:bg-orange-50 rounded mr-1">
+                          <Edit2 className="w-3.5 h-3.5"/>
+                        </button>
+                        <button onClick={async()=>{
+                          if(!confirm('¿Eliminar este activo?'))return;
+                          await apiFetch(`${BASE}/contabilidad/activos-fijos/${a.id}`,headers,{method:'DELETE'});
+                          toast.success('Activo eliminado'); loadActivos();
+                        }} className="p-1 text-red-400 hover:bg-red-50 rounded">
+                          <Trash2 className="w-3.5 h-3.5"/>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          TAB: FORMULARIOS 104 / 103
+         ══════════════════════════════════════════════════════════════════ */}
+      {tab === 'formularios' && (
+        <div className="space-y-4">
+          {/* Selector */}
+          <div className="flex flex-wrap gap-3 items-end p-4 bg-gray-50 rounded-xl border border-[#F97316]/20">
+            <div className="flex gap-2 flex-wrap">
+              {[
+                {id:'104', label:'F-104 IVA Mensual', color:'blue'},
+                {id:'103', label:'F-103 Retenciones', color:'purple'},
+                {id:'125', label:'F-125 Renta Microempresas', color:'green'},
+                {id:'102', label:'F-102 Renta Sociedades', color:'red'},
+              ].map(f=>(
+                <button key={f.id} onClick={()=>{setFormTipo(f.id as any); setFormData(null);}}
+                  className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                    formTipo===f.id
+                      ? `bg-${f.color}-600 text-white`
+                      : `bg-white border border-${f.color}-200 text-${f.color}-600 hover:bg-${f.color}-50`
+                  }`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            {formTipo === '125' ? (
+              <>
+                <select value={formSemestre} onChange={e=>setFormSemestre(Number(e.target.value))}
+                  className="border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900">
+                  <option value={1}>1er Semestre (Ene–Jun)</option>
+                  <option value={2}>2do Semestre (Jul–Dic)</option>
+                </select>
+              </>
+            ) : formTipo === '102' ? (
+              <span className="text-xs text-gray-500 italic px-2">Declaración anual — solo requiere el año</span>
+            ) : (
+              <select value={formMes} onChange={e=>setFormMes(Number(e.target.value))}
+                className="border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900">
+                {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m,i)=>(
+                  <option key={i} value={i+1}>{m}</option>
+                ))}
+              </select>
+            )}
+            <input type="number" value={formAnio} onChange={e=>setFormAnio(Number(e.target.value))}
+              className="border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900 w-20"/>
+            <Button onClick={loadFormulario} disabled={formLoading}
+              className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
+              {formLoading ? <RefreshCw className="w-4 h-4 animate-spin mr-2"/> : <FileText className="w-4 h-4 mr-2"/>}
+              Calcular
+            </Button>
+            {formData && (
+              <Button variant="outline" size="sm" onClick={()=>exportToExcel(
+                formTipo==='104'
+                  ? Object.entries(formData.casillas||{}).map(([cas,val])=>({'Casilla':cas,'Valor':val}))
+                  : formTipo==='103'
+                    ? (formData.detalle_por_codigo||[]).map((r:any)=>({'Casilla Base':r.casilla_base,'Casilla Ret.':r.casilla_retenido,'Descripción':r.descripcion,'%':r.porcentaje,'Base Imponible':r.base_imponible,'Valor Retenido':r.valor_retenido}))
+                    : formTipo==='102'
+                      ? Object.entries(formData.casillas||{}).map(([cas,val])=>({'Casilla':cas,'Valor':val}))
+                    : Object.entries(formData.casillas||{}).map(([cas,val])=>({'Casilla':cas,'Valor':val})),
+                `formulario_${formTipo}_${formAnio}`,
+                `Formulario ${formTipo} — ${formAnio}`
+              )} className="border-green-300 text-green-600 hover:bg-green-50">
+                <Download className="w-4 h-4 mr-1"/> Excel
+              </Button>
+            )}
+          </div>
+
+          {/* FORMULARIO 104 — IVA */}
+          {formData && formTipo==='104' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* VENTAS */}
+                <Card className="bg-white border-blue-200">
+                  <CardHeader className="pb-2"><CardTitle className="text-blue-700 text-sm font-bold">VENTAS Y OTRAS OPERACIONES</CardTitle></CardHeader>
+                  <CardContent className="space-y-1.5 text-sm">
+                    {([
+                      ['401','411','421','Ventas locales gravadas ≠0%'],
+                      ['403','413','','Ventas locales tarifa 0% sin CT'],
+                      ['405','415','','Ventas locales tarifa 0% con CT'],
+                      ['407','417','','Exportaciones bienes'],
+                      ['409','419','429','TOTAL VENTAS'],
+                    ] as [string,string,string,string][]).map(([br,ne,iv,lbl])=>(
+                      <div key={br} className={`flex justify-between items-start py-1 border-b border-gray-100 ${br==='409'?'font-bold':'text-xs'}`}>
+                        <div>
+                          <span className="font-mono text-xs bg-blue-100 text-blue-700 px-1 rounded mr-1">{br}</span>
+                          {ne && <span className="font-mono text-xs bg-blue-50 text-blue-500 px-1 rounded mr-1">{ne}</span>}
+                          {iv && <span className="font-mono text-xs bg-blue-50 text-blue-500 px-1 rounded mr-1">{iv}</span>}
+                          <span className="text-gray-600 text-xs">{lbl}</span>
+                        </div>
+                        <span className="font-mono text-gray-900 ml-2">${Number(formData.casillas?.[br]||0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                    <div className="pt-1 text-xs text-gray-500">IVA generado (421): <strong>${Number(formData.casillas?.['421']||0).toFixed(2)}</strong></div>
+                  </CardContent>
+                </Card>
+                {/* ADQUISICIONES */}
+                <Card className="bg-white border-orange-200">
+                  <CardHeader className="pb-2"><CardTitle className="text-orange-700 text-sm font-bold">ADQUISICIONES Y PAGOS</CardTitle></CardHeader>
+                  <CardContent className="space-y-1.5 text-sm">
+                    {([
+                      ['500','510','520','Adquisiciones gravadas ≠0% (con CT)'],
+                      ['507','517','','Adquisiciones tarifa 0%'],
+                      ['509','519','529','TOTAL ADQUISICIONES'],
+                      ['563','','','Factor de proporcionalidad (%)'],
+                      ['564','','','CT aplicable en este período'],
+                    ] as [string,string,string,string][]).map(([br,ne,iv,lbl])=>(
+                      <div key={br} className={`flex justify-between items-start py-1 border-b border-gray-100 ${br==='509'||br==='564'?'font-bold':''}`}>
+                        <div>
+                          <span className="font-mono text-xs bg-orange-100 text-orange-700 px-1 rounded mr-1">{br}</span>
+                          <span className="text-gray-600 text-xs">{lbl}</span>
+                        </div>
+                        <span className="font-mono text-gray-900 ml-2">
+                          {br==='563' ? `${Number(formData.casillas?.[br]||0).toFixed(1)}%` : `$${Number(formData.casillas?.[br]||0).toFixed(2)}`}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="pt-1 text-xs text-gray-500">IVA pagado (520): <strong>${Number(formData.casillas?.['520']||0).toFixed(2)}</strong></div>
+                  </CardContent>
+                </Card>
+                {/* LIQUIDACIÓN */}
+                <Card className={`border-2 ${Number(formData.casillas?.['699']||0)>0?'border-red-400 bg-red-50':'border-green-400 bg-green-50'}`}>
+                  <CardHeader className="pb-2"><CardTitle className={`text-sm font-bold ${Number(formData.casillas?.['699']||0)>0?'text-red-700':'text-green-700'}`}>RESUMEN IMPOSITIVO</CardTitle></CardHeader>
+                  <CardContent className="space-y-1.5 text-sm">
+                    {([
+                      ['601','Impuesto causado','text-gray-700'],
+                      ['602','Crédito tributario','text-green-700'],
+                      ['605','(-) Saldo CT anterior adq.','text-gray-600'],
+                      ['606','(-) Saldo CT anterior ret.','text-gray-600'],
+                      ['609','(-) Ret. IVA recibidas','text-gray-600'],
+                      ['615','Saldo CT próx. mes adq.','text-blue-600'],
+                      ['620','SUBTOTAL A PAGAR','text-gray-800 font-bold'],
+                      ['699','TOTAL PERCEPCIÓN','text-red-700 font-black text-base'],
+                      ['859','TOTAL CONSOLIDADO IVA','text-red-800 font-black'],
+                      ['902','TOTAL A PAGAR','text-red-900 font-black text-lg'],
+                    ] as [string,string,string][]).map(([cas,lbl,cls])=>(
+                      <div key={cas} className="flex justify-between items-center py-1 border-b border-gray-200/50">
+                        <span className="text-xs">
+                          <span className={`font-mono text-xs px-1 rounded mr-1 ${Number(formData.casillas?.[cas]||0)>0?'bg-red-100 text-red-700':'bg-gray-100 text-gray-600'}`}>{cas}</span>
+                          <span className={cls.split(' ').filter(c=>!c.includes('text-')).join(' ')}>{lbl}</span>
+                        </span>
+                        <span className={`font-mono ${cls}`}>${Number(formData.casillas?.[cas]||0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                <strong>ℹ️ Período:</strong> {formData.periodo?.nombre} ·
+                <strong> Facturas:</strong> {formData.ventas?.c111_comprobantes} emitidas ·
+                <strong> Compras:</strong> {formData.adquisiciones?.c115_comprobantes} recibidas ·
+                Los saldos de CT del mes anterior (605/606) deben ingresarse manualmente si los tienes.
+              </div>
+            </div>
+          )}
+
+          {/* FORMULARIO 103 — RETENCIONES */}
+          {formData && formTipo==='103' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
+                  <div className="text-2xl font-bold text-purple-600">{formData.resumen?.total_documentos||0}</div>
+                  <div className="text-xs text-purple-500 mt-1">Retenciones emitidas</div>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-600">${Number(formData.totales?.c349_subtotal_base_pais||0).toFixed(2)}</div>
+                  <div className="text-xs text-blue-500 mt-1">Casilla 349 — Base imponible total</div>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                  <div className="text-2xl font-bold text-red-600">${Number(formData.totales?.c499_total_retencion||0).toFixed(2)}</div>
+                  <div className="text-xs text-red-500 mt-1">Casilla 499 — Total a declarar</div>
+                </div>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-purple-100">
+                <table className="w-full text-sm">
+                  <thead className="bg-purple-50">
+                    <tr>
+                      {['Cód. Base','Cód. Ret.','Descripción','% Ret.','# Docs','Casilla Base (Base Imp.)','Casilla Ret. (Valor Ret.)'].map(h=>(
+                        <th key={h} className="px-3 py-2 text-left text-xs font-bold uppercase text-purple-700">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(formData.detalle_por_codigo||[]).map((r:any,i:number)=>(
+                      <tr key={r.codigo} className={`border-t border-purple-50 ${i%2===0?'':'bg-purple-50/30'}`}>
+                        <td className="px-3 py-2 font-mono font-bold text-purple-700">{r.casilla_base}</td>
+                        <td className="px-3 py-2 font-mono text-purple-500">{r.casilla_retenido||'—'}</td>
+                        <td className="px-3 py-2 text-gray-700">{r.descripcion}</td>
+                        <td className="px-3 py-2 text-center text-gray-600">{r.porcentaje>0?`${r.porcentaje}%`:'var.'}</td>
+                        <td className="px-3 py-2 text-center text-gray-500">{r.cantidad}</td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-700">${r.base_imponible.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-blue-600">${r.base_imponible.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-red-600">${r.valor_retenido.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                    {/* Fila total */}
+                    <tr className="border-t-2 border-purple-300 bg-purple-100">
+                      <td colSpan={4} className="px-3 py-2 font-bold text-purple-800 text-sm">TOTAL (casillas 349 / 399)</td>
+                      <td className="px-3 py-2 text-center font-bold text-purple-700">{formData.resumen?.total_documentos}</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-blue-800">${Number(formData.totales?.c349_subtotal_base_pais||0).toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-red-800">${Number(formData.totales?.c499_total_retencion||0).toFixed(2)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs text-purple-700">
+                <strong>Cómo usar en DIMM:</strong> Casilla 349 = base total · Casilla 399 = total retenido país · Casilla 499 = total a pagar (902).
+                Fecha límite: hasta el día {10} del mes siguiente según noveno dígito del RUC.
+              </div>
+            </div>
+          )}
+
+          {/* FORMULARIO 125 — RENTA MICROEMPRESAS */}
+          {formData && formTipo==='125' && (
+            <div className="space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                <div className="font-bold text-green-800 mb-1">Formulario 125 — {formData.periodo?.label}</div>
+                <div className="text-xs text-green-600 mb-3">Régimen RIMPE Microempresas · Tarifa aplicada: {formData.tarifa_aplicada}</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {([
+                    ['301','Ingresos brutos','text-gray-700'],
+                    ['399','Base imponible','text-gray-900 font-bold'],
+                    ['401','IR causado','text-orange-700 font-bold'],
+                    ['499','IR A PAGAR','text-red-700 font-black text-xl'],
+                  ] as [string,string,string][]).map(([cas,lbl,cls])=>(
+                    <div key={cas} className="text-center bg-white rounded-xl p-3 border border-green-200">
+                      <div className={`font-mono ${cls}`}>${Number(formData.casillas?.[cas]||0).toFixed(2)}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        <span className="font-mono text-xs bg-green-100 text-green-700 px-1 rounded mr-1">{cas}</span>
+                        {lbl}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-xl border border-green-100 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-green-50">
+                    <tr>{['Casilla','Descripción','Valor'].map(h=><th key={h} className="px-3 py-2 text-left text-xs font-bold uppercase text-green-700">{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(formData.casillas||{}).map(([cas,val]:any,i)=>(
+                      <tr key={cas} className={i%2===0?'':'bg-green-50/30'}>
+                        <td className="px-3 py-2 font-mono font-bold text-green-700">{cas}</td>
+                        <td className="px-3 py-2 text-gray-700 text-xs">
+                          {({'301':'Ingresos brutos actividad empresarial','302':'(-) Devoluciones o descuentos','303':'(-) Ingresos exentos','399':'BASE IMPONIBLE','401':'IR causado Régimen Microempresas','402':'(-) Retenciones en la fuente del período','403':'(-) CT declaración anual anterior','499':'IR A PAGAR RÉGIMEN MICROEMPRESAS','902':'TOTAL IMPUESTO A PAGAR'} as any)[cas]||'—'}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold">${Number(val||0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                <strong>⚠️ Nota:</strong> {formData.nota}
+              </div>
+            </div>
+          )}
+
+          {/* FORMULARIO 102 — RENTA SOCIEDADES */}
+          {formData && formTipo==='102' && (
+            <div className="space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <div className="font-bold text-red-800 mb-1">Formulario 102 — {formData.periodo?.label}</div>
+                <div className="text-xs text-red-600 mb-3">Declaración Impuesto a la Renta Sociedades · Tarifa aplicada: {formData.resumen?.tarifa_aplicada}</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {([
+                    ['829','Total ingresos','text-gray-700'],
+                    ['859','Base imponible','text-gray-900 font-bold'],
+                    ['861','IR causado','text-orange-700 font-bold'],
+                    ['902','IR A PAGAR','text-red-700 font-black text-xl'],
+                  ] as [string,string,string][]).map(([cas,lbl,cls])=>(
+                    <div key={cas} className="text-center bg-white rounded-xl p-3 border border-red-200">
+                      <div className={`font-mono ${cls}`}>${Number(formData.casillas?.[cas]||0).toFixed(2)}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        <span className="font-mono text-xs bg-red-100 text-red-700 px-1 rounded mr-1">{cas}</span>
+                        {lbl}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-xl border border-red-100 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-red-50">
+                    <tr>{['Casilla','Descripción','Valor'].map(h=><th key={h} className="px-3 py-2 text-left text-xs font-bold uppercase text-red-700">{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(formData.casillas||{}).map(([cas,val]:any,i)=>(
+                      <tr key={cas} className={i%2===0?'':'bg-red-50/30'}>
+                        <td className="px-3 py-2 font-mono font-bold text-red-700">{cas}</td>
+                        <td className="px-3 py-2 text-gray-700 text-xs">
+                          {({
+                            '829':'Total de ingresos',
+                            '839':'Total costos y gastos',
+                            '849':'Utilidad (pérdida) del ejercicio',
+                            '850':'(-) 15% participación trabajadores',
+                            '859':'BASE IMPONIBLE GRAVABLE',
+                            '860':'Tarifa aplicada (%)',
+                            '861':'Impuesto a la renta causado',
+                            '871':'(-) Anticipo determinado para el ejercicio',
+                            '872':'(-) Retenciones en la fuente que le han sido efectuadas',
+                            '902':'IMPUESTO A LA RENTA A PAGAR',
+                            '903':'Saldo a favor del contribuyente',
+                          } as any)[cas]||'—'}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold">
+                          {cas === '860' ? `${Number(val||0).toFixed(0)}%` : `$${Number(val||0).toFixed(2)}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                <strong>⚠️ Nota:</strong> {formData.nota}
+              </div>
+            </div>
+          )}
+
+          {!formData && !formLoading && (
+            <div className="text-center py-16 text-gray-400">
+              <CreditCard className="w-16 h-16 mx-auto mb-4 opacity-20"/>
+              <p>Selecciona el formulario, período y año, luego haz clic en Calcular</p>
+              <p className="text-xs mt-2">F-104: Declaración IVA mensual · F-103: Retenciones en la Fuente · F-125: Renta Microempresas RIMPE · F-102: Renta Sociedades (anual)</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          TAB: CONCILIACIÓN BANCARIA
+         ══════════════════════════════════════════════════════════════════ */}
+      {tab === 'conciliacion' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Panel de carga */}
+            <Card className="bg-white border-[#F97316]/20">
+              <CardHeader><CardTitle className="text-base">📤 Importar Extracto Bancario</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs text-gray-600">Banco *</Label>
+                    <input value={concBanco} onChange={e=>setConcBanco(e.target.value)}
+                      placeholder="Pichincha, Produbanco..."
+                      className="w-full mt-1 border border-orange-200 rounded px-3 py-1.5 text-sm bg-white text-gray-900"/>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-600">N° Cuenta</Label>
+                    <input value={concCuenta} onChange={e=>setConcCuenta(e.target.value)}
+                      placeholder="220XXXXXXX"
+                      className="w-full mt-1 border border-orange-200 rounded px-3 py-1.5 text-sm bg-white text-gray-900"/>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-600">Mes</Label>
+                    <select value={concMes} onChange={e=>setConcMes(Number(e.target.value))}
+                      className="w-full mt-1 border border-orange-200 rounded px-2 py-1.5 text-sm bg-white text-gray-900">
+                      {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m,i)=>(
+                        <option key={i} value={i+1}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-600">Año</Label>
+                    <input type="number" value={concAnio} onChange={e=>setConcAnio(Number(e.target.value))}
+                      className="w-full mt-1 border border-orange-200 rounded px-2 py-1.5 text-sm bg-white text-gray-900"/>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-600">Saldo final según banco *</Label>
+                  <input type="number" value={concSaldoBanco} onChange={e=>setConcSaldoBanco(e.target.value)}
+                    placeholder="12450.00"
+                    className="w-full mt-1 border border-orange-200 rounded px-3 py-1.5 text-sm bg-white text-gray-900"/>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-600">
+                    Extracto bancario (CSV: fecha,descripcion,debito,credito,saldo) *
+                  </Label>
+                  <textarea value={concMovimientosTxt} onChange={e=>setConcMovimientosTxt(e.target.value)}
+                    rows={6} placeholder={'fecha,descripcion,debito,credito,saldo\n2026-05-01,Deposito venta,0,1250.00,5250.00\n2026-05-02,Comision bancaria,4.50,0,5245.50'}
+                    className="w-full mt-1 border border-orange-200 rounded px-3 py-1.5 text-xs bg-white text-gray-900 font-mono resize-none"/>
+                </div>
+                <Button onClick={importarExtracto} disabled={concLoading} className="w-full bg-gradient-to-r from-[#C2410C] to-[#F97316]">
+                  {concLoading ? <RefreshCw className="w-4 h-4 animate-spin mr-2"/> : <CheckCircle className="w-4 h-4 mr-2"/>}
+                  Procesar y Conciliar
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Resultado */}
+            {concResultado ? (
+              <Card className={`bg-white border-2 ${Math.abs(concResultado.resumen?.diferencia||0)<0.01?'border-green-400':'border-orange-400'}`}>
+                <CardHeader>
+                  <CardTitle className={`text-base ${Math.abs(concResultado.resumen?.diferencia||0)<0.01?'text-green-700':'text-orange-700'}`}>
+                    {Math.abs(concResultado.resumen?.diferencia||0)<0.01 ? '✅ CONCILIADO' : '⚠️ DIFERENCIA DETECTADA'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {[
+                    ['Saldo según banco', concResultado.resumen?.saldo_banco, 'text-blue-700'],
+                    ['Saldo en libros', concResultado.resumen?.saldo_libros, 'text-gray-700'],
+                    ['Diferencia', concResultado.resumen?.diferencia, Math.abs(concResultado.resumen?.diferencia||0)<0.01?'text-green-600':'text-red-600 font-black text-xl'],
+                  ].map(([label,val,cls])=>(
+                    <div key={String(label)} className="flex justify-between items-center py-1.5 border-b border-gray-100">
+                      <span className="text-sm text-gray-600">{label}</span>
+                      <span className={`font-mono font-bold ${cls}`}>${Number(val||0).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="pt-2 space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-green-600">✅ Conciliados</span>
+                      <span className="font-bold">{concResultado.resumen?.conciliados_banco} / {concResultado.resumen?.total_banco}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-red-500">⚠️ Pendientes banco</span>
+                      <span className="font-bold text-red-500">{concResultado.resumen?.pendientes_banco}</span>
+                    </div>
+                  </div>
+                  {(concResultado.pendientes||[]).length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs font-bold text-red-600 mb-2">Movimientos del banco sin asiento en libros:</p>
+                      <div className="max-h-48 overflow-y-auto space-y-1">
+                        {concResultado.pendientes.map((p:any,i:number)=>(
+                          <div key={i} className="flex justify-between text-xs bg-red-50 rounded px-2 py-1">
+                            <span className="text-gray-600">{p.fecha} · {p.descripcion}</span>
+                            <span className="font-mono text-red-600 ml-2">${Number(p.monto||0).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="bg-gray-50 border-dashed border-gray-200">
+                <CardContent className="flex flex-col items-center justify-center h-full py-12 text-gray-400">
+                  <CheckCircle className="w-12 h-12 mb-3 opacity-20"/>
+                  <p className="text-sm">El resultado de la conciliación aparecerá aquí</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Historial */}
+          {conciliaciones.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-gray-700 mb-2">Historial de conciliaciones</h3>
+              <div className="overflow-x-auto rounded-xl border border-[#F97316]/20">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>{['Banco','Mes/Año','Saldo Banco','Saldo Libros','Diferencia','Estado'].map(h=>(
+                      <th key={h} className="px-3 py-2 text-left text-xs font-bold uppercase text-gray-600">{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {conciliaciones.map((c,i)=>(
+                      <tr key={c.id} className={`border-t border-gray-100 ${i%2===0?'':'bg-gray-50/40'}`}>
+                        <td className="px-3 py-2 font-medium text-gray-900">{c.banco}</td>
+                        <td className="px-3 py-2 text-gray-600">{c.mes}/{c.anio}</td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-700">${Number(c.saldo_banco||0).toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-gray-700">${Number(c.saldo_libros||0).toFixed(2)}</td>
+                        <td className={`px-3 py-2 text-right font-mono font-bold ${Math.abs(c.diferencia||0)<0.01?'text-green-600':'text-red-600'}`}>
+                          ${Number(c.diferencia||0).toFixed(2)}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${c.estado==='conciliado'?'bg-green-100 text-green-700':'bg-orange-100 text-orange-700'}`}>
+                            {c.estado}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          TAB: CIERRES DE PERÍODO
+         ══════════════════════════════════════════════════════════════════ */}
+      {tab === 'cierres' && (
+        <div className="space-y-6">
+          {/* Cierre mensual */}
+          <Card className="bg-white border-[#F97316]/20">
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-base">🔒 Cierres Mensuales</CardTitle>
+                <div className="flex items-center gap-2">
+                  <input type="number" value={cierreAnio} onChange={e=>{setCierreAnio(Number(e.target.value)); loadPeriodos();}}
+                    className="border border-orange-200 rounded px-2 py-1 text-sm bg-white text-gray-900 w-20"/>
+                  <Button onClick={loadPeriodos} variant="outline" size="sm"><RefreshCw className="w-4 h-4"/></Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((mes,i)=>{
+                  const p = periodos.find(p=>p.mes===i+1);
+                  const cerrado = p?.estado === 'cerrado';
+                  const mesActual = new Date().getMonth();
+                  const esActual = i === mesActual && cierreAnio === new Date().getFullYear();
+                  return (
+                    <div key={mes} className={`rounded-xl p-3 text-center border-2 transition-all ${
+                      cerrado ? 'bg-gray-100 border-gray-300' :
+                      esActual ? 'bg-orange-50 border-orange-400' :
+                      'bg-white border-gray-200'
+                    }`}>
+                      <div className="text-xs font-bold text-gray-600 mb-1">{mes}</div>
+                      <div className="text-lg mb-2">{cerrado ? '🔒' : esActual ? '📅' : '🔓'}</div>
+                      {cerrado ? (
+                        <button onClick={()=>reabrirPeriodo(i+1)}
+                          className="text-xs text-orange-500 hover:text-orange-700 underline">
+                          Reabrir
+                        </button>
+                      ) : (
+                        <button onClick={()=>cerrarPeriodo(i+1)} disabled={cierreLoading}
+                          className="text-xs bg-gray-700 text-white px-2 py-0.5 rounded hover:bg-gray-900 disabled:opacity-50">
+                          Cerrar
+                        </button>
+                      )}
+                      {p?.fecha_cierre && (
+                        <div className="text-xs text-gray-400 mt-1">
+                          {new Date(p.fecha_cierre).toLocaleDateString('es-EC', {day:'2-digit',month:'2-digit'})}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+                <strong>ℹ️ Cómo funciona:</strong> Al cerrar un período, los asientos con esa fecha quedan bloqueados — nadie puede crearlos, modificarlos ni anularlos. Solo el administrador puede reabrir un período con motivo justificado (quedará en auditoría).
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Cierre anual */}
+          <Card className="bg-white border-[#F97316]/20">
+            <CardHeader><CardTitle className="text-base">📅 Cierre Anual del Ejercicio</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-gray-600">
+                El cierre anual genera automáticamente el asiento de cierre: cancela todas las cuentas de ingresos y gastos, y traslada la utilidad (o pérdida) a la cuenta <strong>3.3.01 Resultado del Ejercicio</strong>.
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
+                <strong>⚠️ Importante:</strong> Ejecuta el cierre anual SOLO después de haber cerrado los 12 meses del año y verificado que todos los asientos están correctos.
+              </div>
+              <div className="flex gap-3 items-end">
+                <div>
+                  <Label className="text-xs text-gray-600">Año a cerrar</Label>
+                  <input type="number" value={cierreAnualAnio} onChange={e=>setCierreAnualAnio(Number(e.target.value))}
+                    className="block mt-1 border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900 w-24"/>
+                </div>
+                <Button onClick={generarCierreAnual}
+                  className="bg-gradient-to-r from-gray-700 to-gray-600 text-white">
+                  <CheckCircle className="w-4 h-4 mr-2"/>
+                  Generar Asiento de Cierre {cierreAnualAnio}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ══ MODAL: ACTIVO FIJO ═══════════════════════════════════════════ */}
+      {showActivoModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl border border-[#F97316]/30 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-[#F97316]/20 p-4 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-gray-900">{editActivo ? 'Editar Activo Fijo' : 'Nuevo Activo Fijo'}</h2>
+              <button onClick={()=>{setShowActivoModal(false); setEditActivo(null); setActivoForm(emptyActivo());}}
+                className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  {label:'Nombre *', key:'nombre', type:'text', placeholder:'Horno industrial'},
+                  {label:'Código', key:'codigo', type:'text', placeholder:'AF-001'},
+                  {label:'Fecha adquisición *', key:'fecha_adquisicion', type:'date'},
+                  {label:'Valor adquisición *', key:'valor_adquisicion', type:'number', placeholder:'5000.00'},
+                  {label:'Valor residual', key:'valor_residual', type:'number', placeholder:'500.00'},
+                  {label:'Vida útil (meses) *', key:'vida_util_meses', type:'number', placeholder:'60'},
+                  {label:'Proveedor', key:'proveedor', type:'text', placeholder:'Nombre proveedor'},
+                  {label:'Factura de compra', key:'factura_compra', type:'text', placeholder:'001-001-000123'},
+                ].map(f=>(
+                  <div key={f.key}>
+                    <Label className="text-xs text-gray-600">{f.label}</Label>
+                    <input type={f.type} value={activoForm[f.key]||''} placeholder={f.placeholder||''}
+                      onChange={e=>setActivoForm((p:any)=>({...p,[f.key]:e.target.value}))}
+                      className="w-full mt-1 border border-orange-200 rounded px-3 py-1.5 text-sm bg-white text-gray-900"/>
+                  </div>
+                ))}
+                <div>
+                  <Label className="text-xs text-gray-600">Categoría</Label>
+                  <select value={activoForm.categoria} onChange={e=>setActivoForm((p:any)=>({...p,categoria:e.target.value}))}
+                    className="w-full mt-1 border border-orange-200 rounded px-3 py-1.5 text-sm bg-white text-gray-900">
+                    {['equipo','mueble','vehiculo','inmueble','software','otro'].map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-600">Método depreciación</Label>
+                  <select value={activoForm.metodo_depreciacion} onChange={e=>setActivoForm((p:any)=>({...p,metodo_depreciacion:e.target.value}))}
+                    className="w-full mt-1 border border-orange-200 rounded px-3 py-1.5 text-sm bg-white text-gray-900">
+                    <option value="lineal">Lineal (recomendado)</option>
+                    <option value="acelerada">Acelerada</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  {label:'Cta. Activo', key:'cuenta_activo_codigo', hint:'1.2.02'},
+                  {label:'Cta. Dep. Acum.', key:'cuenta_dep_codigo', hint:'1.2.03'},
+                  {label:'Cta. Gasto Dep.', key:'cuenta_gasto_codigo', hint:'6.1.05'},
+                ].map(f=>(
+                  <div key={f.key}>
+                    <Label className="text-xs text-gray-600">{f.label}</Label>
+                    <input value={activoForm[f.key]||''} placeholder={f.hint}
+                      onChange={e=>setActivoForm((p:any)=>({...p,[f.key]:e.target.value}))}
+                      className="w-full mt-1 border border-orange-200 rounded px-2 py-1.5 text-sm bg-white text-gray-900 font-mono"/>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <Label className="text-xs text-gray-600">Notas</Label>
+                <textarea value={activoForm.notas||''} rows={2}
+                  onChange={e=>setActivoForm((p:any)=>({...p,notas:e.target.value}))}
+                  className="w-full mt-1 border border-orange-200 rounded px-3 py-1.5 text-sm bg-white text-gray-900 resize-none"/>
+              </div>
+              {activoForm.valor_adquisicion && activoForm.vida_util_meses && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+                  📊 Depreciación mensual estimada: <strong>
+                    ${((Number(activoForm.valor_adquisicion) - Number(activoForm.valor_residual||0)) / Number(activoForm.vida_util_meses)).toFixed(2)}
+                  </strong> · Período: {activoForm.vida_util_meses} meses ({(Number(activoForm.vida_util_meses)/12).toFixed(1)} años)
+                </div>
+              )}
+              <div className="flex gap-2 pt-2">
+                <Button onClick={()=>{setShowActivoModal(false); setEditActivo(null); setActivoForm(emptyActivo());}}
+                  variant="outline" className="flex-1">Cancelar</Button>
+                <Button onClick={saveActivo} className="flex-1 bg-gradient-to-r from-[#C2410C] to-[#F97316]">
+                  {editActivo ? 'Actualizar' : 'Registrar Activo'}
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
