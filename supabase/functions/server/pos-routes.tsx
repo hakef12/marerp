@@ -221,6 +221,109 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
       // y NO debe hacer fallar la anulación si algo sale mal.
       await guardarVenta(auth.empresaId, ventas[idx]);
 
+      // ── (a) Asiento de reversión contable (best-effort) ───────────
+      // Mismo esquema de cuentas que la venta original, con débito/crédito
+      // invertidos, para que balance general y estado de resultados queden
+      // correctos tras la anulación.
+      try {
+        const totalVenta    = Number(ventas[idx].total || ventas[idx].monto_total || 0);
+        const ivaVenta      = Number(ventas[idx].iva   || ventas[idx].total_iva   || 0);
+        const subtotalVenta = parseFloat((totalVenta - ivaVenta).toFixed(2));
+        const refVenta      = ventas[idx].numero_ticket || ventas[idx].id;
+
+        if (totalVenta > 0) {
+          const asientoItems: any[] = [];
+          // Lo que era débito (Caja) ahora es crédito, y viceversa con los ingresos/IVA
+          asientoItems.push({ codigo: '1.1.01', credito: parseFloat(totalVenta.toFixed(2)), descripcion: `Reversión cobro venta ${refVenta} (anulada)` });
+
+          if (ivaVenta > 0 && subtotalVenta > 0) {
+            asientoItems.push({ codigo: '4.1.01', debito: parseFloat(subtotalVenta.toFixed(2)), descripcion: 'Reversión ingreso por ventas' });
+            asientoItems.push({ codigo: '2.1.03', debito: parseFloat(ivaVenta.toFixed(2)),      descripcion: 'Reversión IVA en ventas por pagar' });
+          } else {
+            asientoItems.push({ codigo: '4.1.02', debito: parseFloat(totalVenta.toFixed(2)), descripcion: 'Reversión ingreso por ventas (tarifa 0%)' });
+          }
+
+          await registrarAsientoAutomatico(auth.empresaId, {
+            tipo:        'anulacion_venta_pos',
+            descripcion: `Anulación venta ${refVenta} — ${motivo}`,
+            referencia:  String(ventas[idx].id),
+            fecha:       new Date().toISOString().split('T')[0],
+            items:       asientoItems,
+          });
+        }
+      } catch (asientoErr: any) {
+        console.warn('[anular-venta] No se pudo generar asiento de reversión (la anulación sí se aplicó):', asientoErr?.message);
+      }
+
+      // ── (b) Reversar el movimiento de caja (best-effort) ──────────
+      // Busca el movimiento 'venta' original en la sesión de caja abierta
+      // (por número de ticket) y agrega un movimiento de reversión para
+      // que el monto esperado en caja deje de contar ese efectivo/cobro.
+      try {
+        const numeroTicket  = ventas[idx].numero_ticket;
+        const bodegaIdVenta = ventas[idx].bodega_id || auth.user?.bodega_id || '';
+        const cajaResult    = await getCajaAbierta(auth.empresaId, bodegaIdVenta);
+        if (cajaResult?.sesion && numeroTicket) {
+          const sesion = cajaResult.sesion;
+          const movs: any[] = sesion.movimientos || [];
+          const movVenta    = movs.find((m: any) => m.tipo === 'venta' && m.referencia === numeroTicket);
+          const yaRevertido = movs.some((m: any) => m.tipo === 'anulacion_venta' && m.referencia === numeroTicket);
+          if (movVenta && !yaRevertido) {
+            const reversion = {
+              id: `mov-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              tipo: 'anulacion_venta',
+              monto: Number(movVenta.monto) || 0,
+              descripcion: `Reversión venta anulada ${numeroTicket} — ${motivo}`,
+              usuario_id: auth.userId,
+              usuario_nombre: auth.user?.nombre_completo || 'Admin',
+              fecha: new Date().toISOString(),
+              metodo_pago: movVenta.metodo_pago || undefined,
+              referencia: numeroTicket,
+            };
+            const movsActualizados = [...movs, reversion];
+            await getDB().from('turnos_caja')
+              .update({ movimientos: movsActualizados })
+              .eq('id', sesion.id)
+              .eq('empresa_id', auth.empresaId);
+          }
+        }
+      } catch (cajaErr: any) {
+        console.warn('[anular-venta] No se pudo revertir movimiento de caja (la anulación sí se aplicó):', cajaErr?.message);
+      }
+
+      // ── (c) Detectar factura electrónica emitida (SOLO advertencia) ──
+      // No bloquea la anulación ni genera Nota de Crédito automáticamente:
+      // legalmente, anular una factura ya autorizada ante el SRI requiere
+      // emitir una Nota de Crédito por separado — solo avisamos al usuario.
+      let facturaAlerta: string | null = null;
+      try {
+        const numeroTicket = ventas[idx].numero_ticket;
+        if (numeroTicket) {
+          const { data: facturasRel } = await getDB().from('facturas')
+            .select('id, numero_factura, estado_autorizacion')
+            .eq('empresa_id', auth.empresaId)
+            .eq('datos_completos->>venta_id', numeroTicket)
+            .limit(5);
+
+          const facturaAutorizada = (facturasRel || []).find((f: any) =>
+            String(f.estado_autorizacion || '').toUpperCase() === 'AUTORIZADO'
+          );
+
+          if (facturaAutorizada) {
+            facturaAlerta =
+              `⚠ Esta venta ya tiene una factura electrónica AUTORIZADA por el SRI (N° ${facturaAutorizada.numero_factura}). ` +
+              `La anulación interna NO la invalida ante el SRI: para revertirla legalmente debes emitir una Nota de Crédito desde Facturación.`;
+          } else if ((facturasRel || []).length > 0) {
+            const f = facturasRel![0];
+            facturaAlerta =
+              `⚠ Esta venta tiene una factura electrónica asociada (N° ${f.numero_factura}, estado: ${f.estado_autorizacion}). ` +
+              `Verifica su estado ante el SRI antes de continuar.`;
+          }
+        }
+      } catch (facturaErr: any) {
+        console.warn('[anular-venta] No se pudo verificar factura asociada:', facturaErr?.message);
+      }
+
       // Revertir stock (best-effort — no debe bloquear ni revertir la anulación)
       try {
         const items = ventas[idx].items || [];
@@ -244,8 +347,8 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
         console.warn('[anular-venta] No se pudo revertir stock (la anulación sí se aplicó):', stockErr?.message);
       }
 
-      console.log('🚫 Venta anulada:', ventaId, 'motivo:', motivo);
-      return c.json({ success: true, venta: ventas[idx] });
+      console.log('🚫 Venta anulada:', ventaId, 'motivo:', motivo, facturaAlerta ? '(con alerta de factura)' : '');
+      return c.json({ success: true, venta: ventas[idx], factura_alerta: facturaAlerta });
     } catch (error: any) {
       return c.json({ error: 'Error al anular venta', details: error.message }, 500);
     }

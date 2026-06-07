@@ -11,7 +11,7 @@ const getDB = () => createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-type TipoMovimiento = 'venta' | 'ingreso_manual' | 'gasto' | 'retiro' | 'apertura' | 'cierre';
+type TipoMovimiento = 'venta' | 'ingreso_manual' | 'gasto' | 'retiro' | 'apertura' | 'cierre' | 'anulacion_venta';
 
 interface MovimientoCaja {
   id: string; tipo: TipoMovimiento; monto: number;
@@ -23,7 +23,8 @@ function calcularMontoReal(sesion: any): number {
   const movs: MovimientoCaja[] = sesion.movimientos || [];
   const apertura = sesion.monto_apertura || 0;
   const ingresos = movs.filter(m => ['venta','ingreso_manual'].includes(m.tipo)).reduce((s,m) => s+m.monto, 0);
-  const egresos  = movs.filter(m => ['gasto','retiro'].includes(m.tipo)).reduce((s,m) => s+m.monto, 0);
+  // 'anulacion_venta' = reversión del efectivo de una venta anulada (resta del esperado, igual que un egreso)
+  const egresos  = movs.filter(m => ['gasto','retiro','anulacion_venta'].includes(m.tipo)).reduce((s,m) => s+m.monto, 0);
   return apertura + ingresos - egresos;
 }
 

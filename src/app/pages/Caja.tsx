@@ -168,6 +168,10 @@ export default function Caja() {
       const data = await res.json();
       if (res.ok) {
         toast.success(`Venta ${ventaAnularTicket} anulada correctamente`);
+        if (data.factura_alerta) {
+          // Solo advertencia — la anulación NO se bloquea ni genera Nota de Crédito automática
+          toast.warning(data.factura_alerta, { duration: 15000 });
+        }
         setModalAnular(false);
         setMotivoAnulacion('');
         fetchVentas();
