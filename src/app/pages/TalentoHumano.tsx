@@ -343,20 +343,21 @@ export default function TalentoHumano() {
     }
   };
 
-  // ── Nómina helpers (Ecuador 2025/2026) ──────────────────────────────────────
-  const SBU = 470; // SBU Ecuador 2025
+  // ── Nómina helpers (Ecuador 2026) ───────────────────────────────────────────
+  const SBU = 482; // SBU Ecuador 2026 (acuerdo tripartito Gobierno-empleadores-trabajadores, vigente desde 1/1/2026)
 
-  // Tabla IR Ecuador 2025/2026
+  // Tabla IR Ecuador 2026 (Resolución NAC-DGERCGC25-00000043, vigente desde 1/1/2026)
   const TABLA_IR = [
-    { desde: 0,     hasta: 11722,    base: 0,    excedente: 0,     fraccion: 0    },
-    { desde: 11722, hasta: 14930,    base: 0,    excedente: 11722, fraccion: 0.05 },
-    { desde: 14930, hasta: 19895,    base: 160,  excedente: 14930, fraccion: 0.10 },
-    { desde: 19895, hasta: 26395,    base: 657,  excedente: 19895, fraccion: 0.12 },
-    { desde: 26395, hasta: 34255,    base: 1437, excedente: 26395, fraccion: 0.15 },
-    { desde: 34255, hasta: 45605,    base: 2616, excedente: 34255, fraccion: 0.20 },
-    { desde: 45605, hasta: 60850,    base: 4886, excedente: 45605, fraccion: 0.25 },
-    { desde: 60850, hasta: 81130,    base: 8697, excedente: 60850, fraccion: 0.30 },
-    { desde: 81130, hasta: Infinity, base: 14781,excedente: 81130, fraccion: 0.35 },
+    { desde: 0,      hasta: 12208,    base: 0,     excedente: 0,      fraccion: 0    },
+    { desde: 12208,  hasta: 15549,    base: 0,     excedente: 12208,  fraccion: 0.05 },
+    { desde: 15549,  hasta: 20188,    base: 167,   excedente: 15549,  fraccion: 0.10 },
+    { desde: 20188,  hasta: 26700,    base: 631,   excedente: 20188,  fraccion: 0.12 },
+    { desde: 26700,  hasta: 35136,    base: 1412,  excedente: 26700,  fraccion: 0.15 },
+    { desde: 35136,  hasta: 46575,    base: 2678,  excedente: 35136,  fraccion: 0.20 },
+    { desde: 46575,  hasta: 62005,    base: 4965,  excedente: 46575,  fraccion: 0.25 },
+    { desde: 62005,  hasta: 82679,    base: 8823,  excedente: 62005,  fraccion: 0.30 },
+    { desde: 82679,  hasta: 109956,   base: 15025, excedente: 82679,  fraccion: 0.35 },
+    { desde: 109956, hasta: Infinity, base: 24572, excedente: 109956, fraccion: 0.37 },
   ];
 
   const calcularIR = (ingresoAnual: number) => {
@@ -1193,7 +1194,7 @@ export default function TalentoHumano() {
                     Nómina Ecuador — {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][nominaMes-1]} {nominaAnio}
                   </CardTitle>
                   <p className="text-gray-600 text-sm mt-1">
-                    IESS personal 9.45% · IESS patronal 11.15% · Fondos reserva 8.33% (mas 1 año) · SBU 2025: ${SBU} · IR tabla progresiva
+                    IESS personal 9.45% · IESS patronal 11.15% · Fondos reserva 8.33% (mas 1 año) · SBU 2026: ${SBU} · IR tabla progresiva
                   </p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
