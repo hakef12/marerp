@@ -20,6 +20,48 @@ interface Props {
 
 type Step = 'upload' | 'review';
 
+// ── Clasificación inteligente (misma lógica que formulario manual) ─────────────
+// Tipos de compra — códigos SRI Ecuador oficiales
+const TIPOS_COMPRA_XML = [
+  { id: 'inventario',       label: '📦 Inventario',        cuenta: '510102',  afecta_stock: true  },
+  { id: 'gasto_servicio',   label: '🌐 Telecom/Internet',  cuenta: '520118',  afecta_stock: false },
+  { id: 'gasto_basicos',    label: '💡 Agua/Luz/Gas',      cuenta: '520118',  afecta_stock: false },
+  { id: 'gasto_arriendo',   label: '🏠 Arriendo',          cuenta: '520109',  afecta_stock: false },
+  { id: 'gasto_publicidad', label: '📢 Publicidad',        cuenta: '520111',  afecta_stock: false },
+  { id: 'gasto_operativo',  label: '⚙️ Mantenimiento',    cuenta: '520108',  afecta_stock: false },
+  { id: 'activo_fijo',      label: '🏗️ Activo Fijo',      cuenta: '1020106', afecta_stock: false },
+] as const;
+
+// Keywords → tipo contable (SRI) — agua/luz/telecom van a la misma cuenta 520118
+const KEYWORDS_XML: Record<string, string> = {
+  internet: 'gasto_servicio', 'datos moviles': 'gasto_servicio', telefono: 'gasto_servicio',
+  celular: 'gasto_servicio', claro: 'gasto_servicio', movistar: 'gasto_servicio',
+  cnt: 'gasto_servicio', netlife: 'gasto_servicio', telecomunicaciones: 'gasto_servicio',
+  luz: 'gasto_basicos', electrico: 'gasto_basicos', energia: 'gasto_basicos',
+  agua: 'gasto_basicos', planilla: 'gasto_basicos', eerssa: 'gasto_basicos',
+  arriendo: 'gasto_arriendo', alquiler: 'gasto_arriendo', renta: 'gasto_arriendo',
+  publicidad: 'gasto_publicidad', marketing: 'gasto_publicidad', propaganda: 'gasto_publicidad',
+  seguro: 'gasto_operativo', mantenimiento: 'gasto_operativo', reparacion: 'gasto_operativo',
+  cuchillo: 'activo_fijo', horno: 'activo_fijo', refrigerador: 'activo_fijo',
+  computador: 'activo_fijo', laptop: 'activo_fijo', impresora: 'activo_fijo',
+  mueble: 'activo_fijo', mesa: 'activo_fijo', equipo: 'activo_fijo',
+};
+const UMBRAL_ACTIVO_XML = 100;
+
+function autodetectarTipoXML(
+  descripcion: string,
+  totalItem: number,
+  tieneMatch: boolean
+): { tipo: string; confianza: 'auto'|'sugerido' } {
+  if (tieneMatch) return { tipo: 'inventario', confianza: 'auto' };
+  const desc = descripcion.toLowerCase();
+  for (const [kw, tipo] of Object.entries(KEYWORDS_XML)) {
+    if (desc.includes(kw)) return { tipo, confianza: 'auto' };
+  }
+  if (totalItem >= UMBRAL_ACTIVO_XML) return { tipo: 'activo_fijo', confianza: 'sugerido' };
+  return { tipo: 'gasto_operativo', confianza: 'sugerido' };
+}
+
 interface ParsedItem {
   // Del XML (inmutables)
   codigo: string;
@@ -37,9 +79,12 @@ interface ParsedItem {
   auto_matched: boolean;
   // Editables por el usuario
   producto_id_sel: string;
-  cantidad_inventario: number; // cantidad real a ingresar al stock
-  costo_total_sel: number;     // subtotal s/IVA — SIEMPRE cuenta en el total de la compra
-  a_inventario: boolean;       // true = actualiza stock | false = gasto (flete, embalaje, etc.)
+  cantidad_inventario: number;
+  costo_total_sel: number;
+  a_inventario: boolean;
+  // Nuevos campos de clasificación inteligente
+  tipo_contable: string;
+  confianza: 'auto'|'sugerido'|'manual';
 }
 
 interface FacturaSRI {
@@ -186,14 +231,20 @@ export function ImportarXMLModal({
       const matched = await matchRes.json();
       if (!matchRes.ok) throw new Error(matched.error || 'Error al hacer matching');
 
-      const editableItems: ParsedItem[] = matched.items.map((item: any) => ({
-        ...item,
-        producto_id_sel:     item.match?.producto_id || '',
-        cantidad_inventario: item.cantidad_xml,
-        costo_total_sel:     parseFloat((item.subtotal || 0).toFixed(2)),
-        // Por defecto: si tiene match va a inventario; si no, se trata como gasto
-        a_inventario:        !!item.match,
-      }));
+      const editableItems: ParsedItem[] = matched.items.map((item: any) => {
+        const { tipo, confianza } = autodetectarTipoXML(
+          item.descripcion || '', Number(item.subtotal || 0), !!item.match
+        );
+        return {
+          ...item,
+          producto_id_sel:     item.match?.producto_id || '',
+          cantidad_inventario: item.cantidad_xml,
+          costo_total_sel:     parseFloat((item.subtotal || 0).toFixed(2)),
+          a_inventario:        tipo === 'inventario',
+          tipo_contable:       tipo,
+          confianza,
+        };
+      });
 
       setFactura(parsed.factura);
       setProveedorXML(parsed.proveedor);
@@ -222,7 +273,17 @@ export function ImportarXMLModal({
   };
 
   const updateItem = (idx: number, field: keyof ParsedItem, value: any) =>
-    setItems((prev) => { const n = [...prev]; n[idx] = { ...n[idx], [field]: value }; return n; });
+    setItems((prev) => {
+      const n = [...prev];
+      const updated = { ...n[idx], [field]: value };
+      // Sync a_inventario when tipo_contable changes
+      if (field === 'tipo_contable') {
+        updated.a_inventario = value === 'inventario';
+        updated.confianza = 'manual';
+      }
+      n[idx] = updated;
+      return n;
+    });
 
   const itemsInventario  = items.filter((i) => i.a_inventario);
   const itemsGasto       = items.filter((i) => !i.a_inventario);
@@ -285,12 +346,15 @@ export function ImportarXMLModal({
             },
             // XML original para descarga posterior
             xml_original: xmlRaw || undefined,
-            // TODOS los ítems van al backend — el flag a_inventario indica si actualiza stock
+            // TODOS los ítems van al backend con tipo_contable para asiento correcto
             items: items.map((i) => ({
               producto_id:        i.a_inventario ? i.producto_id_sel : null,
+              descripcion:        i.descripcion,
               cantidad:           Number(i.cantidad_inventario),
               costo_total:        Number(i.costo_total_sel),
               a_inventario:       i.a_inventario,
+              tipo_contable:      i.tipo_contable || (i.a_inventario ? 'inventario' : 'gasto_operativo'),
+              afecta_stock:       i.a_inventario,
               descripcion_xml:    i.descripcion,
               cantidad_xml:       i.cantidad_xml,
               descuento:          i.descuento,
@@ -559,7 +623,7 @@ export function ImportarXMLModal({
                   <AlertCircle className="w-3.5 h-3.5" />{sinMatch} sin match
                 </span>
                 <span className="text-gray-600 ml-auto text-[10px]">
-                  📦 Stock = actualiza inventario &nbsp;·&nbsp; 💸 Gasto = se contabiliza como gasto (flete, embalaje…)
+                  🟢 Auto = detectado automáticamente &nbsp;·&nbsp; 🟡 Sugerido = revisa &nbsp;·&nbsp; 🔵 Manual = elegiste tú
                   &nbsp;·&nbsp; ★ Ajusta cantidad si la unidad del XML difiere (1 saco → 50 kg)
                 </span>
               </div>
@@ -569,8 +633,8 @@ export function ImportarXMLModal({
                 <table className="w-full text-xs min-w-[860px]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-[#F97316]/20 text-gray-600">
-                      <th className="px-2 py-2 w-24 text-center">
-                        <span className="text-[10px] leading-tight block">¿Stock?</span>
+                      <th className="px-2 py-2 w-28 text-center">
+                        <span className="text-[10px] leading-tight block">Tipo contable</span>
                       </th>
                       <th className="px-2 py-2 text-left">Descripción en la factura XML</th>
                       <th className="px-2 py-2 text-right w-20">Cant. XML</th>
@@ -592,21 +656,29 @@ export function ImportarXMLModal({
 
                       return (
                         <tr key={idx} className={`border-b border-gray-100 ${
-                          !item.a_inventario ? 'bg-orange-500/5' : item.auto_matched ? 'bg-green-500/3' : ''
+                          item.tipo_contable === 'activo_fijo'     ? 'bg-blue-50/40' :
+                          item.tipo_contable === 'inventario'      ? (item.auto_matched ? 'bg-green-50/40' : '') :
+                          item.tipo_contable?.startsWith('gasto')  ? 'bg-orange-50/30' : ''
                         }`}>
-                          {/* Toggle stock/gasto */}
+                          {/* Clasificación inteligente */}
                           <td className="px-2 py-1.5 text-center">
-                            <button
-                              onClick={() => updateItem(idx, 'a_inventario', !item.a_inventario)}
-                              title={item.a_inventario ? 'Haz clic para marcar como gasto (no actualiza stock)' : 'Haz clic para marcar como inventario (actualiza stock)'}
-                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border transition-all ${
-                                item.a_inventario
-                                  ? 'bg-[#F97316]/15 border-[#F97316]/50 text-[#F97316]'
-                                  : 'bg-orange-500/15 border-orange-500/50 text-orange-400'
-                              }`}
+                            <select
+                              value={item.tipo_contable || 'gasto_operativo'}
+                              onChange={e => updateItem(idx, 'tipo_contable', e.target.value)}
+                              className="w-full border rounded px-1 py-0.5 text-[10px] bg-white text-gray-900 border-orange-200"
+                              style={{ minWidth: 110 }}
                             >
-                              {item.a_inventario ? '📦 Stock' : '💸 Gasto'}
-                            </button>
+                              {TIPOS_COMPRA_XML.map(t => (
+                                <option key={t.id} value={t.id}>{t.label}</option>
+                              ))}
+                            </select>
+                            <span className={`text-[9px] px-1 py-0.5 rounded mt-0.5 inline-block font-bold ${
+                              item.confianza === 'auto'   ? 'bg-green-100 text-green-700' :
+                              item.confianza === 'manual' ? 'bg-blue-100 text-blue-700'   :
+                                                           'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {item.confianza === 'auto' ? '✓ Auto' : item.confianza === 'manual' ? '✎ Manual' : '? Sugerido'}
+                            </span>
                           </td>
 
                           {/* Descripción XML */}

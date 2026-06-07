@@ -343,33 +343,140 @@ export default function TalentoHumano() {
     }
   };
 
-  // ── Nómina helpers ──────────────────────────────────────────────────────────
-  const SBU_2024 = 460;
+  // ── Nómina helpers (Ecuador 2025/2026) ──────────────────────────────────────
+  const SBU = 470; // SBU Ecuador 2025
+
+  // Tabla IR Ecuador 2025/2026
+  const TABLA_IR = [
+    { desde: 0,     hasta: 11722,    base: 0,    excedente: 0,     fraccion: 0    },
+    { desde: 11722, hasta: 14930,    base: 0,    excedente: 11722, fraccion: 0.05 },
+    { desde: 14930, hasta: 19895,    base: 160,  excedente: 14930, fraccion: 0.10 },
+    { desde: 19895, hasta: 26395,    base: 657,  excedente: 19895, fraccion: 0.12 },
+    { desde: 26395, hasta: 34255,    base: 1437, excedente: 26395, fraccion: 0.15 },
+    { desde: 34255, hasta: 45605,    base: 2616, excedente: 34255, fraccion: 0.20 },
+    { desde: 45605, hasta: 60850,    base: 4886, excedente: 45605, fraccion: 0.25 },
+    { desde: 60850, hasta: 81130,    base: 8697, excedente: 60850, fraccion: 0.30 },
+    { desde: 81130, hasta: Infinity, base: 14781,excedente: 81130, fraccion: 0.35 },
+  ];
+
+  const calcularIR = (ingresoAnual: number) => {
+    const t = TABLA_IR.find(t => ingresoAnual >= t.desde && ingresoAnual < t.hasta);
+    if (!t || t.fraccion === 0) return 0;
+    return t.base + (ingresoAnual - t.excedente) * t.fraccion;
+  };
+
+  const r2 = (n: number) => Math.round(n * 100) / 100;
 
   const computeNomina = (emp: Empleado) => {
-    const extras = nominaExtras[emp.id] || { horas_extras: 0, otros_ingresos: 0 };
-    const salario_bruto =
-      emp.salario_base +
-      extras.horas_extras * (emp.salario_base / 160) * 1.5 +
-      extras.otros_ingresos;
-    const iess_personal = salario_bruto * 0.0945;
-    const iess_patronal = salario_bruto * 0.1115;
-    const neto_pagar = salario_bruto - iess_personal;
-    const provision_decimoTercero = salario_bruto / 12;
-    const provision_decimoCuarto = SBU_2024 / 12;
-    const provision_vacaciones = salario_bruto / 24;
-    const costo_total_empresa =
-      neto_pagar + iess_patronal + provision_decimoTercero + provision_decimoCuarto + provision_vacaciones;
+    const extras = nominaExtras[emp.id] || { horas_extras: 0, horas_extras_nocturnas: 0, otros_ingresos: 0, descuentos: 0 };
+    const valorHoraBase = emp.salario_base / 160;
+    const montoExtras = r2(
+      Number(extras.horas_extras || 0) * valorHoraBase * 1.5 +
+      Number(extras.horas_extras_nocturnas || 0) * valorHoraBase * 2
+    );
+    const salario_bruto = r2(emp.salario_base + montoExtras + Number(extras.otros_ingresos || 0));
+    const iess_personal = r2(salario_bruto * 0.0945);
+    const iess_patronal = r2(salario_bruto * 0.1115);
+
+    // Fondos de reserva: empleados con > 12 meses
+    const fechaIngreso = (emp as any).fecha_ingreso ? new Date((emp as any).fecha_ingreso) : new Date();
+    const mesesAnt = Math.floor((Date.now() - fechaIngreso.getTime()) / (30.44 * 86400000));
+    const fondos_reserva = mesesAnt >= 12 ? r2(salario_bruto * 0.0833) : 0;
+
+    // Retención IR mensual
+    const ingresoAnualProy = salario_bruto * 13; // 12 meses + 1 mes de décimo 13
+    const ir_anual = calcularIR(ingresoAnualProy);
+    const ir_mensual = r2(ir_anual / 12);
+
+    const neto_pagar = r2(salario_bruto - iess_personal - ir_mensual - Number(extras.descuentos || 0));
+    const provision_decimoTercero = r2(salario_bruto / 12);
+    const provision_decimoCuarto  = r2(SBU / 12);
+    const provision_vacaciones     = r2(salario_bruto / 24);
+    const costo_total_empresa = r2(salario_bruto + iess_patronal + fondos_reserva + provision_decimoTercero + provision_decimoCuarto + provision_vacaciones);
+
     return {
-      salario_bruto,
-      iess_personal,
-      iess_patronal,
-      neto_pagar,
-      provision_decimoTercero,
-      provision_decimoCuarto,
-      provision_vacaciones,
-      costo_total_empresa,
+      salario_bruto, iess_personal, iess_patronal, fondos_reserva,
+      ir_mensual, ir_anual_proyectado: r2(ir_anual),
+      neto_pagar, provision_decimoTercero, provision_decimoCuarto,
+      provision_vacaciones, costo_total_empresa,
+      meses_antiguedad: mesesAnt, tiene_fondos_reserva: mesesAnt >= 12,
     };
+  };
+
+  // ── Estado nómina avanzada ───────────────────────────────────────────────────
+  const [nominaGuardando, setNominaGuardando] = useState(false);
+  const [nominaEnviando, setNominaEnviando]   = useState(false);
+  const [nominaId, setNominaId]               = useState<string|null>(null);
+  const [historialNomina, setHistorialNomina] = useState<any[]>([]);
+  const [nominaMes, setNominaMes]             = useState(new Date().getMonth() + 1);
+  const [nominaAnio, setNominaAnio]           = useState(new Date().getFullYear());
+  const [showFiniquito, setShowFiniquito]     = useState(false);
+  const [finiquitoEmpId, setFiniquitoEmpId]   = useState('');
+  const [finiquitoMotivo, setFiniquitoMotivo] = useState<'renuncia'|'desahucio'>('renuncia');
+  const [finiquitoData, setFiniquitoData]     = useState<any>(null);
+
+  const guardarNomina = async () => {
+    setNominaGuardando(true);
+    try {
+      const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server/rrhh/nomina/calcular`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ anio: nominaAnio, mes: nominaMes, extras: nominaExtras }),
+      });
+      const d = await res.json();
+      if (res.ok) { toast.success(`✅ Nómina ${nominaMes}/${nominaAnio} guardada — ${d.empleados_procesados} empleados`); setNominaId(d.nomina?.id || null); }
+      else toast.error(d.error || 'Error');
+    } catch (e: any) { toast.error(e.message); }
+    finally { setNominaGuardando(false); }
+  };
+
+  const enviarRoles = async () => {
+    if (!nominaId) { toast.error('Primero guarda la nómina'); return; }
+    if (!confirm(`¿Enviar el rol de pagos por email a todos los empleados activos con email registrado?`)) return;
+    setNominaEnviando(true);
+    try {
+      const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server/rrhh/nomina/${nominaId}/enviar-roles`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '', 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const d = await res.json();
+      if (res.ok) toast.success(`✅ ${d.enviados} roles de pago enviados por email`);
+      else toast.error(d.error || 'Error');
+    } catch (e: any) { toast.error(e.message); }
+    finally { setNominaEnviando(false); }
+  };
+
+  const generarAsientoNomina = async () => {
+    if (!nominaId) { toast.error('Primero guarda la nómina'); return; }
+    try {
+      const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server/rrhh/nomina/${nominaId}/asiento`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '', 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const d = await res.json();
+      if (res.ok) toast.success('✅ Asiento contable de nómina generado');
+      else toast.error(d.error || 'Error');
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  const calcularFiniquito = async () => {
+    if (!finiquitoEmpId) { toast.error('Selecciona un empleado'); return; }
+    try {
+      const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server/rrhh/nomina/finiquito`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empleado_id: finiquitoEmpId, motivo: finiquitoMotivo }),
+      });
+      const d = await res.json();
+      if (res.ok) setFiniquitoData(d);
+      else toast.error(d.error || 'Error');
+    } catch (e: any) { toast.error(e.message); }
   };
 
   const exportarCSV = () => {
@@ -1078,32 +1185,108 @@ export default function TalentoHumano() {
       {view === 'nomina' && (
         <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <CardTitle className="text-gray-900 flex items-center gap-2">
-                  <DollarSign className="w-5 h-5 text-green-400" />
-                  Calculadora de Nómina — Ecuador
-                </CardTitle>
-                <p className="text-gray-600 text-sm mt-1">
-                  IESS personal 9.45% · IESS patronal 11.15% · SBU 2024: $460
-                </p>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-gray-900 flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-green-400" />
+                    Nómina Ecuador — {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][nominaMes-1]} {nominaAnio}
+                  </CardTitle>
+                  <p className="text-gray-600 text-sm mt-1">
+                    IESS personal 9.45% · IESS patronal 11.15% · Fondos reserva 8.33% (mas 1 año) · SBU 2025: ${SBU} · IR tabla progresiva
+                  </p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <select value={nominaMes} onChange={e=>setNominaMes(Number(e.target.value))}
+                    className="border border-orange-200 rounded px-2 py-1.5 text-sm bg-white text-gray-900">
+                    {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m,i)=>(
+                      <option key={i} value={i+1}>{m}</option>
+                    ))}
+                  </select>
+                  <input type="number" value={nominaAnio} onChange={e=>setNominaAnio(Number(e.target.value))}
+                    className="border border-orange-200 rounded px-2 py-1.5 text-sm bg-white text-gray-900 w-20"/>
+                  <Button onClick={guardarNomina} disabled={nominaGuardando} size="sm"
+                    className="bg-blue-600 hover:bg-blue-700 text-white">
+                    {nominaGuardando ? '...' : '💾 Guardar'}
+                  </Button>
+                  {nominaId && (
+                    <>
+                      <Button onClick={enviarRoles} disabled={nominaEnviando} size="sm"
+                        className="bg-green-600 hover:bg-green-700 text-white">
+                        {nominaEnviando ? 'Enviando...' : '📧 Enviar Roles'}
+                      </Button>
+                      <Button onClick={generarAsientoNomina} size="sm" variant="outline"
+                        className="border-purple-300 text-purple-600 hover:bg-purple-50">
+                        📒 Asiento
+                      </Button>
+                    </>
+                  )}
+                  <Button onClick={exportarCSV} size="sm" variant="outline"
+                    className="border-green-300 text-green-700">
+                    <Download className="w-4 h-4 mr-1" /> CSV
+                  </Button>
+                  <Button onClick={()=>setShowFiniquito(!showFiniquito)} size="sm" variant="outline"
+                    className="border-red-300 text-red-600">
+                    📄 Finiquito
+                  </Button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={exportarCSV}
-                  className="bg-green-700 hover:bg-green-600 text-gray-900"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Exportar CSV
-                </Button>
-                <Button
-                  onClick={() => window.print()}
-                  className="bg-[#C2410C] hover:bg-[#C2410C]/80 text-white"
-                >
-                  <Printer className="w-4 h-4 mr-2" />
-                  Imprimir Rol
-                </Button>
-              </div>
+
+              {/* Panel de Finiquito */}
+              {showFiniquito && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+                  <h3 className="font-bold text-red-700 text-sm">Calculadora de Finiquito / Liquidación</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-600 block mb-1">Empleado</label>
+                      <select value={finiquitoEmpId} onChange={e=>setFiniquitoEmpId(e.target.value)}
+                        className="w-full border border-red-200 rounded px-2 py-1.5 text-sm bg-white text-gray-900">
+                        <option value="">— Seleccionar —</option>
+                        {empleados.filter(e=>e.estado==='activo').map(e=>(
+                          <option key={e.id} value={e.id}>{e.nombre_completo}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-600 block mb-1">Motivo de salida</label>
+                      <select value={finiquitoMotivo} onChange={e=>setFiniquitoMotivo(e.target.value as any)}
+                        className="w-full border border-red-200 rounded px-2 py-1.5 text-sm bg-white text-gray-900">
+                        <option value="renuncia">Renuncia voluntaria</option>
+                        <option value="desahucio">Desahucio (empleador termina)</option>
+                      </select>
+                    </div>
+                    <div className="flex items-end">
+                      <Button onClick={calcularFiniquito} className="w-full bg-red-600 hover:bg-red-700 text-white" size="sm">
+                        Calcular Liquidación
+                      </Button>
+                    </div>
+                  </div>
+                  {finiquitoData && (
+                    <div className="bg-white border border-red-200 rounded-lg p-4 text-sm">
+                      <div className="font-bold text-gray-900 mb-2">{finiquitoData.empleado?.nombre} — {finiquitoData.periodo?.dias_trabajados} días trabajados ({finiquitoData.periodo?.anios} años)</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          ['Décimo 13° proporcional', finiquitoData.calculo?.decimo13_proporcional],
+                          ['Décimo 14° proporcional', finiquitoData.calculo?.decimo14_proporcional],
+                          ['Vacaciones proporcionales', finiquitoData.calculo?.vacaciones_proporcionales],
+                          ['Fondos de reserva prop.', finiquitoData.calculo?.fondos_reserva_proporcional],
+                          ['Desahucio', finiquitoData.calculo?.desahucio],
+                        ].map(([label, val]: any[]) => (
+                          <div key={label} className="flex justify-between border-b border-gray-100 py-1">
+                            <span className="text-gray-600">{label}</span>
+                            <span className="font-mono">${Number(val||0).toFixed(2)}</span>
+                          </div>
+                        ))}
+                        <div className="col-span-2 flex justify-between border-t-2 border-red-300 pt-2 mt-1">
+                          <span className="font-bold text-red-700">TOTAL LIQUIDACIÓN</span>
+                          <span className="font-bold text-red-700 font-mono">${Number(finiquitoData.calculo?.total_liquidacion||0).toFixed(2)}</span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-2">{finiquitoData.nota}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </CardHeader>
           <CardContent>
@@ -1118,11 +1301,11 @@ export default function TalentoHumano() {
                   <thead>
                     <tr className="border-b border-[#F97316]/20">
                       {[
-                        'Empleado', 'Cargo', 'Sal. Base', 'Hrs. Extra', 'Otros Ing.',
-                        'Sal. Bruto', 'IESS Pers.', 'IESS Patr.*', 'Neto a Pagar',
-                        'Prov. 13°', 'Prov. 14°', 'Prov. Vac.', 'Costo Empresa',
+                        'Empleado', 'Sal. Base', 'H.E.Diur.', 'H.E.Noct.', 'Otros/Desc.',
+                        'Sal. Bruto', 'IESS Pers.', 'Fondos Res.', 'Ret. IR', 'Neto Pagar',
+                        'IESS Patr.', 'Prov. 13°', 'Prov. 14°', 'Prov. Vac.', 'Costo Total',
                       ].map((h) => (
-                        <th key={h} className="text-left text-gray-600 font-medium px-2 py-3 whitespace-nowrap">
+                        <th key={h} className="text-left text-gray-600 font-medium px-2 py-3 whitespace-nowrap text-xs">
                           {h}
                         </th>
                       ))}
@@ -1131,84 +1314,60 @@ export default function TalentoHumano() {
                   <tbody>
                     {(() => {
                       const activos = empleados.filter((e) => e.estado === 'activo');
-                      const totales = {
-                        salario_base: 0, salario_bruto: 0, iess_personal: 0,
-                        iess_patronal: 0, neto_pagar: 0, provision_decimoTercero: 0,
-                        provision_decimoCuarto: 0, provision_vacaciones: 0, costo_total_empresa: 0,
-                      };
+                      let tot = { bruto:0, personal:0, patronal:0, fondos:0, ir:0, neto:0, d13:0, d14:0, vac:0, costo:0 };
+                      const inp = (empId: string, field: string, val: number) =>
+                        setNominaExtras(prev => ({ ...prev, [empId]: { ...(prev[empId]||{}), [field]: val } }));
+
                       const rows = activos.map((emp) => {
-                        const extras = nominaExtras[emp.id] || { horas_extras: 0, otros_ingresos: 0 };
+                        const extras = nominaExtras[emp.id] || {};
                         const n = computeNomina(emp);
-                        totales.salario_base += emp.salario_base;
-                        totales.salario_bruto += n.salario_bruto;
-                        totales.iess_personal += n.iess_personal;
-                        totales.iess_patronal += n.iess_patronal;
-                        totales.neto_pagar += n.neto_pagar;
-                        totales.provision_decimoTercero += n.provision_decimoTercero;
-                        totales.provision_decimoCuarto += n.provision_decimoCuarto;
-                        totales.provision_vacaciones += n.provision_vacaciones;
-                        totales.costo_total_empresa += n.costo_total_empresa;
+                        tot.bruto   += n.salario_bruto;    tot.personal += n.iess_personal;
+                        tot.patronal += n.iess_patronal;   tot.fondos += n.fondos_reserva;
+                        tot.ir      += n.ir_mensual;       tot.neto   += n.neto_pagar;
+                        tot.d13     += n.provision_decimoTercero; tot.d14 += n.provision_decimoCuarto;
+                        tot.vac     += n.provision_vacaciones;    tot.costo += n.costo_total_empresa;
+                        const inputCls = "w-16 bg-gray-100 border border-orange-200 text-gray-900 rounded px-1 py-0.5 text-xs";
                         return (
-                          <tr key={emp.id} className="border-b border-[#F97316]/10 hover:bg-gray-50">
-                            <td className="px-2 py-3 text-gray-900 font-medium whitespace-nowrap">{emp.nombre_completo}</td>
-                            <td className="px-2 py-3 text-gray-600 whitespace-nowrap">{emp.cargo || '—'}</td>
-                            <td className="px-2 py-3 text-[#F97316] whitespace-nowrap">${emp.salario_base.toFixed(2)}</td>
-                            <td className="px-2 py-2 whitespace-nowrap">
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.5"
-                                value={extras.horas_extras}
-                                onChange={(ev) =>
-                                  setNominaExtras((prev) => ({
-                                    ...prev,
-                                    [emp.id]: { ...extras, horas_extras: parseFloat(ev.target.value) || 0 },
-                                  }))
-                                }
-                                className="w-20 bg-gray-100 border border-[#F97316]/20 text-gray-900 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#F97316]/60"
-                              />
+                          <tr key={emp.id} className="border-b border-gray-100 hover:bg-gray-50 text-xs">
+                            <td className="px-2 py-2 text-gray-900 font-medium whitespace-nowrap">
+                              {emp.nombre_completo}
+                              <div className="text-gray-400 font-normal">${emp.salario_base.toFixed(0)}/mes{n.tiene_fondos_reserva ? ' · FR' : ''}{n.ir_mensual > 0 ? ' · IR' : ''}</div>
                             </td>
-                            <td className="px-2 py-2 whitespace-nowrap">
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={extras.otros_ingresos}
-                                onChange={(ev) =>
-                                  setNominaExtras((prev) => ({
-                                    ...prev,
-                                    [emp.id]: { ...extras, otros_ingresos: parseFloat(ev.target.value) || 0 },
-                                  }))
-                                }
-                                className="w-24 bg-gray-100 border border-[#F97316]/20 text-gray-900 rounded px-2 py-1 text-sm focus:outline-none focus:border-[#F97316]/60"
-                              />
+                            <td className="px-1 py-2 text-orange-600 font-mono">${emp.salario_base.toFixed(2)}</td>
+                            <td className="px-1 py-1"><input type="number" min="0" step="0.5" defaultValue={0} onChange={e=>inp(emp.id,'horas_extras',parseFloat(e.target.value)||0)} className={inputCls} placeholder="0"/></td>
+                            <td className="px-1 py-1"><input type="number" min="0" step="0.5" defaultValue={0} onChange={e=>inp(emp.id,'horas_extras_nocturnas',parseFloat(e.target.value)||0)} className={inputCls} placeholder="0"/></td>
+                            <td className="px-1 py-1">
+                              <input type="number" min="0" step="0.01" defaultValue={0} onChange={e=>inp(emp.id,'otros_ingresos',parseFloat(e.target.value)||0)} className={inputCls} placeholder="+"/>&nbsp;
+                              <input type="number" min="0" step="0.01" defaultValue={0} onChange={e=>inp(emp.id,'descuentos',parseFloat(e.target.value)||0)} className={inputCls} placeholder="-"/>
                             </td>
-                            <td className="px-2 py-3 text-gray-900 whitespace-nowrap">${n.salario_bruto.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-red-400 whitespace-nowrap">-${n.iess_personal.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-orange-400 whitespace-nowrap">${n.iess_patronal.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-green-400 font-bold whitespace-nowrap">${n.neto_pagar.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-600 whitespace-nowrap">${n.provision_decimoTercero.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-600 whitespace-nowrap">${n.provision_decimoCuarto.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-600 whitespace-nowrap">${n.provision_vacaciones.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-[#F97316] font-bold whitespace-nowrap">${n.costo_total_empresa.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono font-bold text-gray-900">${n.salario_bruto.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-red-500">-${n.iess_personal.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-blue-600">{n.fondos_reserva > 0 ? `$${n.fondos_reserva.toFixed(2)}` : <span className="text-gray-300">—</span>}</td>
+                            <td className="px-2 py-2 font-mono text-red-400">{n.ir_mensual > 0 ? `-$${n.ir_mensual.toFixed(2)}` : <span className="text-gray-300">—</span>}</td>
+                            <td className="px-2 py-2 font-mono font-bold text-green-600">${n.neto_pagar.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-orange-500">${n.iess_patronal.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-gray-500">${n.provision_decimoTercero.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-gray-500">${n.provision_decimoCuarto.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-gray-500">${n.provision_vacaciones.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono font-bold text-orange-600">${n.costo_total_empresa.toFixed(2)}</td>
                           </tr>
                         );
                       });
                       return (
                         <>
                           {rows}
-                          <tr className="border-t-2 border-[#F97316]/40 bg-gray-50 font-bold">
-                            <td className="px-2 py-3 text-[#F97316]" colSpan={2}>TOTALES</td>
-                            <td className="px-2 py-3 text-[#F97316]">${totales.salario_base.toFixed(2)}</td>
-                            <td className="px-2 py-3" colSpan={2} />
-                            <td className="px-2 py-3 text-gray-900">${totales.salario_bruto.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-red-400">-${totales.iess_personal.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-orange-400">${totales.iess_patronal.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-green-400">${totales.neto_pagar.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-600">${totales.provision_decimoTercero.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-600">${totales.provision_decimoCuarto.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-gray-600">${totales.provision_vacaciones.toFixed(2)}</td>
-                            <td className="px-2 py-3 text-[#F97316]">${totales.costo_total_empresa.toFixed(2)}</td>
+                          <tr className="border-t-2 border-orange-300 bg-orange-50 font-bold text-xs">
+                            <td className="px-2 py-2 text-orange-700" colSpan={5}>TOTALES ({activos.length} empleados)</td>
+                            <td className="px-2 py-2 font-mono text-gray-900">${tot.bruto.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-red-500">-${tot.personal.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-blue-600">${tot.fondos.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-red-400">${tot.ir.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-green-600">${tot.neto.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-orange-500">${tot.patronal.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-gray-600">${tot.d13.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-gray-600">${tot.d14.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-gray-600">${tot.vac.toFixed(2)}</td>
+                            <td className="px-2 py-2 font-mono text-orange-700">${tot.costo.toFixed(2)}</td>
                           </tr>
                         </>
                       );

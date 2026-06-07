@@ -211,29 +211,53 @@ function escapeXML(str: string): string {
 // Validar RUC ecuatoriano
 export function validarRUC(ruc: string): boolean {
   if (!ruc || ruc.length !== 13) return false;
-  
-  // Los primeros 2 dígitos deben ser provincia válida (01-24)
-  const provincia = parseInt(ruc.substring(0, 2));
+
+  const digits = ruc.split('').map(Number);
+  if (digits.some(isNaN)) return false;
+
+  const provincia = digits[0] * 10 + digits[1];
   if (provincia < 1 || provincia > 24) return false;
-  
-  // El tercer dígito debe ser menor a 6 para personas naturales o 6 para sociedades privadas o 9 para públicas
-  const tercerDigito = parseInt(ruc.charAt(2));
-  if (tercerDigito > 9) return false;
-  
-  // Verificar dígito verificador (algoritmo módulo 11)
-  const coeficientes = [2, 1, 2, 1, 2, 1, 2, 1, 2];
-  let suma = 0;
-  
-  for (let i = 0; i < 9; i++) {
-    let valor = parseInt(ruc.charAt(i)) * coeficientes[i];
-    if (valor >= 10) valor = valor - 9;
-    suma += valor;
+
+  const tercerDigito = digits[2];
+
+  if (tercerDigito < 6) {
+    // Persona Natural: módulo 10 (igual que cédula), dígito verificador en posición 9
+    const coef = [2, 1, 2, 1, 2, 1, 2, 1, 2];
+    let suma = 0;
+    for (let i = 0; i < 9; i++) {
+      let v = digits[i] * coef[i];
+      if (v >= 10) v -= 9;
+      suma += v;
+    }
+    const residuo = suma % 10;
+    const verificador = residuo === 0 ? 0 : 10 - residuo;
+    if (verificador !== digits[9]) return false;
+    // Los últimos 3 dígitos = número de establecimiento (>= 001)
+    return (digits[10] * 100 + digits[11] * 10 + digits[12]) >= 1;
+
+  } else if (tercerDigito === 9) {
+    // Persona Jurídica / Sociedad Privada: módulo 11, dígito verificador en posición 9
+    const coef = [4, 3, 2, 7, 6, 5, 4, 3, 2];
+    let suma = 0;
+    for (let i = 0; i < 9; i++) suma += digits[i] * coef[i];
+    const residuo = suma % 11;
+    const verificador = residuo === 0 ? 0 : 11 - residuo;
+    if (verificador !== digits[9]) return false;
+    return (digits[10] * 100 + digits[11] * 10 + digits[12]) >= 1;
+
+  } else if (tercerDigito === 6) {
+    // Empresa Pública: módulo 11, dígito verificador en posición 8
+    const coef = [3, 2, 7, 6, 5, 4, 3, 2];
+    let suma = 0;
+    for (let i = 0; i < 8; i++) suma += digits[i] * coef[i];
+    const residuo = suma % 11;
+    const verificador = residuo === 0 ? 0 : 11 - residuo;
+    return verificador === digits[8];
+
+  } else {
+    // 3er dígito 7 u 8 no es válido en Ecuador
+    return false;
   }
-  
-  const residuo = suma % 10;
-  const digitoVerificador = residuo === 0 ? 0 : 10 - residuo;
-  
-  return digitoVerificador === parseInt(ruc.charAt(9));
 }
 
 // Validar Cédula ecuatoriana

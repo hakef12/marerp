@@ -11,7 +11,7 @@ import { setupBIRoutes } from "./bi-routes.tsx";
 import { setupRRHHRoutes } from "./rrhh-routes.tsx";
 import { setupIngenieriaMenuRoutes } from "./ingenieria-menu-routes.tsx";
 import { setupUsuariosRoutes } from "./usuarios-routes.tsx";
-import { handleGetConfiguracionFacturacion, handleSaveConfiguracionFacturacion, handleGenerarFactura, handleGetFacturas, handleAutorizarFactura, handleReintentarAutorizacion, handleEnviarEmailFactura, handleReenviarEmailFactura, handleUploadCertificado, handleGetCertificadoInfo, handleTestSRI } from "./facturacion-routes.tsx";
+import { handleGetConfiguracionFacturacion, handleSaveConfiguracionFacturacion, handleGenerarFactura, handleGetFacturas, handleAutorizarFactura, handleReintentarAutorizacion, handleReenviarEmailFactura, handleTestEmail, handleUploadCertificado, handleGetCertificadoInfo, handleTestSRI, handleEmitirNotaCredito } from "./facturacion-routes.tsx";
 import { handleEmitirRetencion, handleGetRetenciones, handleGetRetencion, handleAutorizarRetencion, handleGetXMLRetencion } from "./retenciones-routes.tsx";
 import { setupAuditoriaRoutes } from "./auditoria-routes.tsx";
 import { setupContabilidadRoutes } from "./contabilidad-routes.tsx";
@@ -221,7 +221,10 @@ app.post("/server/auth/signup", async (c) => {
       .select('id, modulos_incluidos')
       .eq('codigo', plan_tipo)
       .eq('activo', true)
-      .single();
+      .maybeSingle();
+    if (!plan) {
+      return c.json({ error: `Plan '${plan_tipo}' no encontrado o inactivo. Verifique el código de plan.` }, 400);
+    }
 
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email: usuario_email,
@@ -548,7 +551,7 @@ app.post("/server/pos/ventas", authMiddleware, async (c) => {
       const impuesto = Number(body.impuestos) || 0;
       const subtotal = total - impuesto;
       const metodo   = (body.metodo_pago || 'efectivo').toLowerCase();
-      const cuentaCaja = metodo.includes('tarjeta') || metodo.includes('transfer') ? '1.1.02' : '1.1.01';
+      const cuentaCaja = '10101'; // Efectivo y Equivalentes al Efectivo (SRI)
       const numTicket  = venta.numero_ticket || numero_ticket;
 
       if (total > 0) {
@@ -559,8 +562,8 @@ app.post("/server/pos/ventas", authMiddleware, async (c) => {
             referencia: numTicket,
             items: [
               { codigo: cuentaCaja, debito: total,    descripcion: 'Cobro venta' },
-              { codigo: '4.1.01',   credito: subtotal, descripcion: 'Ingresos por ventas' },
-              { codigo: '2.1.03',   credito: impuesto, descripcion: 'IVA en ventas' },
+              { codigo: '4101',     credito: subtotal, descripcion: 'Venta de Bienes' },
+              { codigo: '2010701',  credito: impuesto, descripcion: 'Adm. Tributaria (IVA)' },
             ],
           });
         } else {
@@ -570,12 +573,15 @@ app.post("/server/pos/ventas", authMiddleware, async (c) => {
             referencia: numTicket,
             items: [
               { codigo: cuentaCaja, debito: total,  descripcion: 'Cobro venta' },
-              { codigo: '4.1.02',   credito: total, descripcion: 'Ventas gravadas 0%' },
+              { codigo: '4101',     credito: total, descripcion: 'Venta de Bienes (0% IVA)' },
             ],
           });
         }
       }
-    } catch { /* silencioso */ }
+    } catch (asientoErr: any) {
+      // No bloquear la venta si falla el asiento contable, pero sí loguear para auditoría
+      console.error('[asiento] Error registrando asiento automático:', asientoErr?.message || asientoErr);
+    }
 
     return c.json({ message: 'Venta creada exitosamente', venta }, 201);
   } catch (error: any) {
@@ -867,7 +873,12 @@ app.post("/server/facturacion/generar", authMiddleware, async (c) => {
 app.post("/server/facturacion/facturas/:id/autorizar", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   try {
-    return await handleAutorizarFactura(c.req.raw, auth.empresaId);
+    const idFromUrl = c.req.param('id');
+    let body: any = {};
+    try { body = await c.req.json(); } catch { }
+    if (!body.factura_id && idFromUrl) body.factura_id = idFromUrl;
+    const newReq = new Request(c.req.url, { method: 'POST', headers: c.req.raw.headers, body: JSON.stringify(body) });
+    return await handleAutorizarFactura(newReq, auth.empresaId);
   } catch (error: any) {
     return c.json({ error: error.message }, 500);
   }
@@ -875,7 +886,17 @@ app.post("/server/facturacion/facturas/:id/autorizar", authMiddleware, async (c)
 app.post("/server/facturacion/facturas/:id/reenviar-email", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   try {
-    return await handleReenviarEmailFactura(c.req.raw, auth.empresaId);
+    const idFromUrl = c.req.param('id');
+    // Reconstruir el request inyectando el factura_id desde la URL si no viene en el body
+    let body: any = {};
+    try { body = await c.req.json(); } catch { /* body vacío */ }
+    if (!body.factura_id && idFromUrl) body.factura_id = idFromUrl;
+    const newReq = new Request(c.req.url, {
+      method: 'POST',
+      headers: c.req.raw.headers,
+      body: JSON.stringify(body),
+    });
+    return await handleReenviarEmailFactura(newReq, auth.empresaId);
   } catch (error: any) {
     return c.json({ error: error.message }, 500);
   }
@@ -893,6 +914,15 @@ app.post("/server/facturacion/reenviar-email", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   try {
     return await handleReenviarEmailFactura(c.req.raw, auth.empresaId);
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+// Email diagnostic — envía email de prueba y devuelve resultado completo
+app.post("/server/facturacion/test-email", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    return await handleTestEmail(c.req.raw, auth.empresaId);
   } catch (error: any) {
     return c.json({ error: error.message }, 500);
   }
@@ -922,6 +952,13 @@ app.get("/server/facturacion/certificado/info", authMiddleware, async (c) => {
   } catch (error: any) {
     return c.json({ error: error.message }, 500);
   }
+});
+
+// ── NOTAS DE CRÉDITO ─────────────────────────────────────────────────────────
+app.post("/server/facturacion/notas-credito", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try { return await handleEmitirNotaCredito(c.req.raw, auth.empresaId); }
+  catch (e: any) { return c.json({ error: e.message }, 500); }
 });
 
 // ── RETENCIONES ─────────────────────────────────────────────────────────────
@@ -995,7 +1032,7 @@ app.get("/server/clientes", authMiddleware, async (c) => {
 });
 
 // ── GET /compras/debug — diagnóstico de compras ─────────────────────────────
-app.get("/server/compras/debug", authMiddleware, async (c) => {
+app.get("/server/compras/debug", authMiddleware, superAdminMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   const db = createClient(supabaseUrl, supabaseServiceKey);
   try {
@@ -1028,7 +1065,7 @@ app.get("/server/compras/debug", authMiddleware, async (c) => {
 });
 
 // ── GET /admin/diagnostico-completo — comparar KV vs SQL ────────────────────
-app.get("/server/admin/diagnostico-completo", authMiddleware, async (c) => {
+app.get("/server/admin/diagnostico-completo", authMiddleware, superAdminMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   const db = createClient(supabaseUrl, supabaseServiceKey);
   try {
@@ -1090,7 +1127,7 @@ app.get("/server/admin/diagnostico-completo", authMiddleware, async (c) => {
 
 // ── POST /admin/restaurar-desde-kv — re-sincroniza TODO desde KV ─────────────
 // Acepta ?empresa_id=UUID para restaurar una empresa específica
-app.post("/server/admin/restaurar-desde-kv", authMiddleware, async (c) => {
+app.post("/server/admin/restaurar-desde-kv", authMiddleware, superAdminMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   const db = createClient(supabaseUrl, supabaseServiceKey);
   // Permite especificar empresa_id destino (útil para super_admin restaurando otras empresas)
@@ -1304,7 +1341,7 @@ app.get("/server/admin/inspeccionar-kv", authMiddleware, async (c) => {
 });
 
 // ── GET /admin/columnas-sql — muestra columnas reales de tablas contables en la BD ──────────
-app.get("/server/admin/columnas-sql", authMiddleware, async (c) => {
+app.get("/server/admin/columnas-sql", authMiddleware, superAdminMiddleware, async (c) => {
   const db = createClient(supabaseUrl, supabaseServiceKey);
   const tablas = ['cuentas_contables', 'asientos_contables', 'categorias', 'bodegas', 'ventas', 'productos'];
   const resultado: Record<string, any> = {};
@@ -1339,7 +1376,7 @@ app.get("/server/admin/columnas-sql", authMiddleware, async (c) => {
 });
 
 // ── POST /admin/restaurar-completo — restauración completa con mapeo exacto de campos KV ──
-app.post("/server/admin/restaurar-completo", authMiddleware, async (c) => {
+app.post("/server/admin/restaurar-completo", authMiddleware, superAdminMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
   const db = createClient(supabaseUrl, supabaseServiceKey);
   const eidParam = c.req.query('empresa_id');
@@ -1923,7 +1960,7 @@ app.post("/server/admin/migrar-datos", authMiddleware, async (c) => {
     ventas: new Set(['id','empresa_id','numero','comanda_id','cliente_id','cliente_nombre','subtotal','descuento','iva','total','forma_pago','estado','cajero_id','notas','items','metadata','created_at','bodega_id','mesero_id','mesa','tipo_servicio','numero_orden','anulada','motivo_anulacion','updated_at']),
     compras: new Set(['id','empresa_id','numero','proveedor_id','proveedor_nombre','subtotal','iva','total','estado','fecha','items','metadata','created_at','estado_pago','forma_pago','bodega_id','notas','updated_at']),
     cuentas_por_pagar: new Set(['id','empresa_id','compra_id','proveedor_id','proveedor_nombre','monto','monto_pagado','saldo_pendiente','estado','fecha_vencimiento','metadata','created_at','updated_at']),
-    movimientos_inventario: new Set(['id','empresa_id','producto_id','producto_nombre','bodega_id','tipo','cantidad','precio_unitario','motivo','referencia','usuario_id','metadata','created_at','bodega_destino_id','costo_total','stock_anterior','stock_nuevo']),
+    movimientos_inventario: new Set(['id','empresa_id','producto_id','producto_nombre','bodega_id','tipo','cantidad','costo_total','motivo','referencia','usuario_id','metadata','created_at','bodega_destino_id','costo_total','stock_anterior','stock_nuevo']),
     cuentas_contables: new Set(['id','empresa_id','codigo','nombre','tipo','es_grupo','padre_id','activo','metadata','created_at','updated_at','nivel']),
     asientos_contables: new Set(['id','empresa_id','numero','fecha','descripcion','tipo','referencia','estado','origen_automatico','total_debito','total_credito','items','metadata','created_at','updated_at']),
     mermas: new Set(['id','empresa_id','producto_id','producto_nombre','cantidad','motivo','bodega_id','usuario_id','metadata','created_at']),
@@ -2187,6 +2224,836 @@ app.post("/server/admin/migrar-datos", authMiddleware, async (c) => {
 
   resumen.fin = new Date().toISOString();
   return c.json({ success: true, resumen });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REPORTES DESCARGABLES
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /reportes/estado-cuenta-cliente/:clienteId ───────────────────────────
+app.get("/server/reportes/estado-cuenta-cliente/:clienteId", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const clienteId = c.req.param('clienteId');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { desde, hasta } = c.req.query() as any;
+    const [clienteRes, facturasRes] = await Promise.all([
+      db.from('clientes').select('*').eq('id', clienteId).eq('empresa_id', auth.empresaId).maybeSingle(),
+      db.from('facturas').select('numero_factura,fecha_emision,total,estado,estado_autorizacion,items,clave_acceso')
+        .eq('empresa_id', auth.empresaId).eq('cliente_id', clienteId)
+        .order('fecha_emision', { ascending: false }).limit(200),
+    ]);
+    let facturas = facturasRes.data || [];
+    if (desde) facturas = facturas.filter((f: any) => (f.fecha_emision || '') >= desde);
+    if (hasta) facturas = facturas.filter((f: any) => (f.fecha_emision || '') <= hasta);
+
+    const totalFacturado = facturas.reduce((s: number, f: any) => s + Number(f.total || 0), 0);
+    const autorizadas    = facturas.filter((f: any) => f.estado_autorizacion === 'AUTORIZADO' || f.estado === 'AUTORIZADO');
+    const pendientes     = facturas.filter((f: any) => f.estado_autorizacion !== 'AUTORIZADO' && f.estado !== 'AUTORIZADO');
+
+    return c.json({
+      cliente: clienteRes.data || {},
+      facturas,
+      resumen: {
+        total_documentos: facturas.length,
+        total_facturado: Math.round(totalFacturado * 100) / 100,
+        autorizadas: autorizadas.length,
+        pendientes: pendientes.length,
+        monto_autorizado: Math.round(autorizadas.reduce((s: number, f: any) => s + Number(f.total || 0), 0) * 100) / 100,
+      },
+    });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// ── GET /reportes/clientes — lista clientes con resumen de facturación ────────
+app.get("/server/reportes/clientes-facturacion", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { data: clientes } = await db.from('clientes')
+      .select('id,nombre,identificacion,email,telefono,total_compras,ultima_compra')
+      .eq('empresa_id', auth.empresaId).order('total_compras', { ascending: false }).limit(200);
+    return c.json({ clientes: clientes || [] });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// ── GET /reportes/mermas — mermas desde movimientos y producción ──────────────
+app.get("/server/reportes/mermas", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { desde, hasta } = c.req.query() as any;
+    // Movimientos de tipo merma / ajuste salida
+    let qMov = db.from('movimientos_inventario')
+      .select('id,producto_id,cantidad,costo_unitario,costo_total,observaciones,referencia,created_at')
+      .eq('empresa_id', auth.empresaId)
+      .in('tipo', ['merma', 'ajuste_salida', 'perdida', 'vencimiento'])
+      .order('created_at', { ascending: false });
+    if (desde) qMov = qMov.gte('created_at', new Date(desde + 'T00:00:00Z').toISOString());
+    if (hasta) qMov = qMov.lte('created_at', new Date(hasta + 'T23:59:59Z').toISOString());
+    const { data: movs } = await qMov;
+
+    // Mermas desde órdenes de producción
+    let qProd = db.from('produccion_ordenes')
+      .select('numero_orden,producto_nombre,merma,merma_porcentaje,fecha_completada,notas')
+      .eq('empresa_id', auth.empresaId).gt('merma', 0)
+      .order('fecha_completada', { ascending: false });
+    if (desde) qProd = qProd.gte('fecha_completada', desde);
+    if (hasta) qProd = qProd.lte('fecha_completada', hasta);
+    const { data: prodMermas } = await qProd;
+
+    const movsMapeados = (movs || []).map((m: any) => ({
+      origen: 'movimiento',
+      fecha: m.created_at,
+      producto: m.producto_id || '—',
+      cantidad: Number(m.cantidad),
+      costo_unitario: Number(m.costo_unitario || m.costo_total || 0),
+      valor: Number(m.costo_total || Number(m.cantidad) * Number(m.costo_unitario || 0)),
+      motivo: m.observaciones || m.referencia || '—',
+    }));
+    const prodMapeadas = (prodMermas || []).map((p: any) => ({
+      origen: 'produccion',
+      fecha: p.fecha_completada,
+      producto: p.producto_nombre || '—',
+      cantidad: Number(p.merma || 0),
+      costo_unitario: 0,
+      valor: 0,
+      motivo: `Orden ${p.numero_orden}${p.notas ? ' — ' + p.notas : ''}`,
+    }));
+
+    const todas = [...movsMapeados, ...prodMapeadas]
+      .sort((a, b) => new Date(b.fecha || 0).getTime() - new Date(a.fecha || 0).getTime());
+    const totalValor = todas.reduce((s, m) => s + m.valor, 0);
+    const totalCant  = todas.reduce((s, m) => s + m.cantidad, 0);
+
+    // Agrupar por producto
+    const porProducto: Record<string, any> = {};
+    for (const m of todas) {
+      if (!porProducto[m.producto]) porProducto[m.producto] = { producto: m.producto, cantidad: 0, valor: 0, eventos: 0 };
+      porProducto[m.producto].cantidad += m.cantidad;
+      porProducto[m.producto].valor    += m.valor;
+      porProducto[m.producto].eventos  += 1;
+    }
+
+    return c.json({
+      mermas: todas,
+      por_producto: Object.values(porProducto).sort((a: any, b: any) => b.valor - a.valor),
+      resumen: { total_eventos: todas.length, total_cantidad: Math.round(totalCant * 100) / 100, total_valor: Math.round(totalValor * 100) / 100 },
+    });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// ── GET /reportes/flujo-caja — proyección CxP + CxC ──────────────────────────
+app.get("/server/reportes/flujo-caja", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const dias = Number((c.req.query() as any).dias || 60);
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    const limite = new Date(hoy.getTime() + dias * 86400000);
+
+    // CxP pendientes
+    const { data: cxp } = await db.from('cuentas_por_pagar')
+      .select('numero,proveedor_nombre,monto_total,saldo_pendiente,fecha_vencimiento,estado')
+      .eq('empresa_id', auth.empresaId).neq('estado', 'pagada')
+      .lte('fecha_vencimiento', limite.toISOString().split('T')[0])
+      .order('fecha_vencimiento');
+
+    // Caja actual
+    const { data: turno } = await db.from('turnos_caja')
+      .select('monto_inicial,ventas_total,fecha_apertura')
+      .eq('empresa_id', auth.empresaId).eq('estado', 'abierta')
+      .order('fecha_apertura', { ascending: false }).limit(1).maybeSingle();
+
+    // Ventas promedio últimos 30 días
+    const hace30 = new Date(hoy.getTime() - 30 * 86400000);
+    const ventas = await obtenerVentas(auth.empresaId);
+    const ventasActivas = ventas.filter((v: any) => !v.anulada && (v.fecha || v.created_at) >= hace30.toISOString());
+    const totalVentas30 = ventasActivas.reduce((s: number, v: any) => s + Number(v.total || 0), 0);
+    const promDiario = totalVentas30 / 30;
+
+    // Construir proyección por semana
+    const proyeccion: any[] = [];
+    for (let i = 0; i < dias; i += 7) {
+      const fechaIni = new Date(hoy.getTime() + i * 86400000);
+      const fechaFin = new Date(hoy.getTime() + Math.min(i + 6, dias - 1) * 86400000);
+      const label = `${fechaIni.toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit' })} – ${fechaFin.toLocaleDateString('es-EC', { day:'2-digit', month:'2-digit' })}`;
+      const iniStr = fechaIni.toISOString().split('T')[0];
+      const finStr = fechaFin.toISOString().split('T')[0];
+      const pagosSemana = (cxp || []).filter((p: any) => p.fecha_vencimiento >= iniStr && p.fecha_vencimiento <= finStr)
+        .reduce((s: number, p: any) => s + Number(p.saldo_pendiente || 0), 0);
+      const ventasSemana = promDiario * Math.min(7, dias - i);
+      proyeccion.push({ semana: label, ingresos_proyectados: Math.round(ventasSemana * 100)/100, egresos_cxp: Math.round(pagosSemana * 100)/100, balance: Math.round((ventasSemana - pagosSemana) * 100)/100 });
+    }
+
+    const saldoCaja = turno ? Number(turno.monto_inicial || 0) + Number(turno.ventas_total || 0) : 0;
+    const totalCxP  = (cxp || []).reduce((s: number, p: any) => s + Number(p.saldo_pendiente || 0), 0);
+
+    return c.json({
+      saldo_caja_actual: Math.round(saldoCaja * 100) / 100,
+      cxp_pendiente_total: Math.round(totalCxP * 100) / 100,
+      venta_promedio_diaria: Math.round(promDiario * 100) / 100,
+      cxp: cxp || [],
+      proyeccion,
+      dias_proyectados: dias,
+    });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// ── GET /reportes/ventas-por-producto — historial de ventas por producto ──────
+app.get("/server/reportes/ventas-por-producto", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    const { desde, hasta } = c.req.query() as any;
+    const ventas = await obtenerVentas(auth.empresaId);
+    const activas = ventas.filter((v: any) => !v.anulada);
+    const ventasFiltradas = activas.filter((v: any) => {
+      const f = v.fecha || v.created_at || '';
+      return (!desde || f >= desde) && (!hasta || f <= hasta);
+    });
+
+    // Agrupar por producto
+    const map: Record<string, any> = {};
+    for (const v of ventasFiltradas) {
+      for (const item of (v.items || [])) {
+        const pid  = item.producto_id || item.id || item.nombre;
+        const nombre = item.nombre || item.descripcion || pid;
+        if (!map[pid]) map[pid] = { producto_id: pid, nombre, codigo: item.codigo || '', categoria: item.categoria || '', cantidad: 0, subtotal: 0, descuento: 0, ventas: 0 };
+        map[pid].cantidad  += Number(item.cantidad || 1);
+        map[pid].subtotal  += Number(item.subtotal || (item.costo_total * item.cantidad) || 0);
+        map[pid].descuento += Number(item.descuento || 0);
+        map[pid].ventas    += 1;
+      }
+    }
+
+    const productos = Object.values(map)
+      .map((p: any) => ({ ...p, subtotal: Math.round(p.subtotal * 100) / 100, ticket_promedio: p.ventas > 0 ? Math.round((p.subtotal / p.ventas) * 100) / 100 : 0 }))
+      .sort((a: any, b: any) => b.subtotal - a.subtotal);
+
+    const totalSubtotal = productos.reduce((s: number, p: any) => s + p.subtotal, 0);
+    const totalCantidad = productos.reduce((s: number, p: any) => s + p.cantidad, 0);
+
+    return c.json({
+      productos,
+      resumen: {
+        total_productos_vendidos: productos.length,
+        total_cantidad: Math.round(totalCantidad * 100) / 100,
+        total_subtotal: Math.round(totalSubtotal * 100) / 100,
+        total_ventas: ventasFiltradas.length,
+        periodo: { desde: desde || 'todo', hasta: hasta || 'hoy' },
+      },
+    });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// ── GET /inventario/kardex-consolidado — kardex de todos los productos ─────────
+app.get("/server/inventario/kardex-consolidado", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { desde, hasta, limit = '1000' } = c.req.query() as any;
+    let q = db.from('movimientos_inventario')
+      .select('id,tipo,cantidad,costo_unitario,costo_total,observaciones,referencia,created_at,producto_id,bodega_id')
+      .eq('empresa_id', auth.empresaId)
+      .order('created_at', { ascending: true })
+      .limit(Number(limit));
+    if (desde) q = q.gte('created_at', new Date(desde + 'T00:00:00Z').toISOString());
+    if (hasta) q = q.lte('created_at', new Date(hasta + 'T23:59:59Z').toISOString());
+    const { data: movs } = await q;
+
+    // Calcular saldo acumulado por producto
+    const saldos: Record<string, number> = {};
+    const filas = (movs || []).map((m: any) => {
+      const pid   = m.producto_id || m.producto_nombre || '';
+      const delta = (m.tipo === 'entrada' || m.tipo === 'compra' || m.tipo === 'ajuste_entrada')
+        ? Number(m.cantidad) : -Number(m.cantidad);
+      saldos[pid] = (saldos[pid] || 0) + delta;
+      return {
+        fecha:           m.created_at,
+        producto:        m.producto_nombre || '—',
+        tipo:            m.tipo,
+        referencia:      m.referencia || '',
+        entrada:         delta > 0 ? Math.abs(delta) : null,
+        salida:          delta < 0 ? Math.abs(delta) : null,
+        saldo:           Math.round(saldos[pid] * 10000) / 10000,
+        costo_unitario: Number(m.costo_unitario || m.costo_total || 0),
+        valor: Number(m.costo_total || Math.abs(delta) * Number(m.costo_unitario || 0)),
+      };
+    });
+
+    return c.json({ kardex: filas, total_movimientos: filas.length, saldos_finales: saldos });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// ── GET /inventario/kardex/:productoId — Kardex con saldo acumulado ──────────
+app.get("/server/inventario/kardex/:productoId", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const productoId = c.req.param('productoId');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { desde, hasta, limit = '200' } = c.req.query() as any;
+
+    let q = db.from('movimientos_inventario')
+      .select('id,tipo,cantidad,costo_unitario,costo_total,observaciones,referencia,created_at,producto_id,bodega_id,usuario_id')
+      .eq('empresa_id', auth.empresaId)
+      .eq('producto_id', productoId)
+      .order('created_at', { ascending: true })
+      .limit(Number(limit));
+
+    if (desde) q = q.gte('created_at', new Date(desde + 'T00:00:00Z').toISOString());
+    if (hasta) q = q.lte('created_at', new Date(hasta + 'T23:59:59Z').toISOString());
+
+    const { data: movs, error } = await q;
+    if (error) throw error;
+
+    // Producto para saldo inicial
+    const { data: prod } = await db.from('productos')
+      .select('nombre, stock_actual, precio_costo, unidad')
+      .eq('id', productoId).eq('empresa_id', auth.empresaId).maybeSingle();
+
+    // Calcular saldo acumulado desde primer movimiento
+    let saldo = 0;
+    const filas = (movs || []).map((m: any) => {
+      const delta = m.tipo === 'entrada' || m.tipo === 'compra' || m.tipo === 'ajuste_entrada'
+        ? Number(m.cantidad) : -Number(m.cantidad);
+      saldo += delta;
+      return {
+        id:              m.id,
+        fecha:           m.created_at,
+        tipo:            m.tipo,
+        referencia:      m.referencia || '',
+        motivo:          m.motivo || '',
+        entrada:         delta > 0 ? Math.abs(delta) : null,
+        salida:          delta < 0 ? Math.abs(delta) : null,
+        saldo:           Math.round(saldo * 10000) / 10000,
+        costo_unitario: Number(m.costo_unitario || m.costo_total || 0),
+        valor_movimiento: Number(m.costo_total || Math.abs(delta) * Number(m.costo_unitario || 0)),
+      };
+    });
+
+    return c.json({
+      producto: prod || { nombre: 'Producto', stock_actual: 0 },
+      kardex: filas,
+      saldo_final: saldo,
+      total_movimientos: filas.length,
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ── POST /inventario/snapshot — guarda foto del stock del mes ────────────────
+app.post("/server/inventario/snapshot", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const OFFSET_EC = 5 * 3600 * 1000;
+    const ahoraEC   = new Date(Date.now() - OFFSET_EC);
+    const anio  = body.anio  ?? ahoraEC.getFullYear();
+    const mes   = body.mes   ?? ahoraEC.getMonth() + 1;
+    const notas = body.notas ?? `Cierre ${mes}/${anio}`;
+
+    // Leer stock actual de todos los productos
+    const productos = await obtenerProductos(auth.empresaId);
+    const items = productos.map((p: any) => ({
+      producto_id: p.id,
+      nombre:      p.nombre,
+      codigo:      p.codigo || '',
+      categoria:   p.categoria || '',
+      unidad:      p.unidad_medida || p.unidad || 'und',
+      stock:       Number(p.stock_actual ?? p.stock ?? 0),
+      costo:       Number(p.precio_compra || p.costo_unitario || p.precio_costo || 0),
+      valor:       Number(p.stock_actual ?? 0) * Number(p.precio_compra || p.costo_unitario || 0),
+    }));
+
+    const totalValor    = items.reduce((s: number, i: any) => s + i.valor, 0);
+    const fechaCierre   = `${anio}-${String(mes).padStart(2,'0')}-${String(new Date(anio, mes, 0).getDate()).padStart(2,'0')}`;
+
+    const { data, error } = await db.from('inventario_snapshots')
+      .upsert({
+        empresa_id: auth.empresaId,
+        anio, mes,
+        fecha_cierre:    fechaCierre,
+        items,
+        total_valor:     Math.round(totalValor * 100) / 100,
+        total_productos: items.length,
+        notas,
+        usuario_id:      auth.userId,
+      }, { onConflict: 'empresa_id,anio,mes' })
+      .select().single();
+
+    if (error) throw error;
+    return c.json({ ok: true, snapshot: data, total_productos: items.length, total_valor: totalValor });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ── GET /inventario/snapshots — lista snapshots guardados ────────────────────
+app.get("/server/inventario/snapshots", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { data, error } = await db.from('inventario_snapshots')
+      .select('id, anio, mes, fecha_cierre, total_valor, total_productos, notas, created_at')
+      .eq('empresa_id', auth.empresaId)
+      .order('anio', { ascending: false }).order('mes', { ascending: false })
+      .limit(24);
+    if (error) throw error;
+    return c.json({ snapshots: data || [] });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ── GET /inventario/comparativo — compara dos periodos por producto ───────────
+// Query params: periodo1=2025-05  periodo2=2026-05
+app.get("/server/inventario/comparativo", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+  const { periodo1, periodo2 } = c.req.query() as any;
+
+  if (!periodo1 || !periodo2)
+    return c.json({ error: 'Se requieren periodo1 y periodo2 (formato YYYY-MM)' }, 400);
+
+  try {
+    const parseP = (p: string) => { const [y, m] = p.split('-'); return { anio: Number(y), mes: Number(m) }; };
+    const p1 = parseP(periodo1);
+    const p2 = parseP(periodo2);
+
+    // Buscar snapshots para cada periodo
+    const [snapP1, snapP2] = await Promise.all([
+      db.from('inventario_snapshots').select('items, total_valor')
+        .eq('empresa_id', auth.empresaId).eq('anio', p1.anio).eq('mes', p1.mes).maybeSingle(),
+      db.from('inventario_snapshots').select('items, total_valor')
+        .eq('empresa_id', auth.empresaId).eq('anio', p2.anio).eq('mes', p2.mes).maybeSingle(),
+    ]);
+
+    // Ventas por producto en cada periodo (usando movimientos)
+    const ventasPorPeriodo = async (anio: number, mes: number) => {
+      const ini = new Date(anio, mes - 1, 1).toISOString();
+      const fin = new Date(anio, mes, 0, 23, 59, 59).toISOString();
+      const { data } = await db.from('movimientos_inventario')
+        .select('producto_id, producto_nombre, cantidad, tipo')
+        .eq('empresa_id', auth.empresaId)
+        .in('tipo', ['salida', 'venta'])
+        .gte('created_at', ini).lte('created_at', fin);
+      const map: Record<string, { nombre: string; cantidad: number }> = {};
+      for (const m of (data || [])) {
+        if (!map[m.producto_id]) map[m.producto_id] = { nombre: m.producto_nombre || '', cantidad: 0 };
+        map[m.producto_id].cantidad += Number(m.cantidad);
+      }
+      return map;
+    };
+
+    const [ventas1, ventas2] = await Promise.all([
+      ventasPorPeriodo(p1.anio, p1.mes),
+      ventasPorPeriodo(p2.anio, p2.mes),
+    ]);
+
+    // Construir tabla comparativa
+    const items1: any[] = snapP1.data?.items || [];
+    const items2: any[] = snapP2.data?.items || [];
+    const todosIds = new Set([...items1.map((i: any) => i.producto_id), ...items2.map((i: any) => i.producto_id)]);
+
+    const comparativa = Array.from(todosIds).map(pid => {
+      const i1 = items1.find((i: any) => i.producto_id === pid);
+      const i2 = items2.find((i: any) => i.producto_id === pid);
+      const nombre  = i1?.nombre || i2?.nombre || '';
+      const stock1  = i1?.stock  ?? null;
+      const stock2  = i2?.stock  ?? null;
+      const venCant1 = ventas1[pid]?.cantidad ?? null;
+      const venCant2 = ventas2[pid]?.cantidad ?? null;
+      const varStock = stock1 !== null && stock2 !== null ? ((stock2 - stock1) / Math.max(stock1, 0.001)) * 100 : null;
+      const varVenta = venCant1 !== null && venCant2 !== null ? ((venCant2 - venCant1) / Math.max(venCant1, 0.001)) * 100 : null;
+      return {
+        producto_id: pid,
+        nombre,
+        codigo:  i1?.codigo  || i2?.codigo  || '',
+        unidad:  i1?.unidad  || i2?.unidad  || 'und',
+        stock_p1: stock1, stock_p2: stock2,
+        ventas_p1: venCant1, ventas_p2: venCant2,
+        var_stock_pct: varStock !== null ? Math.round(varStock * 10) / 10 : null,
+        var_ventas_pct: varVenta !== null ? Math.round(varVenta * 10) / 10 : null,
+        valor_p1: i1?.valor ?? null,
+        valor_p2: i2?.valor ?? null,
+      };
+    }).sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    return c.json({
+      periodo1: { ...p1, label: periodo1, tiene_snapshot: !!snapP1.data },
+      periodo2: { ...p2, label: periodo2, tiene_snapshot: !!snapP2.data },
+      comparativa,
+      resumen: {
+        valor_total_p1: snapP1.data?.total_valor ?? 0,
+        valor_total_p2: snapP2.data?.total_valor ?? 0,
+        var_valor_pct: snapP1.data && snapP2.data
+          ? Math.round(((snapP2.data.total_valor - snapP1.data.total_valor) / Math.max(snapP1.data.total_valor, 0.01)) * 1000) / 10
+          : null,
+      },
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ── POST /admin/generar-asientos-ventas — genera asientos faltantes ──────────
+// Recibe { fecha_inicio, fecha_fin } (YYYY-MM-DD). Sin parámetros = últimos 7 días.
+app.post("/server/admin/generar-asientos-ventas", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* sin body */ }
+
+  const OFFSET_EC = 5 * 3600 * 1000;
+  const ahoraEC   = new Date(Date.now() - OFFSET_EC);
+  const desdeFecha = body.fecha_inicio ?? new Date(Date.now() - 7 * 86400000 - OFFSET_EC).toISOString().split('T')[0];
+  const hastaFecha = body.fecha_fin   ?? ahoraEC.toISOString().split('T')[0];
+
+  // Rango en UTC: desde medianoche Ecuador del primer día hasta fin del último día Ecuador
+  const desdeUTC = new Date(desdeFecha + 'T00:00:00Z').getTime() + OFFSET_EC; // medianoche EC en UTC
+  const hastaUTC = new Date(hastaFecha + 'T23:59:59Z').getTime() + OFFSET_EC; // fin de día EC en UTC
+
+  try {
+    // 1. Obtener TODAS las ventas del rango (tanto por created_at como por fecha)
+    //    Se consulta con una ventana amplia +/- 6h para no perder nada por TZ
+    const { data: ventas, error: ventasErr } = await db
+      .from('ventas')
+      .select('id, numero_ticket, total, impuestos, metodo_pago, created_at, fecha, anulada')
+      .eq('empresa_id', auth.empresaId)
+      .gte('created_at', new Date(desdeUTC - 6 * 3600000).toISOString())
+      .lte('created_at', new Date(hastaUTC + 6 * 3600000).toISOString());
+
+    if (ventasErr) throw new Error('Error obteniendo ventas: ' + ventasErr.message);
+
+    // Filtrar por fecha Ecuador (por si created_at difiere)
+    const ventasEnRango = (ventas || []).filter((v: any) => {
+      const ts = v.fecha || v.created_at || '';
+      if (!ts) return false;
+      const fechaEC = new Date(new Date(ts).getTime() - OFFSET_EC).toISOString().split('T')[0];
+      return fechaEC >= desdeFecha && fechaEC <= hastaFecha;
+    });
+
+    if (ventasEnRango.length === 0) {
+      return c.json({ ok: true, mensaje: `Sin ventas entre ${desdeFecha} y ${hastaFecha}`, generados: 0 });
+    }
+
+    // 2. Obtener asientos ya existentes (por referencia = numero_ticket)
+    const tickets = ventasEnRango.map((v: any) => v.numero_ticket).filter(Boolean);
+    const { data: asientosExistentes } = await db
+      .from('asientos_contables')
+      .select('referencia')
+      .eq('empresa_id', auth.empresaId)
+      .in('referencia', tickets.length > 0 ? tickets : ['__ninguno__']);
+
+    const referenciasExistentes = new Set(
+      (asientosExistentes || []).map((a: any) => a.referencia)
+    );
+
+    // 3. Obtener cuentas contables de la empresa (para verificar que existen)
+    const { data: cuentas } = await db
+      .from('cuentas_contables')
+      .select('codigo, nombre, id')
+      .eq('empresa_id', auth.empresaId)
+      .eq('es_grupo', false);
+
+    // Mapear cuentas por código para lookup rápido
+    const cuentaMap: Record<string, any> = {};
+    for (const c of (cuentas || [])) cuentaMap[c.codigo] = c;
+
+    // Reportar qué códigos existen (diagnóstico)
+    const codigosDisponibles = Object.keys(cuentaMap);
+
+    // 4. Generar asientos para las ventas sin asiento
+    const ventasSinAsiento = ventasEnRango.filter(
+      (v: any) => !v.anulada && v.numero_ticket && !referenciasExistentes.has(v.numero_ticket)
+    );
+
+    let generados = 0;
+    const errores: string[] = [];
+
+    for (const venta of ventasSinAsiento) {
+      try {
+        const total    = Number(venta.total)     || 0;
+        const impuesto = Number(venta.impuestos) || 0;
+        const subtotal = total - impuesto;
+        const metodo   = (venta.metodo_pago || 'efectivo').toLowerCase();
+        const numTicket  = venta.numero_ticket;
+
+        // Calcular fecha Ecuador
+        const ts = venta.fecha || venta.created_at || new Date().toISOString();
+        const fechaVenta = new Date(new Date(ts).getTime() - OFFSET_EC).toISOString().split('T')[0];
+
+        if (total <= 0) continue;
+
+        // Resolver cuentas — buscar por código exacto primero, luego por prefijo
+        const resolveCuenta = (codigo: string) =>
+          cuentaMap[codigo] ||
+          Object.values(cuentaMap).find((c: any) =>
+            c.codigo?.startsWith(codigo.split('.').slice(0, 2).join('.'))
+          );
+
+        const ctaCaja   = resolveCuenta('10101');  // Efectivo y Equivalentes (SRI)
+        const ctaVentas = resolveCuenta('4101') || resolveCuenta('41');    // Venta de Bienes (SRI)
+        const ctaIva    = resolveCuenta('2010701') || resolveCuenta('20107'); // Administración Tributaria (SRI)
+
+        if (!ctaCaja || !ctaVentas) {
+          errores.push(`${numTicket}: sin cuentas (disponibles: ${codigosDisponibles.slice(0,10).join(',')})`);
+          continue;
+        }
+
+        // Construir items del asiento
+        const items: any[] = [];
+        if (impuesto > 0 && ctaIva) {
+          items.push(
+            { cuenta_id: ctaCaja.id,   cuenta_codigo: ctaCaja.codigo,   cuenta_nombre: ctaCaja.nombre,   debito: total,    credito: 0,       descripcion: 'Cobro venta' },
+            { cuenta_id: ctaVentas.id, cuenta_codigo: ctaVentas.codigo, cuenta_nombre: ctaVentas.nombre, debito: 0,        credito: subtotal, descripcion: 'Ingresos por ventas' },
+            { cuenta_id: ctaIva.id,    cuenta_codigo: ctaIva.codigo,    cuenta_nombre: ctaIva.nombre,    debito: 0,        credito: impuesto, descripcion: 'IVA en ventas' },
+          );
+        } else {
+          items.push(
+            { cuenta_id: ctaCaja.id,   cuenta_codigo: ctaCaja.codigo,   cuenta_nombre: ctaCaja.nombre,   debito: total, credito: 0,    descripcion: 'Cobro venta' },
+            { cuenta_id: ctaVentas.id, cuenta_codigo: ctaVentas.codigo, cuenta_nombre: ctaVentas.nombre, debito: 0,     credito: total, descripcion: 'Ventas gravadas 0%' },
+          );
+        }
+
+        // Número único basado en timestamp — evita colisiones con secuencias corruptas
+        const year = new Date().getFullYear();
+        const numero = `ASI-${year}-R${Date.now().toString().slice(-7)}`;
+
+        // Verificar si ya existe un asiento con esta referencia
+        const { data: existing } = await db.from('asientos_contables')
+          .select('id')
+          .eq('empresa_id', auth.empresaId)
+          .eq('referencia', numTicket)
+          .maybeSingle();
+
+        if (existing?.id) {
+          // Ya existe — contar como existente, no crear duplicado
+          referenciasExistentes.add(numTicket);
+          continue;
+        }
+
+        // Insertar directamente sin pasar por registrarAsientoAutomatico
+        const { error: insErr } = await db.from('asientos_contables').insert({
+          id: crypto.randomUUID(),
+          empresa_id: auth.empresaId,
+          numero,
+          fecha: fechaVenta,
+          descripcion: `Venta POS ${numTicket}`,
+          tipo: 'venta',
+          referencia: numTicket,
+          estado: 'activo',
+          origen_automatico: true,
+          items,
+          total_debito:  parseFloat(total.toFixed(2)),
+          total_credito: parseFloat(total.toFixed(2)),
+        });
+
+        if (insErr) {
+          errores.push(`${numTicket}: ${insErr.message}`);
+        } else {
+          generados++;
+        }
+
+      } catch (e: any) {
+        errores.push(`${venta.numero_ticket}: ${e.message}`);
+      }
+    }
+
+    return c.json({
+      ok: true,
+      rango: { desde: desdeFecha, hasta: hastaFecha },
+      total_ventas_en_rango: ventasEnRango.length,
+      ya_tenian_asiento: referenciasExistentes.size,
+      sin_asiento_procesadas: ventasSinAsiento.length,
+      generados,
+      errores: errores.length > 0 ? errores : undefined,
+    });
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 500);
+  }
+});
+
+// ── POST /admin/reinicializar-plan-contable — borra y recrea el plan SRI ────────
+app.post("/server/admin/reinicializar-plan-contable", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+
+  try {
+    // 1. Borrar de SQL
+    const { error: delErr } = await db.from('cuentas_contables')
+      .delete().eq('empresa_id', auth.empresaId);
+    if (delErr) throw new Error('Error borrando cuentas SQL: ' + delErr.message);
+
+    // 2. Limpiar caché KV — esto es lo que el browser sigue sirviendo
+    await kv.set(`empresa_${auth.empresaId}_cuentas_contables`, []);
+
+    // 3. Verificar
+    const { count } = await db.from('cuentas_contables')
+      .select('*', { count: 'exact', head: true }).eq('empresa_id', auth.empresaId);
+
+    return c.json({
+      ok: true,
+      sql_restantes: count || 0,
+      kv_limpiado: true,
+      mensaje: 'Catálogo limpiado. Ahora haz clic en "Inicializar Plan Contable".',
+    });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 500);
+  }
+});
+
+// ── POST /admin/generar-asientos-compras — genera asientos faltantes de compras ──
+app.post("/server/admin/generar-asientos-compras", authMiddleware, async (c: any) => {
+  const auth: AuthContext = c.get('auth');
+  const db = createClient(supabaseUrl, supabaseServiceKey);
+
+  let body: any = {};
+  try { body = await c.req.json(); } catch { /* sin body */ }
+
+  const OFFSET_EC = 5 * 3600 * 1000;
+  const ahoraEC   = new Date(Date.now() - OFFSET_EC);
+  const desdeFecha = body.fecha_inicio ?? new Date(Date.now() - 30 * 86400000 - OFFSET_EC).toISOString().split('T')[0];
+  const hastaFecha = body.fecha_fin   ?? ahoraEC.toISOString().split('T')[0];
+  const desdeUTC   = new Date(desdeFecha + 'T00:00:00Z').getTime() + OFFSET_EC;
+  const hastaUTC   = new Date(hastaFecha + 'T23:59:59Z').getTime() + OFFSET_EC;
+
+  try {
+    // Obtener TODAS las compras de la empresa (sin filtro de fecha para mayor cobertura)
+    const { data: todasCompras, error: compErr } = await db.from('compras')
+      .select('id,numero,fecha,total,subtotal,iva,items,proveedor_nombre,created_at,metadata,estado')
+      .eq('empresa_id', auth.empresaId)
+      .order('fecha', { ascending: false });
+
+    if (compErr) return c.json({ ok: false, error: 'Error leyendo compras: ' + compErr.message }, 500);
+
+    // Filtrar por rango de fecha en memoria (más confiable que el filtro SQL en DATE)
+    const comprasFiltradas = (todasCompras || []).filter((c: any) => {
+      const f = c.fecha || (c.created_at || '').split('T')[0];
+      return (!desdeFecha || f >= desdeFecha) && (!hastaFecha || f <= hastaFecha);
+    });
+
+    if (!comprasFiltradas.length) return c.json({
+      ok: true,
+      mensaje: `Sin compras entre ${desdeFecha} y ${hastaFecha}. Total en BD: ${(todasCompras||[]).length}`,
+      generados: 0, total_compras: 0,
+      total_en_bd: (todasCompras||[]).length,
+    });
+
+    // Filtrar las que YA tienen asiento (por referencia = compra.id)
+    const idsCompras = comprasFiltradas.map((c: any) => c.id);
+    const { data: asientosExistentes } = await db.from('asientos_contables')
+      .select('referencia').eq('empresa_id', auth.empresaId)
+      .in('referencia', idsCompras);
+
+    const referenciasExistentes = new Set((asientosExistentes || []).map((a: any) => a.referencia));
+
+    // Mapa tipo_contable → código SRI oficial
+    const CUENTA_POR_TIPO: Record<string, string> = {
+      'inventario':       '510102',  // Compras Netas Locales de Bienes
+      'gasto_servicio':   '520118',  // Agua, Energía, Luz y Telecomunicaciones
+      'gasto_basicos':    '520118',  // Agua, Energía, Luz y Telecomunicaciones
+      'gasto_arriendo':   '520109',  // Arrendamiento Operativo
+      'gasto_publicidad': '520111',  // Promoción y Publicidad
+      'gasto_operativo':  '520108',  // Mantenimiento y Reparaciones
+      'activo_fijo':      '1020106', // Maquinaria y Equipo
+    };
+
+    let generados = 0;
+    const errores: string[] = [];
+
+    for (const compra of comprasFiltradas) {
+      if (referenciasExistentes.has(compra.id)) continue;
+      try {
+        const total = Number(compra.total || compra.subtotal || 0);
+        if (total <= 0) continue;
+
+        // tipo_pago puede estar en metadata o en estado (compras a crédito tienen estado='pendiente')
+        const meta = typeof compra.metadata === 'string' ? JSON.parse(compra.metadata||'{}') : (compra.metadata||{});
+        const tipoPago = meta.tipo_pago || meta.forma_pago || (compra.estado === 'pendiente' ? 'credito' : 'contado');
+        const cuentaCredito = tipoPago === 'credito' ? '2010301' : '10101';
+        const fechaCompra   = (compra.fecha || compra.created_at || '').split('T')[0];
+
+        // Construir ítems del asiento por tipo_contable de cada ítem
+        const items = compra.items || [];
+        const porTipo: Record<string, number> = {};
+        for (const item of items) {
+          const tipo = item.tipo_contable || (item.a_inventario !== false ? 'inventario' : 'gasto_operativo');
+          porTipo[tipo] = (porTipo[tipo] || 0) + Number(item.costo_total || 0);
+        }
+        // Si no hay ítems con tipo, usar total como inventario genérico
+        if (Object.keys(porTipo).length === 0) porTipo['inventario'] = total;
+
+        // Buscar cuentas DIRECTAMENTE en BD (sin pasar por obtenerCuentas/KV)
+        const codigos = [...new Set([
+          ...Object.values(CUENTA_POR_TIPO),
+          cuentaCredito,
+        ])];
+        const { data: cuentasDB } = await db.from('cuentas_contables')
+          .select('id, codigo, nombre').eq('empresa_id', auth.empresaId)
+          .in('codigo', codigos);
+
+        const cuentaMap: Record<string, any> = {};
+        for (const ct of (cuentasDB || [])) cuentaMap[ct.codigo] = ct;
+
+        // Resolver con fallback por prefijo
+        const resolver = (cod: string) => {
+          if (cuentaMap[cod]) return cuentaMap[cod];
+          const partes = cod.split('.');
+          for (let n = partes.length - 1; n >= 1; n--) {
+            const pfx = partes.slice(0, n).join('.');
+            const alt = Object.values(cuentaMap).find((c: any) => c.codigo?.startsWith(pfx + '.'));
+            if (alt) return alt;
+          }
+          return null;
+        };
+
+        const asientoItems: any[] = [];
+        for (const [tipo, monto] of Object.entries(porTipo)) {
+          const cod = CUENTA_POR_TIPO[tipo] || '520108';
+          const ct = resolver(cod);
+          if (ct) asientoItems.push({ cuenta_id: ct.id, cuenta_codigo: ct.codigo, cuenta_nombre: ct.nombre, debito: Math.round(monto*100)/100, credito: 0, descripcion: tipo });
+        }
+        const ctaCred = resolver(cuentaCredito);
+        if (!ctaCred) { errores.push(`Compra ${compra.numero || compra.id}: cuenta ${cuentaCredito} no encontrada`); continue; }
+        asientoItems.push({ cuenta_id: ctaCred.id, cuenta_codigo: ctaCred.codigo, cuenta_nombre: ctaCred.nombre, debito: 0, credito: Math.round(total*100)/100, descripcion: tipoPago === 'credito' ? 'CxP proveedores' : 'Pago contado' });
+
+        if (asientoItems.length < 2) { errores.push(`Compra ${compra.numero || compra.id}: insuficientes cuentas`); continue; }
+
+        const { error: insErr } = await db.from('asientos_contables').insert({
+          id: crypto.randomUUID(),
+          empresa_id: auth.empresaId,
+          numero: `ASI-${new Date().getFullYear()}-${Date.now().toString().slice(-7)}`,
+          fecha: fechaCompra,
+          descripcion: `Compra ${compra.numero || compra.id} — ${compra.proveedor_nombre || ''}`,
+          tipo: 'compra_inventario',
+          referencia: compra.id,
+          estado: 'activo',
+          origen_automatico: true,
+          items: asientoItems,
+          total_debito: Math.round(total*100)/100,
+          total_credito: Math.round(total*100)/100,
+        });
+
+        if (insErr) errores.push(`Compra ${compra.numero || compra.id}: ${insErr.message}`);
+        else generados++;
+      } catch (e: any) {
+        errores.push(`Compra ${compra.numero || compra.id}: ${e.message}`);
+      }
+    }
+
+    return c.json({
+      ok: true,
+      rango: { desde: desdeFecha, hasta: hastaFecha },
+      total_compras: comprasFiltradas.length,
+      ya_tenian_asiento: referenciasExistentes.size,
+      generados,
+      errores: errores.length ? errores : undefined,
+    });
+  } catch (e: any) { return c.json({ ok: false, error: e.message }, 500); }
 });
 
 // =====================================================

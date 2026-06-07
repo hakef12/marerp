@@ -6,18 +6,18 @@ import Sidebar from './layout/Sidebar';
 import OnboardingWizard from './onboarding/OnboardingWizard';
 
 export default function AppLayout() {
-  const { token } = useAuth();
+  const { token, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [forceOnboarding, setForceOnboarding] = useState(false);
 
-  // Redirigir a login si no hay token
+  // Redirigir a login solo cuando ya terminó de cargar y no hay token
   useEffect(() => {
-    if (!token) {
+    if (!isLoading && !token) {
       navigate('/login');
     }
-  }, [token, navigate]);
+  }, [token, isLoading, navigate]);
 
   // Cerrar sidebar al cambiar de ruta (mobile)
   useEffect(() => {
@@ -40,6 +40,15 @@ export default function AppLayout() {
     }
     return () => { document.body.style.overflow = ''; };
   }, [sidebarOpen]);
+
+  // Mientras se restaura la sesión desde localStorage, mostrar pantalla de carga
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-gray-900 text-xl">Cargando…</div>
+      </div>
+    );
+  }
 
   if (!token) return null;
 

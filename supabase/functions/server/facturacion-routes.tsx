@@ -14,7 +14,7 @@ import forge from "npm:node-forge@1.3.1";
 // @ts-ignore — xmldom: namespace-aware XML parser for correct C14N (canonical XML)
 import { DOMParser as XmlDOMParser } from "npm:@xmldom/xmldom@0.9.5";
 import { createClient } from "npm:@supabase/supabase-js";
-import { registrarAsientoAutomatico } from './kv-helpers.tsx';
+// registrarAsientoAutomatico removido — las facturas POS no crean asiento propio (el POS ya lo hace)
 import * as kv from './kv_store.tsx';
 
 // ── SQL helpers para facturación ──────────────────────────────────────────────
@@ -296,6 +296,78 @@ export function normalizeAmbiente(a: any): 'pruebas' | 'produccion' {
 function getXMLVersion(f: any): string {
   if (f.regimen_rimpe || f.agente_retencion) return '2.1.0';
   return '2.1.0'; // usar siempre la versión más reciente para máxima compatibilidad SRI
+}
+
+function buildNotaCreditoXML(nc: any): string {
+  const dt = new Date(nc.fecha_emision + 'T00:00:00');
+  const dd = String(dt.getDate()).padStart(2,'0');
+  const mm = String(dt.getMonth()+1).padStart(2,'0');
+  const yyyy = String(dt.getFullYear());
+  const fechaStr = `${dd}/${mm}/${yyyy}`;
+  const secStr   = String(nc.secuencial).padStart(9,'0');
+
+  const totalSinImpuestos = Math.round(Number(nc.subtotal_iva || 0) * 100) / 100;
+  const totalIva          = Math.round(Number(nc.iva || 0) * 100) / 100;
+  const valorModificacion = Math.round(Number(nc.total || 0) * 100) / 100;
+
+  const detalles = (nc.items || []).map((it: any) => {
+    const cant    = Number(it.cantidad || 1);
+    const precio  = Math.round(Number(it.precio_unitario || it.precio || 0) * 100) / 100;
+    const subtotal = Math.round(cant * precio * 100) / 100;
+    const iva15   = Math.round(subtotal * 0.15 * 100) / 100;
+    return `<detalle>` +
+      `<codigoInterno>${xmlEncode(it.codigo || it.producto_id || '001')}</codigoInterno>` +
+      `<descripcion>${xmlEncode(it.descripcion || it.nombre || '')}</descripcion>` +
+      `<cantidad>${cant.toFixed(6)}</cantidad>` +
+      `<precioUnitario>${precio.toFixed(6)}</precioUnitario>` +
+      `<descuento>0.00</descuento>` +
+      `<precioTotalSinImpuesto>${subtotal.toFixed(2)}</precioTotalSinImpuesto>` +
+      `<impuestos><impuesto>` +
+      `<codigo>2</codigo><codigoPorcentaje>4</codigoPorcentaje>` +
+      `<tarifa>15.00</tarifa><baseImponible>${subtotal.toFixed(2)}</baseImponible>` +
+      `<valor>${iva15.toFixed(2)}</valor>` +
+      `</impuesto></impuestos>` +
+      `</detalle>`;
+  }).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<notaCredito id="comprobante" version="1.0.0">` +
+    `<infoTributaria>` +
+    `<ambiente>${nc.ambiente === 'produccion' ? '2' : '1'}</ambiente>` +
+    `<tipoEmision>1</tipoEmision>` +
+    `<razonSocial>${xmlEncode(nc.razon_social || '')}</razonSocial>` +
+    `<nombreComercial>${xmlEncode(nc.nombre_comercial || nc.razon_social || '')}</nombreComercial>` +
+    `<ruc>${xmlEncode(nc.ruc || '')}</ruc>` +
+    `<claveAcceso>${xmlEncode(nc.clave_acceso)}</claveAcceso>` +
+    `<codDoc>04</codDoc>` +
+    `<estab>${xmlEncode(String(nc.estab || '001').padStart(3,'0'))}</estab>` +
+    `<ptoEmi>${xmlEncode(String(nc.pto_emi || '001').padStart(3,'0'))}</ptoEmi>` +
+    `<secuencial>${secStr}</secuencial>` +
+    `<dirMatriz>${xmlEncode(nc.direccion_matriz || '')}</dirMatriz>` +
+    `</infoTributaria>` +
+    `<infoNotaCredito>` +
+    `<fechaEmision>${fechaStr}</fechaEmision>` +
+    `<dirEstablecimiento>${xmlEncode(nc.direccion_establecimiento || nc.direccion_matriz || '')}</dirEstablecimiento>` +
+    `<tipoIdentificacionComprador>${xmlEncode(nc.cliente_tipo_identificacion || '04')}</tipoIdentificacionComprador>` +
+    `<razonSocialComprador>${xmlEncode(nc.cliente_razon_social || 'Consumidor Final')}</razonSocialComprador>` +
+    `<identificacionComprador>${xmlEncode(nc.cliente_identificacion || '9999999999999')}</identificacionComprador>` +
+    (nc.contribuyente_especial ? `<contribuyenteEspecial>${xmlEncode(nc.contribuyente_especial)}</contribuyenteEspecial>` : '') +
+    `<obligadoContabilidad>${nc.obligado_contabilidad ? 'SI' : 'NO'}</obligadoContabilidad>` +
+    `<codDocModificado>01</codDocModificado>` +
+    `<numDocModificado>${xmlEncode(nc.num_doc_modificado)}</numDocModificado>` +
+    `<fechaEmisionDocSustento>${xmlEncode(nc.fecha_doc_sustento)}</fechaEmisionDocSustento>` +
+    `<totalSinImpuestos>${totalSinImpuestos.toFixed(2)}</totalSinImpuestos>` +
+    `<valorModificacion>${valorModificacion.toFixed(2)}</valorModificacion>` +
+    `<moneda>DOLAR</moneda>` +
+    `<totalConImpuestos><totalImpuesto>` +
+    `<codigo>2</codigo><codigoPorcentaje>4</codigoPorcentaje>` +
+    `<baseImponible>${totalSinImpuestos.toFixed(2)}</baseImponible>` +
+    `<valor>${totalIva.toFixed(2)}</valor>` +
+    `</totalImpuesto></totalConImpuestos>` +
+    `<motivo>${xmlEncode(nc.motivo || 'Anulación de factura')}</motivo>` +
+    `</infoNotaCredito>` +
+    `<detalles>${detalles}</detalles>` +
+    `</notaCredito>`;
 }
 
 function buildSRIXML(f: any): string {
@@ -1553,7 +1625,24 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
     const min = String(nowEc.getUTCMinutes()).padStart(2, '0');
     const ss  = String(nowEc.getUTCSeconds()).padStart(2, '0');
     const ambCod = config.ambiente === 'produccion' ? '2' : '1';
-    const secStr = String(config.secuencial_actual).padStart(9, '0');
+
+    // ── Incremento atómico del secuencial (previene race condition entre requests simultáneos) ──
+    // UPDATE con optimistic lock: solo tiene efecto si el valor actual coincide con el leído.
+    // Si otro request ya lo incrementó, maybeSingle() retorna null → 409.
+    const secActual = config.secuencial_actual || 1;
+    const { data: secResult } = await getDB()
+      .from('configuracion_facturacion')
+      .update({ secuencial_actual: secActual + 1, updated_at: new Date().toISOString() })
+      .eq('empresa_id', empresaId)
+      .eq('secuencial_actual', secActual)
+      .select('secuencial_actual')
+      .maybeSingle();
+    if (!secResult) {
+      return Response.json({
+        error: 'Conflicto al reservar el secuencial — otro comprobante se está emitiendo simultáneamente. Espere un momento e intente de nuevo.',
+      }, { status: 409 });
+    }
+    const secStr = String(secActual).padStart(9, '0');
     const cod8 = Math.floor(10000000 + Math.random() * 90000000).toString();
     // Pad estab/ptoEmi to exactly 3 digits — SRI access key requires fixed-length fields
     const estab3 = String(config.codigo_establecimiento || '001').padStart(3, '0').substring(0, 3);
@@ -1572,12 +1661,52 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
     // Si el POS envió IVA, redondearlo; si no, calcularlo del subtotal
     const _iva = Math.round((_ivaRaw > 0 ? _ivaRaw : _base * 0.15) * 100) / 100;
     const _total = Math.round((_base + _iva) * 100) / 100;
-    const _items = (ventaData.items || []).map((i: any) => {
-      const cant = Number(i.cantidad || 1);
-      const precio = Number(i.precio_unitario || i.precio || 0);
-      const rawSub = Number(i.subtotal || 0);
-      const sub = Math.round((rawSub > 0 ? rawSub : cant * precio) * 100) / 100;
-      return { cantidad: cant, descripcion: i.nombre || i.descripcion || 'Producto', precio_unitario: precio, descuento: 0, subtotal: sub };
+
+    // Construir items normalizados:
+    // El POS envía precios CON IVA incluido, pero el XML SRI necesita
+    // precioUnitario y precioTotalSinImpuesto SIN IVA.
+    // Además, si hay descuento global se distribuye proporcionalmente.
+    // El ÚLTIMO ítem absorbe todo residuo de redondeo para que
+    // sum(precioTotalSinImpuesto) == totalSinImpuestos (header) exactamente.
+    const _itemsBrutos = (ventaData.items || []).map((i: any) => {
+      const cant    = Number(i.cantidad || 1);
+      const precio  = Number(i.precio_unitario || i.precio || 0);
+      const rawSub  = Number(i.subtotal || 0);
+      const bruto   = Math.round((rawSub > 0 ? rawSub : cant * precio) * 100) / 100;
+      const iva     = Number(i.tarifa_iva ?? 15);
+      // precio unitario sin IVA (para campo precioUnitario del XML)
+      const precioSinIva = iva > 0 ? precio / (1 + iva / 100) : precio;
+      return { cant, precio, precioSinIva, bruto, iva, nombre: i.nombre || i.descripcion || 'Producto' };
+    });
+    const totalBruto = _itemsBrutos.reduce((s: number, i: any) => s + i.bruto, 0);
+
+    let sumItems = 0;
+    const _items = _itemsBrutos.map((i: any, idx: number) => {
+      const isLast = idx === _itemsBrutos.length - 1;
+      // Descuento proporcional de la línea (sobre precio bruto)
+      const descLinea = (!isLast && totalBruto > 0)
+        ? Math.round((i.bruto / totalBruto) * _desc * 100) / 100
+        : 0;
+      let sub: number;
+      if (isLast) {
+        // Absorber residuo de redondeo IVA + descuento
+        sub = Math.round((_base - sumItems) * 100) / 100;
+      } else {
+        // Extraer IVA del bruto y restar descuento proporcional
+        const baseSinIva = i.iva > 0
+          ? Math.round(i.bruto / (1 + i.iva / 100) * 100) / 100
+          : i.bruto;
+        sub = Math.round((baseSinIva - descLinea) * 100) / 100;
+        sumItems += sub;
+      }
+      return {
+        cantidad:       i.cant,
+        descripcion:    i.nombre,
+        precio_unitario: i.precioSinIva,  // sin IVA → correcto para precioUnitario en XML
+        descuento:      descLinea,
+        subtotal:       sub,              // sin IVA → precioTotalSinImpuesto
+        tarifa_iva:     i.iva,
+      };
     });
 
     // ── Build factura object ─────────────────────────────────
@@ -1639,6 +1768,16 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
       empresa_id: empresaId,
       creado_en: nowUtc.toISOString(),
       created_at: nowUtc.toISOString(),
+      // CxC: si el pago fue inmediato (efectivo/tarjeta) en POS, la factura ya está cobrada
+      cobrado: !['credito','crédito','cuenta_corriente','cuenta corriente'].includes(
+        (ventaData.metodo_pago || 'efectivo').toLowerCase()
+      ),
+      monto_cobrado: !['credito','crédito','cuenta_corriente','cuenta corriente'].includes(
+        (ventaData.metodo_pago || 'efectivo').toLowerCase()
+      ) ? _total : 0,
+      fecha_cobro: !['credito','crédito','cuenta_corriente','cuenta corriente'].includes(
+        (ventaData.metodo_pago || 'efectivo').toLowerCase()
+      ) ? nowUtc.toISOString().split('T')[0] : null,
     };
 
     // ── Generate XML ─────────────────────────────────────────
@@ -1667,8 +1806,7 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
     // ── Save before SRI call (preserve on network error) ────
     const facturaId = `FAC-${Date.now()}`;
     await setFactura(empresaId, facturaId, factura);
-    config.secuencial_actual += 1;
-    await setConfig(empresaId, config);
+    // secuencial ya fue incrementado de forma atómica antes de generar el XML
 
     // ── SRI Reception (fast path — no blocking authorization wait) ──────────
     // Short 10s timeout prevents Edge Function from timing out (60s limit).
@@ -1712,37 +1850,12 @@ export async function handleGenerarFactura(req: Request, empresaId: string) {
     await setFactura(empresaId, facturaId, factura);
     console.log('📄 Factura guardada:', facturaId, factura.estado);
 
-    // ── Asiento contable automático de la factura ─────────────
-    try {
-      const totalFac    = Number(factura.importeTotal ?? factura.total ?? 0);
-      const ivaFac      = Number(factura.totalIva ?? factura.iva ?? 0);
-      const subtotalFac = totalFac - ivaFac;
-      const numeroFac   = factura.numero_factura ?? factura.secuencial ?? facturaId;
-      if (totalFac > 0) {
-        if (ivaFac > 0) {
-          await registrarAsientoAutomatico(empresaId, {
-            tipo: 'factura',
-            descripcion: `Factura ${numeroFac}`,
-            referencia: facturaId,
-            items: [
-              { codigo: '1.1.03', debito: totalFac,    descripcion: 'CxC cliente' },
-              { codigo: '4.1.01', credito: subtotalFac, descripcion: 'Ingreso por venta' },
-              { codigo: '2.1.03', credito: ivaFac,      descripcion: 'IVA en ventas' },
-            ],
-          });
-        } else {
-          await registrarAsientoAutomatico(empresaId, {
-            tipo: 'factura',
-            descripcion: `Factura ${numeroFac}`,
-            referencia: facturaId,
-            items: [
-              { codigo: '1.1.03', debito: totalFac,  descripcion: 'CxC cliente' },
-              { codigo: '4.1.02', credito: totalFac, descripcion: 'Venta gravada 0%' },
-            ],
-          });
-        }
-      }
-    } catch { /* silencioso */ }
+    // ── Asiento contable de la factura ────────────────────────
+    // El asiento de ingreso ya fue registrado por el POS cuando se realizó la venta
+    // (tipo='venta_pos': Banco/Caja Dr → Ventas Cr + IVA Cr).
+    // Crear otro asiento aquí duplicaría el ingreso → NO se registra asiento para facturas de ventas POS.
+    // (Si en el futuro se requieren facturas de crédito puro sin venta POS previa,
+    //  agregar lógica aquí verificando que ventaData.id esté vacío.)
 
     // ── Auto-guardar cliente (si no es Consumidor Final) ──────────
     try {
@@ -2032,24 +2145,24 @@ function generarHTMLFactura(f: any): string {
 <html lang="es">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Factura Electrónica ${f.numero_factura || ''}</title></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
-<tr><td align="center">
-<table width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
+<body style="margin:0;padding:20px;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;">
+<tr><td>
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
 
   <!-- HEADER -->
-  <tr><td style="background:linear-gradient(135deg,#C2410C 0%,#F97316 100%);padding:28px 32px;">
+  <tr><td style="background:#1e293b;padding:24px 32px;">
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
         <td>
-          <div style="color:#fff;font-size:22px;font-weight:bold;letter-spacing:-0.5px;">${f.razon_social || f.nombre_comercial || 'Emisor'}</div>
-          <div style="color:#fed7aa;font-size:12px;margin-top:4px;">RUC: ${f.ruc || '—'} &nbsp;|&nbsp; ${f.direccion_matriz || ''}</div>
+          <div style="color:#ffffff;font-size:20px;font-weight:bold;">${f.razon_social || f.nombre_comercial || 'Emisor'}</div>
+          <div style="color:#94a3b8;font-size:12px;margin-top:4px;">RUC: ${f.ruc || '—'} | ${f.direccion_matriz || ''}</div>
         </td>
         <td align="right" style="vertical-align:top;">
-          <div style="background:rgba(255,255,255,.15);border-radius:8px;padding:12px 16px;text-align:center;">
-            <div style="color:#fed7aa;font-size:10px;text-transform:uppercase;letter-spacing:1px;">Factura N°</div>
-            <div style="color:#fff;font-size:18px;font-weight:bold;">${f.numero_factura || '—'}</div>
-            <div style="color:#fed7aa;font-size:11px;margin-top:4px;">${fmtFecha(f.fecha_emision)}</div>
+          <div style="background:#ffffff;border-radius:6px;padding:10px 14px;text-align:center;">
+            <div style="color:#6b7280;font-size:10px;text-transform:uppercase;">Factura N°</div>
+            <div style="color:#1e293b;font-size:16px;font-weight:bold;">${f.numero_factura || '—'}</div>
+            <div style="color:#6b7280;font-size:11px;margin-top:2px;">${fmtFecha(f.fecha_emision)}</div>
           </div>
         </td>
       </tr>
@@ -2057,7 +2170,7 @@ function generarHTMLFactura(f: any): string {
   </td></tr>
 
   <!-- ESTADO SRI -->
-  ${f.estado === 'AUTORIZADO' ? `
+  ${(f.estado_autorizacion === 'AUTORIZADO' || f.estado === 'AUTORIZADO') ? `
   <tr><td style="background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:12px 32px;">
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
       <td style="color:#15803d;font-size:13px;font-weight:bold;">✅ Autorizado por el SRI</td>
@@ -2066,7 +2179,7 @@ function generarHTMLFactura(f: any): string {
   </td></tr>` : `
   <tr><td style="background:#fff7ed;border-bottom:1px solid #fed7aa;padding:12px 32px;">
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
-      <td style="color:#c2410c;font-size:13px;font-weight:bold;">⏳ ${f.estado || 'PENDIENTE'} — Clave acceso: ${(f.clave_acceso || '').substring(0, 20)}…</td>
+      <td style="color:#c2410c;font-size:13px;font-weight:bold;">⏳ ${f.estado_autorizacion || f.estado || 'PENDIENTE'} — Clave acceso: ${(f.clave_acceso || '').substring(0, 20)}…</td>
     </tr></table>
   </td></tr>`}
 
@@ -2156,31 +2269,341 @@ function xmlToBase64(xml: string): string {
   return btoa(binary);
 }
 
+// ── PDF RIDE ──────────────────────────────────────────────────────────────────
+/** Genera el RIDE en formato PDF usando pdf-lib */
+async function generarPDFRIDE(f: any): Promise<Uint8Array> {
+  const { PDFDocument, StandardFonts, rgb } = await import('npm:pdf-lib');
+
+  const doc  = await PDFDocument.create();
+  const page = doc.addPage([595.28, 841.89]); // A4
+  const { width, height } = page.getSize();
+
+  const bold    = await doc.embedFont(StandardFonts.HelveticaBold);
+  const regular = await doc.embedFont(StandardFonts.Helvetica);
+
+  const fmt2 = (n: any) => Number(n || 0).toFixed(2);
+  const BLACK = rgb(0, 0, 0);
+  const DARK  = rgb(0.15, 0.15, 0.15);
+  const GRAY  = rgb(0.45, 0.45, 0.45);
+  const LGRAY = rgb(0.88, 0.88, 0.88);
+  const WHITE = rgb(1, 1, 1);
+
+  const drawText = (str: string, x: number, y: number, opts: { size?: number; bold?: boolean; color?: any; maxWidth?: number } = {}) => {
+    const font  = opts.bold ? bold : regular;
+    const size  = opts.size ?? 8;
+    const color = opts.color ?? BLACK;
+    let s = String(str ?? '');
+    if (opts.maxWidth) {
+      // truncate to fit
+      while (s.length > 1 && font.widthOfTextAtSize(s, size) > opts.maxWidth) s = s.slice(0, -1);
+    }
+    page.drawText(s, { x, y, size, font, color });
+  };
+
+  const drawLine = (x1: number, y1: number, x2: number, y2: number, thickness = 0.5, color = LGRAY) =>
+    page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness, color });
+
+  const drawRect = (x: number, y: number, w: number, h: number, fill?: any, border?: any) => {
+    const opts: any = { x, y, width: w, height: h };
+    if (fill)   { opts.color = fill; }
+    if (border) { opts.borderColor = border; opts.borderWidth = 0.5; }
+    page.drawRectangle(opts);
+  };
+
+  const fmtFecha = (iso: string) => {
+    try { return new Date(iso + (iso.includes('T') ? '' : 'T00:00:00')).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+    catch { return iso || '—'; }
+  };
+
+  const M = 30; // margin
+  let y = height - M;
+
+  // ── SECCIÓN 1: CABECERA ──────────────────────────────────────────────────
+  const hdrH = 165;
+  drawRect(M, y - hdrH, width - 2*M, hdrH, WHITE, LGRAY);
+
+  // Línea divisoria vertical al centro
+  const midX = M + (width - 2*M) / 2;
+  drawLine(midX, y, midX, y - hdrH);
+
+  // ── COLUMNA IZQUIERDA: Datos Emisor ────────────────────────────────────
+  const lx = M + 8;
+  let ly = y - 14;
+
+  drawText(f.razon_social || f.nombre_comercial || 'EMISOR', lx, ly, { bold: true, size: 10 });
+  ly -= 13;
+  drawText(`RUC: ${f.ruc || ''}`, lx, ly, { size: 8, color: DARK });
+  ly -= 11;
+
+  // Dirección (max 2 líneas)
+  const dir = f.direccion_matriz || f.direccion_establecimiento || '';
+  const MAX_DIR = midX - lx - 10;
+  const dirWords = dir.split(' ');
+  let dirL1 = '', dirL2 = '';
+  for (const w of dirWords) {
+    const test = dirL1 ? dirL1 + ' ' + w : w;
+    if (regular.widthOfTextAtSize(test, 7.5) < MAX_DIR) dirL1 = test;
+    else dirL2 = dirL2 ? dirL2 + ' ' + w : w;
+  }
+  drawText(`Matriz: ${dirL1}`, lx, ly, { size: 7.5, color: DARK });
+  if (dirL2) { ly -= 10; drawText(dirL2, lx, ly, { size: 7.5, color: DARK }); }
+  ly -= 11;
+  if (f.email) { drawText(`Correo: ${f.email}`, lx, ly, { size: 7.5, color: DARK }); ly -= 11; }
+  if (f.telefono) { drawText(`Teléfono: ${f.telefono}`, lx, ly, { size: 7.5, color: DARK }); ly -= 11; }
+  drawText('Obligado a llevar contabilidad: SI', lx, ly, { size: 7.5, color: DARK });
+  if (f.contribuyente_especial) { ly -= 11; drawText(`Agente de Retención`, lx, ly, { size: 7.5, color: DARK }); }
+
+  // ── COLUMNA DERECHA: Datos Factura ────────────────────────────────────
+  const rx = midX + 8;
+  let ry = y - 12;
+  const rw = width - M - midX - 10;
+
+  drawText('FACTURA', rx, ry, { bold: true, size: 9 });
+  drawText(`No. ${f.numero_factura || ''}`, rx + 55, ry, { bold: true, size: 9 });
+
+  ry -= 14;
+  drawText('Número de Autorización:', rx, ry, { bold: true, size: 7.5 });
+  ry -= 10;
+  const auth = f.numero_autorizacion || f.clave_acceso || '';
+  drawText(auth.substring(0, 40), rx, ry, { size: 6.5, color: DARK });
+  ry -= 9;
+  if (auth.length > 40) drawText(auth.substring(40), rx, ry, { size: 6.5, color: DARK });
+  ry -= 12;
+
+  drawText('Fecha y hora de Autorización:', rx, ry, { bold: true, size: 7.5 });
+  ry -= 10;
+  const fechaAuth = f.fecha_autorizacion
+    ? new Date(f.fecha_autorizacion).toLocaleString('es-EC')
+    : fmtFecha(f.fecha_emision || '');
+  drawText(fechaAuth, rx, ry, { size: 8, color: DARK });
+  ry -= 12;
+
+  drawText(`Ambiente: ${f.ambiente === 'produccion' ? 'PRODUCCION' : 'PRUEBAS'}`, rx, ry, { bold: true, size: 8 });
+  ry -= 11;
+  drawText('Emisión: NORMAL', rx, ry, { bold: true, size: 8 });
+  ry -= 12;
+  drawText('Clave de Acceso:', rx, ry, { bold: true, size: 7.5 });
+  ry -= 10;
+
+  // Barcode simulado
+  const barcodeH = 28;
+  const barcodeW = rw - 5;
+  drawRect(rx, ry - barcodeH, barcodeW, barcodeH, WHITE, LGRAY);
+  const barCount = 90;
+  const barW = barcodeW / barCount;
+  const claveStr = auth || '0'.repeat(49);
+  for (let i = 0; i < barCount; i++) {
+    const code = claveStr.charCodeAt(i % claveStr.length) || 48;
+    const h = barcodeH * (0.5 + ((code % 5) * 0.1));
+    if ((code + i) % 2 === 0) {
+      drawRect(rx + i * barW, ry - h, barW, h, BLACK);
+    }
+  }
+  ry -= barcodeH + 5;
+  drawText(auth.substring(0, 49), rx, ry, { size: 5, color: GRAY, maxWidth: barcodeW });
+
+  y -= hdrH + 4;
+
+  // ── SECCIÓN 2: DATOS CLIENTE ──────────────────────────────────────────
+  const clientH = 46;
+  drawRect(M, y - clientH, width - 2*M, clientH, WHITE, LGRAY);
+
+  const cx1 = M + 8; const cx2 = width / 2 + 10;
+  let cy = y - 12;
+  drawText('Razón Social:', cx1, cy, { bold: true, size: 8 });
+  drawText(f.cliente_razon_social || 'Consumidor Final', cx1 + 72, cy, { size: 8, maxWidth: width/2 - cx1 - 70 });
+  drawText('RUC/CI:', cx2, cy, { bold: true, size: 8 });
+  drawText(f.cliente_identificacion || '', cx2 + 38, cy, { size: 8 });
+  cy -= 12;
+  drawText('Dirección:', cx1, cy, { bold: true, size: 8 });
+  drawText((f.cliente_direccion || ''), cx1 + 52, cy, { size: 8, maxWidth: width/2 - cx1 - 50 });
+  drawText('Teléfono:', cx2, cy, { bold: true, size: 8 });
+  drawText(f.cliente_telefono || '', cx2 + 45, cy, { size: 8 });
+  cy -= 12;
+  drawText('Fecha Emisión:', cx1, cy, { bold: true, size: 8 });
+  drawText(fmtFecha(f.fecha_emision || ''), cx1 + 72, cy, { size: 8 });
+  drawText('Correo:', cx2, cy, { bold: true, size: 8 });
+  drawText(f.cliente_email || '', cx2 + 38, cy, { size: 8, maxWidth: width - cx2 - 38 - M });
+
+  y -= clientH + 4;
+
+  // ── SECCIÓN 3: TABLA DE ÍTEMS ──────────────────────────────────────────
+  const tW = width - 2*M;
+  // Columns: [x_start, width, label, align]
+  const COLS: [number, number, string, 'left'|'right'][] = [
+    [M,      50, 'Código Principal', 'left'],
+    [M+50,   30, 'Cant.',            'right'],
+    [M+80,  180, 'Descripción',      'left'],
+    [M+260,  70, 'Det. Adicionales', 'left'],
+    [M+330,  65, 'P. Unitario',      'right'],
+    [M+395,  60, 'Descuento',        'right'],
+    [M+455,  tW-(455), 'Total',      'right'],
+  ];
+
+  const rowH = 16;
+  // Header
+  drawRect(M, y - rowH, tW, rowH, LGRAY, LGRAY);
+  for (const [cx, cw, label, align] of COLS) {
+    const lw = bold.widthOfTextAtSize(label, 7);
+    const tx = align === 'right' ? cx + cw - lw - 3 : cx + 3;
+    drawText(label, tx, y - 11, { bold: true, size: 7, color: DARK });
+    drawLine(cx + cw, y, cx + cw, y - rowH, 0.3, LGRAY);
+  }
+  drawLine(M, y - rowH, M + tW, y - rowH, 0.5);
+  y -= rowH;
+
+  const items: any[] = f.items || [];
+  for (let idx = 0; idx < items.length; idx++) {
+    const it = items[idx];
+    const bg = idx % 2 === 1 ? rgb(0.97, 0.97, 0.97) : WHITE;
+    drawRect(M, y - rowH, tW, rowH, bg);
+    drawLine(M, y - rowH, M + tW, y - rowH, 0.3, LGRAY);
+
+    const vals: [number, number, string, 'left'|'right'][] = [
+      [COLS[0][0], COLS[0][1], it.codigo || '', 'left'],
+      [COLS[1][0], COLS[1][1], String(it.cantidad ?? 1), 'right'],
+      [COLS[2][0], COLS[2][1], it.descripcion || it.nombre || '', 'left'],
+      [COLS[3][0], COLS[3][1], '', 'left'],
+      [COLS[4][0], COLS[4][1], `${Number(it.precio_unitario || it.precio || 0).toFixed(6)}`, 'right'],
+      [COLS[5][0], COLS[5][1], `$${fmt2(it.descuento || 0)}`, 'right'],
+      [COLS[6][0], COLS[6][1], `$${fmt2(it.subtotal || (it.cantidad * (it.precio_unitario ?? it.precio ?? 0)))}`, 'right'],
+    ];
+    for (const [vx, vw, val, align] of vals) {
+      const vw2 = align === 'right' ? regular.widthOfTextAtSize(val, 8) : 0;
+      const tx  = align === 'right' ? vx + vw - vw2 - 3 : vx + 3;
+      drawText(val, tx, y - 11, { size: 8, maxWidth: vw - 5 });
+    }
+    y -= rowH;
+    if (y < 200) break;
+  }
+  drawLine(M, y, M + tW, y, 0.8, DARK);
+  y -= 5;
+
+  // ── SECCIÓN 4: PIE DE PÁGINA ──────────────────────────────────────────
+  const footH  = Math.max(120, 14 * 11 + 10); // espacio para totales
+  const halfW  = (tW - 4) / 2;
+  const leftFX = M;
+  const rightFX = M + halfW + 4;
+
+  drawRect(leftFX, y - footH, halfW, footH, WHITE, LGRAY);
+  drawRect(rightFX, y - footH, halfW, footH, WHITE, LGRAY);
+
+  // LEFT: Información Adicional
+  let fyl = y - 12;
+  drawRect(leftFX, y - 16, halfW, 16, LGRAY);
+  drawText('Información Adicional', leftFX + 5, fyl, { bold: true, size: 8 });
+  fyl -= 14;
+
+  const infoAd = f.info_adicional || f.informacion_adicional || {};
+  if (typeof infoAd === 'object') {
+    for (const [k, v] of Object.entries(infoAd)) {
+      drawText(`${k}`, leftFX + 5, fyl, { bold: true, size: 7.5, color: DARK });
+      drawText(`${v}`, leftFX + 75, fyl, { size: 7.5, maxWidth: halfW - 80 });
+      fyl -= 11;
+      if (fyl < y - footH + 35) break;
+    }
+  }
+
+  // Formas de pago
+  fyl -= 5;
+  drawRect(leftFX, fyl + 12, halfW, 15, LGRAY);
+  drawText('Formas de pago', leftFX + 5, fyl + 3, { bold: true, size: 8 });
+  fyl -= 11;
+  const formas: any[] = f.formas_pago || [];
+  for (const fp of formas) {
+    const desc = fp.descripcion || fp.tipo || fp.nombre || '';
+    const val  = `$${fmt2(fp.valor || fp.monto || 0)}`;
+    drawText(desc, leftFX + 5, fyl, { size: 8, maxWidth: halfW / 2 });
+    drawText(val, leftFX + halfW / 2 + 5, fyl, { size: 8 });
+    drawText(`${fp.plazo || 0} días`, leftFX + halfW - 35, fyl, { size: 8 });
+    fyl -= 11;
+    if (fyl < y - footH + 5) break;
+  }
+
+  // RIGHT: Totales
+  const totRows: [string, string][] = [
+    ['Subtotal Sin Impuestos:', `$${fmt2(f.subtotal_iva ?? f.subtotal ?? 0)}`],
+    ['Subtotal 15%:',           `$${fmt2(f.subtotal_iva15 ?? (f.iva ? (Number(f.iva)/0.15) : 0))}`],
+    ['Subtotal 5%:',            '$0.00'],
+    ['Subtotal 0%:',            `$${fmt2(f.subtotal_0 ?? 0)}`],
+    ['Subtotal No Objeto IVA:', '$0.00'],
+    ['Descuentos:',             `$${fmt2(f.total_descuento ?? f.descuento ?? 0)}`],
+    ['ICE:',                    '$0.00'],
+    ['IVA 15%:',                `$${fmt2(f.iva ?? 0)}`],
+    ['IVA 5%:',                 '$0.00'],
+    ['Servicio 10%:',           `$${fmt2(f.servicio ?? 0)}`],
+    ['Valor Total:',            `$${fmt2(f.total ?? 0)}`],
+  ];
+  let fyr = y - 16;
+  drawRect(rightFX, y - 16, halfW, 16, LGRAY);
+  for (let i = 0; i < totRows.length; i++) {
+    const [label, val] = totRows[i];
+    const isTotal = i === totRows.length - 1;
+    if (isTotal) drawRect(rightFX, fyr, halfW, 16, LGRAY);
+    drawLine(rightFX, fyr, rightFX + halfW, fyr, 0.3, LGRAY);
+    const valW = (isTotal ? bold : regular).widthOfTextAtSize(val, isTotal ? 9 : 8);
+    drawText(label, rightFX + 5, fyr + 4, { size: isTotal ? 9 : 8, bold: isTotal, color: DARK });
+    drawText(val, rightFX + halfW - valW - 5, fyr + 4, { size: isTotal ? 9 : 8, bold: isTotal });
+    fyr -= 16;
+  }
+
+  // Borde exterior final
+  drawRect(M, y - footH, tW, footH, undefined, LGRAY);
+
+  const pdfBytes = await doc.save();
+  return pdfBytes;
+}
+
 // ── Envío con Resend ──────────────────────────────────────────────────────────
+/** Convierte HTML básico a texto plano para el campo text del email (mejor deliverability) */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
+    .replace(/\s{2,}/g, ' ').trim();
+}
+
 async function enviarConResend(opts: {
   to: string;
   subject: string;
   html: string;
   fromName: string;
-  xmlAdjunto?: string;      // XML firmado (base64 ya codificado)
-  xmlFilename?: string;     // nombre del archivo .xml
+  replyTo?: string;
+  xmlAdjunto?: string;
+  xmlFilename?: string;
+  pdfAdjunto?: string;      // PDF RIDE (base64)
+  pdfFilename?: string;
 }): Promise<{ ok: boolean; id?: string; error?: string }> {
   const apiKey = Deno.env.get('RESEND_API_KEY');
   if (!apiKey) return { ok: false, error: 'RESEND_API_KEY no configurada en secrets de Supabase' };
 
   const fromDomain = Deno.env.get('RESEND_FROM_DOMAIN') || 'onboarding@resend.dev';
-  const from = fromDomain.includes('@') ? fromDomain : `${opts.fromName} <noreply@${fromDomain}>`;
+  // Si es un email completo → agregar display name. Si es solo dominio → construir email.
+  const from = fromDomain.includes('@')
+    ? `${opts.fromName} <${fromDomain}>`
+    : `${opts.fromName} <noreply@${fromDomain}>`;
 
   const body: any = {
     from,
     to: [opts.to],
     subject: opts.subject,
     html: opts.html,
+    text: htmlToText(opts.html),   // versión texto plano → mejora deliverability
+    headers: {
+      'X-Entity-Ref-ID': `mar-erp-${Date.now()}`,   // evita agrupación como thread
+    },
   };
 
-  if (opts.xmlAdjunto && opts.xmlFilename) {
-    body.attachments = [{ filename: opts.xmlFilename, content: opts.xmlAdjunto }];
-  }
+  // reply_to: permite al cliente responder directamente al emisor
+  if (opts.replyTo) body.reply_to = opts.replyTo;
+
+  body.attachments = [];
+  if (opts.xmlAdjunto && opts.xmlFilename)
+    body.attachments.push({ filename: opts.xmlFilename, content: opts.xmlAdjunto });
+  if (opts.pdfAdjunto && opts.pdfFilename)
+    body.attachments.push({ filename: opts.pdfFilename, content: opts.pdfAdjunto });
+  if (body.attachments.length === 0) delete body.attachments;
 
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -2215,11 +2638,22 @@ export async function handleEnviarEmailFactura(req: Request, empresaId: string) 
     const subject = `Factura Electrónica N° ${f.numero_factura || facturaId} — ${f.razon_social || 'MAR ERP'}`;
     const fileNum = (f.numero_factura || facturaId).replace(/[\/\\]/g, '-');
 
-    // Adjunto XML firmado (si existe)
     const xmlAdjunto  = f.xml_firmado ? xmlToBase64(f.xml_firmado) : undefined;
     const xmlFilename = f.xml_firmado ? `factura_${fileNum}.xml` : undefined;
 
-    const result = await enviarConResend({ to: destinatario, subject, html, fromName: f.razon_social || 'MAR ERP', xmlAdjunto, xmlFilename });
+    // Generar PDF RIDE
+    let pdfAdjunto: string | undefined;
+    let pdfFilename: string | undefined;
+    try {
+      const pdfBytes = await generarPDFRIDE(f);
+      pdfAdjunto  = btoa(String.fromCharCode(...pdfBytes));
+      pdfFilename = `RIDE_${fileNum}.pdf`;
+    } catch (pdfErr: any) {
+      console.warn('⚠ PDF RIDE no generado:', pdfErr?.message);
+    }
+
+    const replyTo = f.email || undefined;
+    const result  = await enviarConResend({ to: destinatario, subject, html, fromName: f.razon_social || 'MAR ERP', replyTo, xmlAdjunto, xmlFilename, pdfAdjunto, pdfFilename });
     if (!result.ok) {
       console.error('❌ Resend error:', result.error);
       return new Response(JSON.stringify({ error: result.error }), { status: 502, headers: { 'Content-Type': 'application/json' } });
@@ -2261,11 +2695,22 @@ export async function handleReenviarEmailFactura(req: Request, empresaId: string
     const subject = `Factura Electrónica N° ${f.numero_factura || facturaId} — ${f.razon_social || 'MAR ERP'}`;
     const fileNum = (f.numero_factura || facturaId).replace(/[\/\\]/g, '-');
 
-    // Adjunto XML firmado (si existe)
     const xmlAdjunto  = f.xml_firmado ? xmlToBase64(f.xml_firmado) : undefined;
     const xmlFilename = f.xml_firmado ? `factura_${fileNum}.xml` : undefined;
 
-    const result = await enviarConResend({ to: destinatario, subject, html, fromName: f.razon_social || 'MAR ERP', xmlAdjunto, xmlFilename });
+    // Generar PDF RIDE
+    let pdfAdjunto2: string | undefined;
+    let pdfFilename2: string | undefined;
+    try {
+      const pdfBytes2 = await generarPDFRIDE(f);
+      pdfAdjunto2  = btoa(String.fromCharCode(...pdfBytes2));
+      pdfFilename2 = `RIDE_${fileNum}.pdf`;
+    } catch (pdfErr: any) {
+      console.warn('⚠ PDF RIDE no generado:', pdfErr?.message);
+    }
+
+    const replyTo2 = f.email || undefined;
+    const result = await enviarConResend({ to: destinatario, subject, html, fromName: f.razon_social || 'MAR ERP', replyTo: replyTo2, xmlAdjunto, xmlFilename, pdfAdjunto: pdfAdjunto2, pdfFilename: pdfFilename2 });
     if (!result.ok) {
       console.error('❌ Resend error (reenvío):', result.error);
       return new Response(JSON.stringify({ error: result.error }), { status: 502, headers: { 'Content-Type': 'application/json' } });
@@ -2283,6 +2728,105 @@ export async function handleReenviarEmailFactura(req: Request, empresaId: string
     console.error('❌ handleReenviarEmailFactura:', error.message);
     return new Response(JSON.stringify({ error: 'Error al reenviar email', detalle: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
+}
+
+// ============================================================
+// TEST EMAIL — Diagnóstico completo del envío de emails
+// ============================================================
+
+export async function handleTestEmail(req: Request, empresaId: string) {
+  const result: Record<string, any> = { timestamp: new Date().toISOString() };
+
+  // 1. Verificar secrets
+  const apiKey     = Deno.env.get('RESEND_API_KEY')    || '';
+  const fromDomain = Deno.env.get('RESEND_FROM_DOMAIN') || '';
+  result.secrets = {
+    resend_api_key_set:    apiKey.length > 0,
+    resend_api_key_prefix: apiKey ? apiKey.substring(0, 6) + '...' : '(no configurado)',
+    resend_from_domain_set: fromDomain.length > 0,
+    resend_from_domain:     fromDomain || '(no configurado — usará onboarding@resend.dev)',
+  };
+
+  if (!apiKey) {
+    result.diagnostico = '❌ RESEND_API_KEY no está configurado en los secrets de Supabase';
+    return new Response(JSON.stringify(result, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  // 2. Construir el from que se usaría
+  const config = await getConfig(empresaId);
+  const fromName = config?.razon_social || 'MAR ERP';
+  const resolvedDomain = fromDomain || 'onboarding@resend.dev';
+  const from = resolvedDomain.includes('@')
+    ? `${fromName} <${resolvedDomain}>`
+    : `${fromName} <noreply@${resolvedDomain}>`;
+  result.from_calculado = from;
+
+  // 3. Determinar destinatario de prueba
+  let body: any = {};
+  try { body = await req.json(); } catch { /* sin body */ }
+  const destinatario: string = body.destinatario || config?.email || '';
+
+  if (!destinatario) {
+    result.diagnostico = '⚠️ No hay email de destino. Agrega un email en la configuración del emisor o pásalo en el body { "destinatario": "tu@email.com" }';
+    return new Response(JSON.stringify(result, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  result.destinatario_prueba = destinatario;
+
+  // 4. Enviar email real de prueba
+  const htmlTest = `
+    <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px;">
+      <div style="background:#F97316;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;">✅ Prueba de Email — MAR ERP</h2>
+      </div>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:20px 24px;border-radius:0 0 8px 8px;">
+        <p style="color:#374151;">Este es un email de prueba enviado desde el sistema <strong>MAR ERP</strong>.</p>
+        <p style="color:#374151;">Si lo recibes correctamente, el envío de facturas por email está funcionando.</p>
+        <hr style="border-color:#e5e7eb;margin:16px 0;">
+        <p style="color:#9ca3af;font-size:12px;">
+          <strong>Remitente:</strong> ${from}<br>
+          <strong>Dominio:</strong> ${resolvedDomain}<br>
+          <strong>Fecha:</strong> ${new Date().toLocaleString('es-EC')}
+        </p>
+      </div>
+    </div>
+  `;
+
+  try {
+    const resBody_send: any = {
+      from,
+      to: [destinatario],
+      subject: `✅ Prueba de email — MAR ERP (${new Date().toLocaleTimeString('es-EC')})`,
+      html: htmlTest,
+    };
+
+    const resendRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(resBody_send),
+    });
+
+    const resendJson = await resendRes.json();
+    result.resend_http_status = resendRes.status;
+    result.resend_response    = resendJson;
+
+    if (resendRes.ok) {
+      result.diagnostico = `✅ Email de prueba enviado correctamente a ${destinatario}. Revisa tu bandeja de entrada (y spam).`;
+      result.email_id    = resendJson.id;
+    } else {
+      const msg = resendJson.message || resendJson.error || resendJson.name || `HTTP ${resendRes.status}`;
+      result.diagnostico = `❌ Resend rechazó el envío: ${msg}`;
+      // Sugerencias según el error
+      if (msg.includes('domain') || msg.includes('verified')) {
+        result.sugerencia = `El dominio "${resolvedDomain}" no está verificado en Resend. Ve a https://resend.com/domains y verifica tu dominio.`;
+      } else if (msg.includes('API key') || resendRes.status === 401) {
+        result.sugerencia = 'La RESEND_API_KEY es incorrecta o fue revocada. Genera una nueva en https://resend.com/api-keys';
+      }
+    }
+  } catch (e: any) {
+    result.diagnostico = `❌ Error al conectar con Resend: ${e.message}`;
+  }
+
+  return new Response(JSON.stringify(result, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 // public alias
@@ -2376,4 +2920,181 @@ export async function handleTestSRI(req: Request, empresaId: string) {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+// ── NOTA DE CRÉDITO ───────────────────────────────────────────────────────────
+export async function handleEmitirNotaCredito(req: Request, empresaId: string): Promise<Response> {
+  try {
+    const body = await req.json();
+    const { factura_id, motivo, tipo = 'total', monto_parcial, items_parciales } = body;
+
+    if (!factura_id || !motivo) {
+      return Response.json({ error: 'factura_id y motivo son requeridos' }, { status: 400 });
+    }
+
+    // Obtener factura original
+    const { data: factOrig } = await getDB().from('facturas')
+      .select('*').eq('id', factura_id).eq('empresa_id', empresaId).maybeSingle();
+    if (!factOrig) return Response.json({ error: 'Factura no encontrada' }, { status: 404 });
+    if (factOrig.estado_autorizacion !== 'AUTORIZADO')
+      return Response.json({ error: 'Solo se puede emitir nota de crédito sobre facturas autorizadas' }, { status: 422 });
+
+    // Configuración del emisor
+    const config = await getConfig(empresaId);
+    if (!config?.ruc) return Response.json({ error: 'Configure primero los datos de facturación' }, { status: 422 });
+
+    // Determinar totales según tipo (total o parcial)
+    const dc = typeof factOrig.datos_completos === 'string' ? JSON.parse(factOrig.datos_completos || '{}') : (factOrig.datos_completos || {});
+    const itemsNC = tipo === 'parcial' && items_parciales?.length ? items_parciales : (dc.items || factOrig.datos_completos?.items || []);
+    const totalNC = tipo === 'parcial' && monto_parcial ? Number(monto_parcial) : Number(factOrig.total || 0);
+    const subtotalNC = tipo === 'parcial' && monto_parcial ? Math.round(Number(monto_parcial) / 1.15 * 100) / 100 : Number(factOrig.subtotal_iva || 0);
+    const ivaNC = Math.round((totalNC - subtotalNC) * 100) / 100;
+
+    // Generar secuencial para nota de crédito (usa secuencial separado si existe, sino el mismo de factura)
+    const secNC = config.secuencial_nc_actual || 1;
+    await getDB().from('configuracion_facturacion')
+      .update({ secuencial_nc_actual: secNC + 1, updated_at: new Date().toISOString() })
+      .eq('empresa_id', empresaId);
+    const secStr = String(secNC).padStart(9, '0');
+
+    const nowUtc    = new Date();
+    const ambCod    = config.ambiente === 'produccion' ? '2' : '1';
+    const estab3    = String(config.codigo_establecimiento || '001').padStart(3,'0').substring(0,3);
+    const ptoEmi3   = String(config.punto_emision || '001').padStart(3,'0').substring(0,3);
+    const dd = String(nowUtc.getDate()).padStart(2,'0');
+    const mo = String(nowUtc.getMonth()+1).padStart(2,'0');
+    const yy = String(nowUtc.getFullYear()).substring(2);
+    const cod8      = Math.floor(10000000 + Math.random() * 90000000).toString();
+    const claveBase = dd + mo + yy + '04' + config.ruc + ambCod + estab3 + ptoEmi3 + secStr + cod8 + '1';
+    const claveAcceso = claveBase + calcularModulo11(claveBase);
+    const numeroNC  = `${estab3}-${ptoEmi3}-${secStr}`;
+    const fechaEmision = nowUtc.toISOString().split('T')[0];
+
+    // Fecha del doc sustento formateada como dd/mm/yyyy
+    const fechaSustento = factOrig.fecha_emision
+      ? (() => {
+          const d = new Date(factOrig.fecha_emision + 'T00:00:00');
+          return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+        })()
+      : `${dd}/${mo}/20${yy}`;
+
+    const notaCredito: any = {
+      // Identificación
+      tipo_comprobante: 'nota_credito',
+      numero_nc: numeroNC,
+      clave_acceso: claveAcceso,
+      secuencial: secNC,
+      fecha_emision: fechaEmision,
+      ambiente: config.ambiente || 'pruebas',
+      // Emisor
+      ruc: config.ruc,
+      razon_social: config.razon_social,
+      nombre_comercial: config.nombre_comercial || config.razon_social,
+      direccion_matriz: config.direccion_matriz || '',
+      direccion_establecimiento: config.direccion_establecimiento || config.direccion_matriz || '',
+      obligado_contabilidad: config.obligado_contabilidad ?? true,
+      contribuyente_especial: config.contribuyente_especial || '',
+      estab: estab3, pto_emi: ptoEmi3,
+      // Receptor (igual que factura original)
+      cliente_razon_social: factOrig.cliente_razon_social || 'Consumidor Final',
+      cliente_identificacion: factOrig.cliente_identificacion || '9999999999999',
+      cliente_tipo_identificacion: factOrig.cliente_tipo_identificacion || '07',
+      cliente_email: factOrig.cliente_email || '',
+      // Referencia a factura original
+      num_doc_modificado: factOrig.numero_factura,
+      fecha_doc_sustento: fechaSustento,
+      // Totales
+      subtotal_iva: subtotalNC,
+      iva: ivaNC,
+      total: totalNC,
+      // Detalle
+      items: itemsNC,
+      motivo,
+      tipo_nc: tipo,
+      // Meta
+      factura_origen_id: factura_id,
+      empresa_id: empresaId,
+    };
+
+    // Generar XML
+    const xmlSinFirmar = buildNotaCreditoXML(notaCredito);
+    notaCredito.xml_sin_firmar = xmlSinFirmar;
+    let xmlParaEnviar = xmlSinFirmar;
+
+    // Firmar si hay certificado
+    const certData = await getCert(empresaId);
+    if (certData?.p12_base64 && certData?.password) {
+      try {
+        xmlParaEnviar = await firmarXMLXAdES(xmlSinFirmar, certData);
+        notaCredito.firmado_digitalmente = true;
+      } catch (e: any) {
+        notaCredito.mensajes = [`Error al firmar: ${e.message}`];
+      }
+    }
+    notaCredito.xml_firmado = xmlParaEnviar;
+
+    // Enviar al SRI
+    notaCredito.estado = 'PENDIENTE';
+    notaCredito.estado_autorizacion = 'PENDIENTE';
+
+    const resultSRI = await enviarAlSRI(xmlParaEnviar, config.ambiente || 'pruebas');
+    if (resultSRI.estado === 'RECIBIDA') {
+      const authResult = await consultarAutorizacionSRI(claveAcceso, config.ambiente || 'pruebas', 15000);
+      if (authResult.autorizado) {
+        notaCredito.estado = 'AUTORIZADO';
+        notaCredito.estado_autorizacion = 'AUTORIZADO';
+        notaCredito.numero_autorizacion = authResult.numeroAutorizacion || claveAcceso;
+        notaCredito.fecha_autorizacion  = authResult.fechaAutorizacion;
+      } else {
+        notaCredito.estado = 'PENDIENTE';
+        notaCredito.mensajes_sri = authResult.mensajes;
+      }
+    } else {
+      notaCredito.mensajes_sri = resultSRI.mensajes || [];
+    }
+
+    // Guardar nota de crédito en tabla facturas con tipo diferenciado
+    const { data: ncGuardada } = await getDB().from('facturas').insert({
+      empresa_id: empresaId,
+      numero_factura: numeroNC,
+      clave_acceso: claveAcceso,
+      estado: notaCredito.estado,
+      estado_autorizacion: notaCredito.estado_autorizacion,
+      numero_autorizacion: notaCredito.numero_autorizacion || null,
+      fecha_autorizacion: notaCredito.fecha_autorizacion || null,
+      fecha_emision: fechaEmision,
+      cliente_razon_social: notaCredito.cliente_razon_social,
+      cliente_identificacion: notaCredito.cliente_identificacion,
+      cliente_email: notaCredito.cliente_email,
+      subtotal_iva: subtotalNC,
+      iva: ivaNC,
+      total: totalNC,
+      xml_sin_firmar: xmlSinFirmar,
+      xml_firmado: xmlParaEnviar,
+      mensajes_sri: notaCredito.mensajes_sri || [],
+      ambiente: config.ambiente || 'pruebas',
+      datos_completos: {
+        ...notaCredito,
+        tipo_comprobante: 'nota_credito',
+        factura_origen_id: factura_id,
+        factura_origen_numero: factOrig.numero_factura,
+      },
+      updated_at: new Date().toISOString(),
+    }).select().maybeSingle();
+
+    return Response.json({
+      ok: true,
+      numero_nc: numeroNC,
+      estado: notaCredito.estado,
+      estado_autorizacion: notaCredito.estado_autorizacion,
+      numero_autorizacion: notaCredito.numero_autorizacion,
+      clave_acceso: claveAcceso,
+      mensajes_sri: notaCredito.mensajes_sri,
+      nc: ncGuardada,
+    }, { status: 201 });
+
+  } catch (e: any) {
+    console.error('❌ handleEmitirNotaCredito:', e.message);
+    return Response.json({ error: 'Error al emitir nota de crédito', detalle: e.message }, { status: 500 });
+  }
 }

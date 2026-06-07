@@ -22,12 +22,69 @@ export function setupDashboardRoutes(app: any, authMiddleware: any) {
   app.get("/server/dashboard", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
-      const hoy = new Date();
-      hoy.setHours(0, 0, 0, 0);
-      const fechaHoy = hoy.toISOString();
-      const inicioSemana = new Date(hoy); inicioSemana.setDate(hoy.getDate() - 7);
-      const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString();
+      const ahora = new Date();
+
+      // ── Ajuste zona horaria Ecuador (UTC-5) ───────────────────
+      // El Edge Function corre en UTC. Ecuador es UTC-5.
+      // "Medianoche en Ecuador" = 05:00 UTC del mismo día.
+      const OFFSET_EC = 5 * 3600 * 1000; // 5 horas en ms
+      const ahoraEC = new Date(ahora.getTime() - OFFSET_EC); // hora local Ecuador
+
+      // Medianoche Ecuador expresada en UTC (para comparar con created_at)
+      const hoyEC = new Date(ahoraEC);
+      hoyEC.setHours(0, 0, 0, 0);
+      const fechaHoy = new Date(hoyEC.getTime() + OFFSET_EC).toISOString(); // 05:00 UTC
+
+      // Lunes de la semana actual (semana lun-dom) en Ecuador
+      const diaSemana = hoyEC.getDay(); // 0=Dom, 1=Lun, ..., 6=Sáb
+      const diasDesdeElLunes = diaSemana === 0 ? 6 : diaSemana - 1;
+      const inicioSemanaEC = new Date(hoyEC);
+      inicioSemanaEC.setDate(hoyEC.getDate() - diasDesdeElLunes);
+      const inicioSemana = new Date(inicioSemanaEC.getTime() + OFFSET_EC); // en UTC
+
+      const inicioMesEC = new Date(ahoraEC.getFullYear(), ahoraEC.getMonth(), 1);
+      const inicioMes = new Date(inicioMesEC.getTime() + OFFSET_EC).toISOString();
       const hace30 = new Date(Date.now() - 30 * 86400000).toISOString();
+
+      // Alias para el resto del código que aún usa 'hoy' (medianoche Ecuador en UTC)
+      const hoy = hoyEC;
+
+      // ── Obtener caja abierta para calcular inicio de "ventas hoy" ──
+      let fechaInicioHoy = fechaHoy;
+      let estadoCaja = { abierta: false, cajero: null as string | null, monto_real: 0, cajas_abiertas: 0, fecha_apertura: null as string | null };
+      try {
+        const { data: sesionesAbiertas } = await getDB().from('turnos_caja')
+          .select('cajero_nombre, monto_inicial, ventas_total, fecha_apertura')
+          .eq('empresa_id', auth.empresaId).eq('estado', 'abierta')   // 'abierta' no 'abierto'
+          .order('fecha_apertura', { ascending: false });
+        if (sesionesAbiertas && sesionesAbiertas.length > 0) {
+          let montoTotal = 0;
+          for (const sesion of sesionesAbiertas) {
+            montoTotal += (sesion.monto_inicial || 0) + (sesion.ventas_total || 0);
+          }
+          const fechaApertura = sesionesAbiertas[0].fecha_apertura;
+
+          // Solo usar fecha_apertura como inicio de "hoy" si la caja se abrió HOY (Ecuador).
+          // Si la sesión es de un día anterior (nunca cerrada), usar medianoche Ecuador de hoy.
+          let aperturaEsDeHoy = false;
+          if (fechaApertura) {
+            const aperEC = new Date(new Date(fechaApertura).getTime() - OFFSET_EC);
+            const aperFecha = aperEC.toISOString().split('T')[0];
+            const hoyFecha  = hoyEC.toISOString().split('T')[0];
+            aperturaEsDeHoy = aperFecha === hoyFecha;
+          }
+          if (fechaApertura && aperturaEsDeHoy) fechaInicioHoy = fechaApertura;
+          // Si apertura es de días previos → fechaInicioHoy queda como medianoche Ecuador (correcto)
+
+          estadoCaja = {
+            abierta: true,
+            cajero: sesionesAbiertas[0].cajero_nombre || null,
+            monto_real: montoTotal,
+            cajas_abiertas: sesionesAbiertas.length,
+            fecha_apertura: fechaApertura || null,
+          };
+        }
+      } catch { /* silencioso */ }
 
       const [productos, ventas, comandas] = await Promise.all([
         obtenerProductos(auth.empresaId),
@@ -40,7 +97,8 @@ export function setupDashboardRoutes(app: any, authMiddleware: any) {
       // ── Ventas por período ───────────────────────────────────
       // Soporte dual: campo 'fecha' (KV legacy) o 'created_at' (SQL)
       const getFecha = (v: any): string => v.fecha || v.created_at || '';
-      const ventasHoy   = activas.filter((v: any) => getFecha(v) >= fechaHoy);
+      // "Hoy" = desde apertura de caja (o medianoche si no hay caja abierta)
+      const ventasHoy    = activas.filter((v: any) => getFecha(v) >= fechaInicioHoy);
       const ventasSemana = activas.filter((v: any) => getFecha(v) >= inicioSemana.toISOString());
       const ventasMes    = activas.filter((v: any) => getFecha(v) >= inicioMes);
       const ventas30     = activas.filter((v: any) => getFecha(v) >= hace30);
@@ -59,12 +117,19 @@ export function setupDashboardRoutes(app: any, authMiddleware: any) {
         ventasPorHora[h].monto += v.total || 0;
       }
 
-      // ── Ventas por día (últimos 7) ───────────────────────────
+      // ── Ventas por día (últimos 7) — fecha en hora Ecuador ──────
+      // Convierte el timestamp de cada venta a fecha Ecuador (UTC-5) para agrupar correctamente
+      const getFechaEC = (v: any): string => {
+        const ts = v.fecha || v.created_at || '';
+        if (!ts) return '';
+        const d = new Date(new Date(ts).getTime() - OFFSET_EC);
+        return d.toISOString().split('T')[0]; // fecha local Ecuador
+      };
       const ventasPorDia: any[] = [];
       for (let i = 6; i >= 0; i--) {
-        const d = new Date(hoy); d.setDate(hoy.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
-        const dvs = activas.filter((v: any) => getFecha(v).startsWith(dateStr));
+        const d = new Date(hoyEC); d.setDate(hoyEC.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0]; // fecha Ecuador
+        const dvs = activas.filter((v: any) => getFechaEC(v) === dateStr);
         ventasPorDia.push({ fecha: dateStr, cantidad: dvs.length, monto: dvs.reduce((s: number, v: any) => s + (v.total || 0), 0) });
       }
 
@@ -119,26 +184,6 @@ export function setupDashboardRoutes(app: any, authMiddleware: any) {
           }, 0) / comandasHoy.length
         : 0;
 
-      // ── Estado de caja (SQL: turnos_caja con estado='abierto') ─
-      let estadoCaja = { abierta: false, cajero: null as string | null, monto_real: 0, cajas_abiertas: 0 };
-      try {
-        const { data: sesionesAbiertas } = await getDB().from('turnos_caja')
-          .select('cajero_nombre, monto_inicial, ventas_total')
-          .eq('empresa_id', auth.empresaId).eq('estado', 'abierto');
-        if (sesionesAbiertas && sesionesAbiertas.length > 0) {
-          let montoTotal = 0;
-          for (const sesion of sesionesAbiertas) {
-            montoTotal += (sesion.monto_inicial || 0) + (sesion.ventas_total || 0);
-          }
-          estadoCaja = {
-            abierta: true,
-            cajero: sesionesAbiertas[0].cajero_nombre || null,
-            monto_real: montoTotal,
-            cajas_abiertas: sesionesAbiertas.length,
-          };
-        }
-      } catch { /* silencioso */ }
-
       return c.json({
         ventas: {
           hoy:    { cantidad: ventasHoy.length, monto: montoHoy, ticket_promedio: ticketPromedio },
@@ -164,6 +209,11 @@ export function setupDashboardRoutes(app: any, authMiddleware: any) {
           ticket_promedio:    Math.round(ticketPromedio * 100) / 100,
         },
         caja: estadoCaja,
+        periodos: {
+          inicio_hoy: fechaInicioHoy,
+          inicio_semana: inicioSemana.toISOString(),
+          fin_semana: new Date(inicioSemana.getTime() + 6 * 86400000).toISOString(),
+        },
         top_productos:    topProductos,
         bottom_productos: bottomProductos,
         ventas_por_dia:   ventasPorDia,

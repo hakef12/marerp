@@ -195,6 +195,31 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
     }
   });
 
+  app.post("/server/categorias/inicializar", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const existentes = await obtenerCategorias(auth.empresaId);
+      if (existentes && existentes.length > 0) {
+        return c.json({ ok: true, mensaje: 'Ya tiene categorías', categorias: existentes }, 409);
+      }
+      const defaults = [
+        { nombre: 'Alimentos', color: '#f97316', icono: '🍽️' },
+        { nombre: 'Bebidas', color: '#3b82f6', icono: '🥤' },
+        { nombre: 'Postres', color: '#ec4899', icono: '🍰' },
+        { nombre: 'Entradas', color: '#22c55e', icono: '🥗' },
+        { nombre: 'Insumos', color: '#8b5cf6', icono: '📦' },
+        { nombre: 'Limpieza', color: '#06b6d4', icono: '🧹' },
+        { nombre: 'Otros', color: '#6b7280', icono: '📋' },
+      ];
+      const creadas = await Promise.all(
+        defaults.map(cat => guardarCategoria(auth.empresaId, cat))
+      );
+      return c.json({ ok: true, categorias: creadas }, 201);
+    } catch (error: any) {
+      return c.json({ error: 'Error al inicializar categorías', details: error.message }, 500);
+    }
+  });
+
   app.post("/server/categorias", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
@@ -785,7 +810,11 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
       const itemsCalculados = items.map((item: any) => {
         const cantidad       = Number(item.cantidad)    || 0;
         const costo_total    = Number(item.costo_total) || 0;
-        const a_inventario   = item.a_inventario !== false;
+        // Respetar tipo_contable si viene del frontend; tipo 'inventario' → afecta stock
+        const tipoContable   = item.tipo_contable || (item.producto_id ? 'inventario' : 'gasto_operativo');
+        const a_inventario   = item.afecta_stock !== undefined ? item.afecta_stock
+          : item.a_inventario !== undefined ? item.a_inventario !== false
+          : tipoContable === 'inventario';
         const costo_unitario = a_inventario && cantidad > 0 ? costo_total / cantidad : 0;
         return {
           ...item,            // mantiene todos los campos originales (fiscal, xml, etc.)
@@ -884,24 +913,103 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
 
       paso = 'asiento';
       if (total_compra > 0) {
-        const cuentaCredito = tipo_pago === 'contado' ? '1.1.01' : '2.1.01';
-        const descCredito   = tipo_pago === 'contado' ? 'Pago en efectivo/banco' : 'CxP proveedores';
+        try {
+          const db2 = createClient(
+            Deno.env.get('SUPABASE_URL')!,
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+          );
 
-        // Calcular split inventario/gastos para el asiento
-        const totalStock  = itemsCalculados.filter((i: any) => i.a_inventario && i.producto_id).reduce((s: number, i: any) => s + i.costo_total, 0);
-        const totalGasto  = total_compra - totalStock;
-        const asientoItems: any[] = [];
-        if (totalStock > 0)  asientoItems.push({ codigo: '1.1.05', debito: parseFloat(totalStock.toFixed(2)),  descripcion: 'Inventario de alimentos y bebidas' });
-        if (totalGasto > 0)  asientoItems.push({ codigo: '6.1.01', debito: parseFloat(totalGasto.toFixed(2)),  descripcion: 'Gastos generales (flete, embalaje u otros)' });
-        asientoItems.push({ codigo: cuentaCredito, credito: parseFloat(total_compra.toFixed(2)), descripcion: descCredito });
+          const cuentaCredito = tipo_pago === 'contado' ? '10101' : '2010301';
+          const descCredito   = tipo_pago === 'contado' ? 'Pago en efectivo/banco' : 'CxP proveedores';
 
-        await registrarAsientoAutomatico(auth.empresaId, {
-          tipo: 'compra_inventario',
-          descripcion: `Compra ${numero_factura || compra.id} (${tipo_pago === 'contado' ? 'Contado' : 'Crédito'})`,
-          referencia:  compra.id,
-          fecha:       (fecha || new Date().toISOString()).split('T')[0],
-          items:       asientoItems,
-        });
+          // Mapa tipo_contable → código de cuenta (Plan SRI Ecuador oficial)
+          const TIPO_A_CODIGO: Record<string, string> = {
+            'inventario':       '510102',  // Compras Netas Locales de Bienes
+            'gasto_servicio':   '520118',  // Agua, Energía, Luz y Telecomunicaciones
+            'gasto_basicos':    '520118',  // Agua, Energía, Luz y Telecomunicaciones
+            'gasto_arriendo':   '520109',  // Arrendamiento Operativo
+            'gasto_publicidad': '520111',  // Promoción y Publicidad
+            'gasto_operativo':  '520108',  // Mantenimiento y Reparaciones
+            'activo_fijo':      '1020106', // Maquinaria y Equipo
+          };
+
+          // Agrupar por tipo
+          const porTipo: Record<string, number> = {};
+          for (const item of (items || [])) {
+            const tipo = item.tipo_contable || (item.a_inventario !== false ? 'inventario' : 'gasto_operativo');
+            porTipo[tipo] = (porTipo[tipo] || 0) + Number(item.costo_total || 0);
+          }
+          if (Object.keys(porTipo).length === 0) porTipo['inventario'] = total_compra;
+
+          // Buscar cuentas en la BD directamente (sin pasar por obtenerCuentas/KV)
+          const codigos = [...new Set([...Object.values(TIPO_A_CODIGO), cuentaCredito])];
+          const { data: cuentasDB } = await db2.from('cuentas_contables')
+            .select('id, codigo, nombre').eq('empresa_id', auth.empresaId)
+            .in('codigo', codigos);
+
+          const cuentaMap: Record<string, any> = {};
+          for (const c of (cuentasDB || [])) cuentaMap[c.codigo] = c;
+
+          // Resolver cuenta con fallback por prefijo
+          const resolverDirecto = (codigo: string) => {
+            if (cuentaMap[codigo]) return cuentaMap[codigo];
+            // Buscar por prefijo (6.2.03 → 6.2 → 6)
+            const partes = codigo.split('.');
+            for (let n = partes.length - 1; n >= 1; n--) {
+              const prefijo = partes.slice(0, n).join('.');
+              const alt = Object.values(cuentaMap).find((c: any) => c.codigo?.startsWith(prefijo + '.'));
+              if (alt) return alt;
+            }
+            return null;
+          };
+
+          // Construir ítems del asiento con IDs reales
+          const asientoItemsDirecto: any[] = [];
+          for (const [tipo, monto] of Object.entries(porTipo)) {
+            const codigoCuenta = TIPO_A_CODIGO[tipo] || '520108';
+            const cuenta = resolverDirecto(codigoCuenta);
+            if (cuenta) {
+              asientoItemsDirecto.push({
+                cuenta_id: cuenta.id, cuenta_codigo: cuenta.codigo, cuenta_nombre: cuenta.nombre,
+                debito: parseFloat(monto.toFixed(2)), credito: 0, descripcion: tipo,
+              });
+            }
+          }
+
+          const ctaCredito = resolverDirecto(cuentaCredito);
+          if (ctaCredito && asientoItemsDirecto.length > 0) {
+            asientoItemsDirecto.push({
+              cuenta_id: ctaCredito.id, cuenta_codigo: ctaCredito.codigo, cuenta_nombre: ctaCredito.nombre,
+              debito: 0, credito: parseFloat(total_compra.toFixed(2)), descripcion: descCredito,
+            });
+
+            const fechaCompra = (fecha || new Date().toISOString()).split('T')[0];
+            const numeroAsiento = `ASI-${new Date().getFullYear()}-${Date.now().toString().slice(-7)}`;
+
+            const { error: asientoErr } = await db2.from('asientos_contables').insert({
+              id: crypto.randomUUID(),
+              empresa_id: auth.empresaId,
+              numero: numeroAsiento,
+              fecha: fechaCompra,
+              descripcion: `Compra ${numero_factura || compra.id} (${tipo_pago === 'contado' ? 'Contado' : 'Crédito'})`,
+              tipo: 'compra_inventario',
+              referencia: compra.id,
+              estado: 'activo',
+              origen_automatico: true,
+              items: asientoItemsDirecto,
+              total_debito: parseFloat(total_compra.toFixed(2)),
+              total_credito: parseFloat(total_compra.toFixed(2)),
+            });
+
+            if (asientoErr) console.error('[compras] Asiento no guardado:', asientoErr.message);
+            else console.log(`[compras] Asiento ${numeroAsiento} creado para compra ${compra.id}`);
+          } else {
+            console.warn('[compras] Cuentas no encontradas — asiento no generado. Cuenta crédito:', cuentaCredito, '| Items:', asientoItemsDirecto.length);
+          }
+        } catch (asientoErr: any) {
+          // No bloquear la compra si falla el asiento
+          console.error('[compras] Error generando asiento:', asientoErr?.message);
+        }
       }
 
       return c.json({ compra }, 201);
@@ -1214,19 +1322,55 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
         if (total <= 0) { omitidos.push(compra.numero_factura || compra.id); continue; }
 
         const tipoPago = compra.tipo_pago || 'contado'; // compras antiguas se asumen contado
-        const cuentaCredito = tipoPago === 'credito' ? '2.1.01' : '1.1.01';
-        const descCredito   = tipoPago === 'credito' ? 'CxP proveedores' : 'Pago en efectivo/banco';
+        const cuentaCredito = tipoPago === 'credito' ? '2010301' : '10101';
+        const descCredito   = tipoPago === 'credito' ? 'CxP Proveedores Locales' : 'Efectivo y Equivalentes';
         const fecha = (compra.fecha || compra.created_at || new Date().toISOString()).split('T')[0];
 
-        await registrarAsientoAutomatico(auth.empresaId, {
-          tipo: 'compra_inventario',
-          descripcion: `[Retroactivo] Compra ${compra.numero_factura || compra.id} (${tipoPago === 'credito' ? 'Crédito' : 'Contado'})`,
-          referencia: compra.id,
+        // Usar inserción directa con cuentas reales de la BD (no 1.1.05 hardcodeado)
+        const db2 = createClient(
+          Deno.env.get('SUPABASE_URL')!,
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+        );
+        const { data: cuentasRetro } = await db2.from('cuentas_contables')
+          .select('id,codigo,nombre').eq('empresa_id', auth.empresaId)
+          .in('codigo', ['510102', cuentaCredito]);
+
+        const mapRetro: Record<string,any> = {};
+        for (const c of (cuentasRetro||[])) mapRetro[c.codigo] = c;
+
+        // Fallback por prefijo
+        const resolveRetro = (cod: string) => {
+          if (mapRetro[cod]) return mapRetro[cod];
+          const all = Object.values(mapRetro);
+          const partes = cod.split('.');
+          for (let n = partes.length-1; n>=1; n--) {
+            const pfx = partes.slice(0,n).join('.');
+            const alt = all.find((c:any) => c.codigo?.startsWith(pfx+'.'));
+            if (alt) return alt;
+          }
+          return null;
+        };
+
+        const ctaCosto  = resolveRetro('510102');
+        const ctaCredito = resolveRetro(cuentaCredito);
+        if (!ctaCosto || !ctaCredito) { omitidos.push(`${compra.numero_factura||compra.id} (cuentas no encontradas)`); continue; }
+
+        await db2.from('asientos_contables').insert({
+          id: crypto.randomUUID(),
+          empresa_id: auth.empresaId,
+          numero: `ASI-${new Date().getFullYear()}-${Date.now().toString().slice(-7)}`,
           fecha,
+          descripcion: `Compra ${compra.numero_factura || compra.id} (${tipoPago === 'credito' ? 'Crédito' : 'Contado'})`,
+          tipo: 'compra_inventario',
+          referencia: compra.id,
+          estado: 'activo',
+          origen_automatico: true,
           items: [
-            { codigo: '1.1.05', debito: total,  descripcion: 'Inventario de alimentos y bebidas' },
-            { codigo: cuentaCredito, credito: total, descripcion: descCredito },
+            { cuenta_id: ctaCosto.id,   cuenta_codigo: ctaCosto.codigo,   cuenta_nombre: ctaCosto.nombre,   debito: total, credito: 0,     descripcion: 'Costo de alimentos / inventario' },
+            { cuenta_id: ctaCredito.id, cuenta_codigo: ctaCredito.codigo, cuenta_nombre: ctaCredito.nombre, debito: 0,     credito: total, descripcion: descCredito },
           ],
+          total_debito: total,
+          total_credito: total,
         });
 
         creados.push(compra.numero_factura || compra.id);

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   DollarSign, ShoppingCart, Package, AlertCircle,
-  TrendingUp, BarChart3, RefreshCw, ChefHat,
+  TrendingUp, BarChart3, RefreshCw, ChefHat, Clock, Calendar,
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { ExportButtons } from '../components/ExportButtons';
@@ -24,6 +24,16 @@ interface DashboardData {
   cocina: {
     comandas_pendientes:    number;
     comandas_en_preparacion: number;
+  };
+  caja: {
+    abierta: boolean;
+    cajero: string | null;
+    fecha_apertura: string | null;
+  };
+  periodos: {
+    inicio_hoy: string;
+    inicio_semana: string;
+    fin_semana: string;
   };
   top_productos: { nombre: string; cantidad: number; monto: number }[];
   ventas_por_dia: { fecha: string; cantidad: number; monto: number }[];
@@ -47,6 +57,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [now, setNow] = useState(new Date());
+
+  // Reloj en tiempo real — actualiza cada segundo
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -81,6 +98,19 @@ export default function Dashboard() {
     fetchData();
   }, [fetchData]);
 
+  // Auto-refresh cada 60 segundos
+  useEffect(() => {
+    const interval = setInterval(fetchData, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  // Escuchar evento global 'dashboard:refresh' (emitido tras anular ventas/asientos)
+  useEffect(() => {
+    const handleRefresh = () => fetchData();
+    window.addEventListener('dashboard:refresh', handleRefresh);
+    return () => window.removeEventListener('dashboard:refresh', handleRefresh);
+  }, [fetchData]);
+
   // Datos para el gráfico de barras — mapeamos fecha → día abreviado
   const chartData = (data?.ventas_por_dia ?? []).map(v => {
     const d = new Date(v.fecha + 'T12:00:00'); // mediodía para evitar offset de zona horaria
@@ -102,11 +132,23 @@ export default function Dashboard() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-1">Dashboard</h1>
-          <p className="text-gray-600 text-sm">
-            {lastUpdate
-              ? `Actualizado: ${lastUpdate.toLocaleTimeString('es-EC')}`
-              : 'Cargando métricas...'}
-          </p>
+          <div className="flex items-center gap-4 text-sm text-gray-600">
+            <span className="flex items-center gap-1.5">
+              <Calendar className="w-4 h-4 text-[#F97316]" />
+              {now.toLocaleDateString('es-EC', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-[#F97316]" />
+              <span className="font-mono text-base font-semibold text-gray-900">
+                {now.toLocaleTimeString('es-EC')}
+              </span>
+            </span>
+          </div>
+          {lastUpdate && (
+            <p className="text-xs text-gray-400 mt-0.5">
+              Datos actualizados: {lastUpdate.toLocaleTimeString('es-EC')}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <ExportButtons
@@ -163,6 +205,14 @@ export default function Dashboard() {
             <p className="text-xs text-gray-600">
               {loading ? '' : `${data?.ventas.hoy.cantidad ?? 0} transacciones`}
             </p>
+            {!loading && data?.caja?.abierta && data.periodos?.inicio_hoy && (
+              <p className="text-xs text-[#F97316] mt-1">
+                Desde apertura: {new Date(data.periodos.inicio_hoy).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
+            {!loading && !data?.caja?.abierta && (
+              <p className="text-xs text-gray-400 mt-1">Sin caja abierta</p>
+            )}
           </CardContent>
         </Card>
 
@@ -181,6 +231,13 @@ export default function Dashboard() {
             <p className="text-xs text-gray-600">
               {loading ? '' : `${data?.ventas.semana.cantidad ?? 0} transacciones`}
             </p>
+            {!loading && data?.periodos && (
+              <p className="text-xs text-gray-400 mt-1">
+                {new Date(data.periodos.inicio_semana).toLocaleDateString('es-EC', { day: '2-digit', month: 'short' })}
+                {' – '}
+                {new Date(data.periodos.fin_semana).toLocaleDateString('es-EC', { day: '2-digit', month: 'short' })}
+              </p>
+            )}
           </CardContent>
         </Card>
 

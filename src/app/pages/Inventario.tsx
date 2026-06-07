@@ -76,7 +76,7 @@ export default function Inventario() {
   
   // Estados de UI
   const [isLoading, setIsLoading] = useState(false);
-  const [view, setView] = useState<'inventory' | 'products' | 'warehouses' | 'suppliers' | 'movements' | 'purchases' | 'cuentaspagar' | 'analysis'>('inventory');
+  const [view, setView] = useState<'inventory' | 'products' | 'warehouses' | 'suppliers' | 'movements' | 'purchases' | 'cuentaspagar' | 'analysis' | 'conteo' | 'kardex' | 'comparativo' | 'reportes'>('inventory');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWarehouse, setSelectedWarehouse] = useState('all');
   const [filterLevel, setFilterLevel] = useState<'all' | 'critical' | 'low' | 'normal'>('all');
@@ -121,6 +121,43 @@ export default function Inventario() {
   const [movsFi, setMovsFi]                 = useState('');
   const [movsFf, setMovsFf]                 = useState('');
 
+  // ── Kardex ───────────────────────────────────────────────────────────────
+  const [kardexProductoId, setKardexProductoId] = useState('');
+  const [kardexDesde, setKardexDesde]           = useState('');
+  const [kardexHasta, setKardexHasta]           = useState('');
+  const [kardexData, setKardexData]             = useState<any>(null);
+  const [kardexLoading, setKardexLoading]       = useState(false);
+
+  // ── Snapshot mensual ─────────────────────────────────────────────────────
+  const [snapshots, setSnapshots]               = useState<any[]>([]);
+  const [snapshotGuardando, setSnapshotGuardando] = useState(false);
+
+  // ── Comparativo ──────────────────────────────────────────────────────────
+  const [compPeriodo1, setCompPeriodo1]         = useState('');
+  const [compPeriodo2, setCompPeriodo2]         = useState('');
+  const [compData, setCompData]                 = useState<any>(null);
+  const [compLoading, setCompLoading]           = useState(false);
+  const [compFiltro, setCompFiltro]             = useState('');
+
+  // ── Reportes Especiales ───────────────────────────────────────────────────
+  const [rptLoading, setRptLoading]             = useState(false);
+  const [rptTipo, setRptTipo]                   = useState<'mermas'|'ventas-producto'|'flujo-caja'|'estado-cliente'|'kardex-consolidado'>('mermas');
+  const [rptDesde, setRptDesde]                 = useState('');
+  const [rptHasta, setRptHasta]                 = useState('');
+  const [rptDias, setRptDias]                   = useState('60');
+  const [rptClienteId, setRptClienteId]         = useState('');
+  const [rptData, setRptData]                   = useState<any>(null);
+  const [clientes, setClientes]                 = useState<any[]>([]);
+
+  // ── Conteo Físico ────────────────────────────────────────────────────────
+  const [conteoFisico, setConteoFisico]         = useState<Record<string, string>>({});
+  const [conteoFecha, setConteoFecha]           = useState(new Date().toISOString().split('T')[0]);
+  const [conteoNota, setConteoNota]             = useState('');
+  const [conteoFiltro, setConteoFiltro]         = useState('');
+  const [conteoCategoria, setConteoCategoria]   = useState('todas');
+  const [conteoSoloVarianza, setConteoSoloVarianza] = useState(false);
+  const [conteoAplicando, setConteoAplicando]   = useState(false);
+
   useEffect(() => {
     loadAllData();
   }, []);
@@ -136,6 +173,102 @@ export default function Inventario() {
       fetchCompras(),
       fetchCxP()
     ]);
+  };
+
+  // ── API helper centralizado ───────────────────────────────────────────────
+  const apiGet = async (path: string) => {
+    const { projectId } = await import('/utils/supabase/info');
+    const headers = await getAuthHeaders();
+    const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server${path}`, { headers });
+    if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error || `HTTP ${res.status}`);
+    return res.json();
+  };
+  const apiPost = async (path: string, body: any) => {
+    const { projectId } = await import('/utils/supabase/info');
+    const headers = await getAuthHeaders();
+    const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server${path}`, {
+      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error || `HTTP ${res.status}`);
+    return res.json();
+  };
+
+  // ── Cargar Kardex ─────────────────────────────────────────────────────────
+  const fetchKardex = async (productoId?: string) => {
+    const pid = productoId || kardexProductoId;
+    if (!pid) return;
+    setKardexLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (kardexDesde) params.set('desde', kardexDesde);
+      if (kardexHasta) params.set('hasta', kardexHasta);
+      params.set('limit', '500');
+      const data = await apiGet(`/inventario/kardex/${pid}?${params}`);
+      setKardexData(data);
+    } catch (e: any) { toast.error('Error kardex: ' + e.message); }
+    finally { setKardexLoading(false); }
+  };
+
+  // ── Cargar Snapshots ─────────────────────────────────────────────────────
+  const fetchSnapshots = async () => {
+    try {
+      const data = await apiGet('/inventario/snapshots');
+      setSnapshots(data.snapshots || []);
+    } catch { /* silencioso */ }
+  };
+
+  // ── Guardar Snapshot del mes actual ──────────────────────────────────────
+  const guardarSnapshot = async () => {
+    const hoyEC = new Date(Date.now() - 5*3600*1000);
+    const anio  = hoyEC.getFullYear();
+    const mes   = hoyEC.getMonth() + 1;
+    if (!confirm(`¿Cerrar el mes ${mes}/${anio}? Esto guardará una foto del inventario actual.`)) return;
+    setSnapshotGuardando(true);
+    try {
+      const data = await apiPost('/inventario/snapshot', { anio, mes });
+      toast.success(`✅ Snapshot ${mes}/${anio} guardado — ${data.total_productos} productos · $${Number(data.total_valor||0).toFixed(2)}`);
+      await fetchSnapshots();
+    } catch (e: any) { toast.error('Error: ' + e.message); }
+    finally { setSnapshotGuardando(false); }
+  };
+
+  // ── Cargar lista de clientes para estado de cuenta ───────────────────────
+  const fetchClientes = async () => {
+    try {
+      const data = await apiGet('/clientes');
+      setClientes(data.clientes || []);
+    } catch { /* silencioso */ }
+  };
+
+  // ── Generar Reporte Especial ──────────────────────────────────────────────
+  const fetchReporte = async () => {
+    setRptLoading(true); setRptData(null);
+    try {
+      let data: any;
+      const params = new URLSearchParams();
+      if (rptDesde) params.set('desde', rptDesde);
+      if (rptHasta) params.set('hasta', rptHasta);
+      if (rptTipo === 'mermas')            data = await apiGet(`/reportes/mermas?${params}`);
+      else if (rptTipo === 'ventas-producto') data = await apiGet(`/reportes/ventas-por-producto?${params}`);
+      else if (rptTipo === 'flujo-caja')   data = await apiGet(`/reportes/flujo-caja?dias=${rptDias}`);
+      else if (rptTipo === 'estado-cliente' && rptClienteId)
+        data = await apiGet(`/reportes/estado-cuenta-cliente/${rptClienteId}?${params}`);
+      else if (rptTipo === 'kardex-consolidado')
+        data = await apiGet(`/inventario/kardex-consolidado?${params}&limit=2000`);
+      if (data) setRptData(data);
+    } catch (e: any) { toast.error('Error: ' + e.message); }
+    finally { setRptLoading(false); }
+  };
+
+  // ── Cargar Comparativo ────────────────────────────────────────────────────
+  const fetchComparativo = async () => {
+    if (!compPeriodo1 || !compPeriodo2) { toast.error('Selecciona ambos períodos'); return; }
+    setCompLoading(true);
+    try {
+      const data = await apiGet(`/inventario/comparativo?periodo1=${compPeriodo1}&periodo2=${compPeriodo2}`);
+      setCompData(data);
+    } catch (e: any) { toast.error('Error: ' + e.message); }
+    finally { setCompLoading(false); }
   };
 
   // =====================================================
@@ -623,16 +756,91 @@ export default function Inventario() {
   // COMPRAS
   // =====================================================
 
-  const addCompraItem = () => setCompraItems(prev => [...prev, { producto_id: '', cantidad: '', costo_total: '' }]);
+  // ── Clasificación inteligente de compras ────────────────────────────────
+  // Tipos de compra — códigos SRI Ecuador oficiales
+  const TIPOS_COMPRA = [
+    { id: 'inventario',        label: '📦 Inventario',          cuenta: '510102',  color: 'green',  afecta_stock: true  },
+    { id: 'gasto_servicio',    label: '🌐 Telecom/Internet',    cuenta: '520118',  color: 'blue',   afecta_stock: false },
+    { id: 'gasto_basicos',     label: '💡 Agua/Luz/Gas',        cuenta: '520118',  color: 'blue',   afecta_stock: false },
+    { id: 'gasto_arriendo',    label: '🏠 Arriendo',            cuenta: '520109',  color: 'purple', afecta_stock: false },
+    { id: 'gasto_publicidad',  label: '📢 Publicidad',          cuenta: '520111',  color: 'pink',   afecta_stock: false },
+    { id: 'gasto_operativo',   label: '⚙️ Mantenimiento',      cuenta: '520108',  color: 'gray',   afecta_stock: false },
+    { id: 'activo_fijo',       label: '🏗️ Activo Fijo',        cuenta: '1020106', color: 'orange', afecta_stock: false },
+  ] as const;
+
+  const KEYWORDS_TIPO: Record<string, string> = {
+    internet: 'gasto_servicio', 'datos móviles': 'gasto_servicio', 'plan datos': 'gasto_servicio',
+    teléfono: 'gasto_servicio', telefono: 'gasto_servicio', celular: 'gasto_servicio',
+    claro: 'gasto_servicio', movistar: 'gasto_servicio', cnt: 'gasto_servicio', netlife: 'gasto_servicio',
+    luz: 'gasto_basicos', eléctrico: 'gasto_basicos', electrico: 'gasto_basicos', energía: 'gasto_basicos',
+    agua: 'gasto_basicos', 'servicio básico': 'gasto_basicos',
+    arriendo: 'gasto_arriendo', alquiler: 'gasto_arriendo', renta: 'gasto_arriendo', local: 'gasto_arriendo',
+    publicidad: 'gasto_publicidad', propaganda: 'gasto_publicidad', marketing: 'gasto_publicidad', redes: 'gasto_publicidad',
+    seguro: 'gasto_operativo', mantenimiento: 'gasto_operativo', limpieza: 'gasto_operativo',
+    cuchillo: 'activo_fijo', sartén: 'activo_fijo', horno: 'activo_fijo', refrigerador: 'activo_fijo',
+    computador: 'activo_fijo', laptop: 'activo_fijo', tablet: 'activo_fijo', impresora: 'activo_fijo',
+    mueble: 'activo_fijo', mesa: 'activo_fijo', silla: 'activo_fijo',
+  };
+
+  const UMBRAL_ACTIVO_FIJO = 100; // USD — configurable
+
+  const autodetectarTipo = (productoId: string, descripcion: string, costoTotal: number): { tipo: string; confianza: 'auto'|'sugerido' } => {
+    // Regla 1: Si existe en catálogo de productos → inventario (alta confianza)
+    if (productoId && productos.find(p => p.id === productoId)) {
+      return { tipo: 'inventario', confianza: 'auto' };
+    }
+    // Regla 2: Keywords en descripción
+    const desc = (descripcion || '').toLowerCase();
+    for (const [keyword, tipo] of Object.entries(KEYWORDS_TIPO)) {
+      if (desc.includes(keyword)) return { tipo, confianza: 'auto' };
+    }
+    // Regla 3: Umbral activo fijo
+    if (costoTotal >= UMBRAL_ACTIVO_FIJO && !productoId) {
+      return { tipo: 'activo_fijo', confianza: 'sugerido' };
+    }
+    // Default: gasto operativo si no es del catálogo
+    if (!productoId) return { tipo: 'gasto_operativo', confianza: 'sugerido' };
+    return { tipo: 'inventario', confianza: 'sugerido' };
+  };
+
+  const addCompraItem = () => setCompraItems(prev => [...prev, {
+    producto_id: '', descripcion_libre: '', cantidad: '1', costo_total: '',
+    tipo_contable: '', confianza: 'sugerido' as 'auto'|'sugerido',
+  }]);
 
   const removeCompraItem = (idx: number) => setCompraItems(prev => prev.filter((_, i) => i !== idx));
 
   const updateCompraItem = (idx: number, field: string, value: string) => {
-    setCompraItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+    setCompraItems(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      const updated = { ...item, [field]: value };
+      // Autodetectar tipo cuando cambia producto, descripción o costo
+      if (['producto_id', 'descripcion_libre', 'costo_total'].includes(field)) {
+        const descFinal = field === 'descripcion_libre' ? value : (updated.descripcion_libre || '');
+        const costoFinal = Number(field === 'costo_total' ? value : updated.costo_total) || 0;
+        const pidFinal   = field === 'producto_id' ? value : updated.producto_id;
+        // Solo autodetectar si el usuario no eligió manualmente (confianza !== 'manual')
+        if (updated.confianza !== 'manual') {
+          const { tipo, confianza } = autodetectarTipo(pidFinal, descFinal, costoFinal);
+          updated.tipo_contable = tipo;
+          updated.confianza = confianza;
+        }
+        // Si seleccionó producto del catálogo, rellenar descripción automáticamente
+        if (field === 'producto_id' && value) {
+          const prod = productos.find(p => p.id === value);
+          if (prod) updated.descripcion_libre = prod.nombre;
+        }
+      }
+      return updated;
+    }));
   };
 
   const submitCompra = async () => {
-    const itemsValidos = compraItems.filter(i => i.producto_id && Number(i.cantidad) > 0 && Number(i.costo_total) > 0);
+    // Permitir ítems sin producto_id si tienen descripcion_libre (gastos/servicios)
+    const itemsValidos = compraItems.filter(i =>
+      (i.producto_id || i.descripcion_libre?.trim()) &&
+      Number(i.cantidad) > 0 && Number(i.costo_total) > 0
+    );
     if (itemsValidos.length === 0) return toast.error('Agrega al menos un ítem con cantidad y costo válidos');
 
     setCompraSubmitting(true);
@@ -650,10 +858,13 @@ export default function Inventario() {
           tipo_pago: compraForm.tipo_pago,
           fecha_vencimiento: compraForm.tipo_pago === 'credito' ? compraForm.fecha_vencimiento : undefined,
           items: itemsValidos.map(i => ({
-            producto_id: i.producto_id,
+            producto_id: i.producto_id || null,
+            descripcion: i.descripcion_libre || (productos.find((p: any) => p.id === i.producto_id)?.nombre || ''),
             cantidad: Number(i.cantidad),
             costo_total: Number(i.costo_total),
-            costo_unitario: Number(i.costo_total) / Number(i.cantidad)
+            costo_unitario: Number(i.costo_total) / Number(i.cantidad),
+            tipo_contable: i.tipo_contable || 'inventario',
+            afecta_stock: i.tipo_contable === 'inventario' || !i.tipo_contable,
           }))
         })
       });
@@ -661,7 +872,7 @@ export default function Inventario() {
         toast.success(compraForm.tipo_pago === 'credito' ? 'Compra a crédito registrada — se creó cuenta por pagar' : 'Compra registrada y stock actualizado');
         setShowCompraForm(false);
         setCompraForm({ proveedor_id: '', fecha: new Date().toISOString().split('T')[0], numero_factura: '', observaciones: '', tipo_pago: 'contado', fecha_vencimiento: '' });
-        setCompraItems([{ producto_id: '', cantidad: '', costo_total: '' }]);
+        setCompraItems([{ producto_id: '', descripcion_libre: '', cantidad: '1', costo_total: '', tipo_contable: '', confianza: 'sugerido' }]);
         fetchCxP();
         fetchCompras();
         fetchProductos();
@@ -906,6 +1117,46 @@ export default function Inventario() {
         >
           <BarChart3 className="w-5 h-5" /> Análisis
         </button>
+        <button
+          onClick={() => setView('conteo')}
+          className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
+            view === 'conteo'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <Calculator className="w-5 h-5" /> Conteo Físico
+        </button>
+        <button
+          onClick={() => { setView('kardex'); }}
+          className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
+            view === 'kardex'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <FileText className="w-5 h-5" /> Kardex
+        </button>
+        <button
+          onClick={() => { setView('comparativo'); fetchSnapshots(); }}
+          className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
+            view === 'comparativo'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <TrendingUp className="w-5 h-5" /> Comparativo
+        </button>
+        <button
+          onClick={() => { setView('reportes'); fetchClientes(); }}
+          className={`flex items-center gap-2 px-4 py-3 rounded-lg font-bold whitespace-nowrap transition-all ${
+            view === 'reportes'
+              ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <FileCode className="w-5 h-5" /> Reportes
+        </button>
       </div>
 
       {/* Contenido principal */}
@@ -920,12 +1171,27 @@ export default function Inventario() {
               {view === 'movements' && 'Movimientos de Inventario'}
               {view === 'purchases' && 'Registro de Compras'}
               {view === 'cuentaspagar' && 'Cuentas por Pagar'}
-              {view === 'analysis' && 'Análisis de Inventario'}
+              {view === 'analysis'     && 'Análisis de Inventario'}
+              {view === 'conteo'       && 'Conteo Físico de Inventario'}
+              {view === 'kardex'       && 'Kardex de Movimientos'}
+              {view === 'comparativo'  && 'Reporte Comparativo por Períodos'}
+              {view === 'reportes'    && 'Reportes Especiales'}
             </CardTitle>
             <div className="flex gap-2">
-              <Button 
+              <Button
+                onClick={guardarSnapshot}
+                disabled={snapshotGuardando}
+                variant="outline"
+                size="sm"
+                className="border-purple-300 text-purple-600 hover:bg-purple-50"
+                title="Guarda una foto del stock actual para comparativas históricas"
+              >
+                <CheckCircle className="w-4 h-4 mr-1" />
+                {snapshotGuardando ? 'Guardando…' : 'Cerrar Mes'}
+              </Button>
+              <Button
                 onClick={() => loadAllData()}
-                variant="outline" 
+                variant="outline"
                 size="sm"
               >
                 <RefreshCw className="w-4 h-4 mr-2" />
@@ -1641,71 +1907,107 @@ export default function Inventario() {
                     </div>
 
                     <div className="rounded-lg border border-[#F97316]/20 overflow-hidden">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="border-[#F97316]/20 bg-gray-50">
-                            <TableHead className="text-gray-600">Producto</TableHead>
-                            <TableHead className="text-gray-600 w-32">Cantidad</TableHead>
-                            <TableHead className="text-gray-600 w-36">Costo Total ($)</TableHead>
-                            <TableHead className="text-gray-600 w-36">Costo por unidad</TableHead>
-                            <TableHead className="w-10"></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 border-b border-[#F97316]/20">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 w-48">Producto/Descripción</th>
+                            <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 w-24">Cant.</th>
+                            <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 w-28">Total ($)</th>
+                            <th className="px-3 py-2 text-left text-xs font-bold text-gray-600">Tipo contable</th>
+                            <th className="px-2 py-2 text-left text-xs font-bold text-gray-600 w-16">C/unit.</th>
+                            <th className="w-8"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
                           {compraItems.map((item, idx) => {
                             const costoUnit = Number(item.cantidad) > 0 && Number(item.costo_total) > 0
-                              ? (Number(item.costo_total) / Number(item.cantidad))
-                              : 0;
-                            const prod = productos.find(p => p.id === item.producto_id);
+                              ? (Number(item.costo_total) / Number(item.cantidad)) : 0;
+                            const prod = productos.find((p: any) => p.id === item.producto_id);
+                            const tipoInfo = TIPOS_COMPRA.find(t => t.id === item.tipo_contable);
+                            const badgeColor = item.confianza === 'auto' ? 'bg-green-100 text-green-700 border-green-200'
+                              : item.confianza === 'manual' ? 'bg-blue-100 text-blue-700 border-blue-200'
+                              : 'bg-yellow-100 text-yellow-700 border-yellow-200';
+                            const badgeLabel = item.confianza === 'auto' ? '✓ Auto' : item.confianza === 'manual' ? '✎ Manual' : '? Sugerido';
+
                             return (
-                              <TableRow key={idx} className="border-[#F97316]/10">
-                                <TableCell>
-                                  <Select value={item.producto_id} onValueChange={v => updateCompraItem(idx, 'producto_id', v)}>
-                                    <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-8 text-sm">
-                                      <SelectValue placeholder="Seleccionar producto..." />
+                              <tr key={idx} className="border-b border-[#F97316]/10">
+                                {/* Producto o descripción libre */}
+                                <td className="px-2 py-1.5">
+                                  <Select value={item.producto_id || '__libre__'}
+                                    onValueChange={v => updateCompraItem(idx, 'producto_id', v === '__libre__' ? '' : v)}>
+                                    <SelectTrigger className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-7 text-xs mb-1">
+                                      <SelectValue placeholder="Del catálogo..." />
                                     </SelectTrigger>
                                     <SelectContent className="bg-white border-[#F97316]/30 text-gray-900">
-                                      {productos.map(p => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
+                                      <SelectItem value="__libre__">✏️ Descripción libre</SelectItem>
+                                      {productos.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
                                     </SelectContent>
                                   </Select>
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="number" min="0" step="0.001"
-                                    value={item.cantidad}
-                                    onChange={e => updateCompraItem(idx, 'cantidad', e.target.value)}
-                                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-8 text-sm"
-                                    placeholder="0"
-                                  />
-                                  {prod?.unidad_medida && <span className="text-xs text-gray-600 mt-0.5 block">{prod.unidad_medida}</span>}
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="number" min="0" step="0.01"
-                                    value={item.costo_total}
-                                    onChange={e => updateCompraItem(idx, 'costo_total', e.target.value)}
-                                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-8 text-sm"
-                                    placeholder="0.00"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <span className={`text-sm font-bold ${costoUnit > 0 ? 'text-[#F97316]' : 'text-gray-600'}`}>
-                                    {costoUnit > 0 ? `$${costoUnit.toFixed(4)}` : '—'}
-                                  </span>
-                                  {prod?.unidad_medida && costoUnit > 0 && (
-                                    <span className="text-xs text-gray-600 block">por {prod.unidad_medida}</span>
+                                  {(!item.producto_id || item.producto_id === '__libre__') && (
+                                    <Input placeholder="Ej: Internet, Arriendo, Cuchillo..."
+                                      value={item.descripcion_libre || ''}
+                                      onChange={e => updateCompraItem(idx, 'descripcion_libre', e.target.value)}
+                                      className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-7 text-xs"/>
                                   )}
-                                </TableCell>
-                                <TableCell>
-                                  <Button type="button" size="sm" variant="ghost" onClick={() => removeCompraItem(idx)} className="text-red-400 hover:text-red-300 h-8 w-8 p-0" disabled={compraItems.length === 1}>
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
+                                </td>
+                                {/* Cantidad */}
+                                <td className="px-2 py-1.5">
+                                  <Input type="number" min="0" step="0.001" value={item.cantidad}
+                                    onChange={e => updateCompraItem(idx, 'cantidad', e.target.value)}
+                                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-7 text-xs" placeholder="1"/>
+                                  {prod?.unidad_medida && <span className="text-xs text-gray-400">{prod.unidad_medida}</span>}
+                                </td>
+                                {/* Costo total */}
+                                <td className="px-2 py-1.5">
+                                  <Input type="number" min="0" step="0.01" value={item.costo_total}
+                                    onChange={e => updateCompraItem(idx, 'costo_total', e.target.value)}
+                                    className="bg-gray-50 border-[#F97316]/20 text-gray-900 h-7 text-xs" placeholder="0.00"/>
+                                </td>
+                                {/* Tipo contable — selector con badge de confianza */}
+                                <td className="px-2 py-1.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <select
+                                      value={item.tipo_contable || ''}
+                                      onChange={e => {
+                                        setCompraItems(prev => prev.map((it, i) =>
+                                          i === idx ? { ...it, tipo_contable: e.target.value, confianza: 'manual' } : it
+                                        ));
+                                      }}
+                                      className="flex-1 border border-orange-200 rounded px-1.5 py-1 text-xs bg-white text-gray-900 h-7">
+                                      <option value="">— Clasificar —</option>
+                                      {TIPOS_COMPRA.map(t => (
+                                        <option key={t.id} value={t.id}>{t.label} ({t.cuenta})</option>
+                                      ))}
+                                    </select>
+                                    {item.tipo_contable && (
+                                      <span className={`text-xs px-1.5 py-0.5 rounded border font-medium whitespace-nowrap ${badgeColor}`}>
+                                        {badgeLabel}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {item.tipo_contable === 'activo_fijo' && Number(item.costo_total) >= UMBRAL_ACTIVO_FIJO && (
+                                    <div className="text-xs text-blue-600 mt-0.5">💡 Se sugerirá crear activo fijo</div>
+                                  )}
+                                </td>
+                                {/* Costo unitario */}
+                                <td className="px-2 py-1.5 text-right">
+                                  <span className={`text-xs font-bold ${costoUnit > 0 ? 'text-[#F97316]' : 'text-gray-400'}`}>
+                                    {costoUnit > 0 ? `$${costoUnit.toFixed(2)}` : '—'}
+                                  </span>
+                                </td>
+                                {/* Eliminar */}
+                                <td className="px-1 py-1.5">
+                                  <button type="button" onClick={() => removeCompraItem(idx)}
+                                    disabled={compraItems.length === 1}
+                                    className="text-red-400 hover:text-red-600 disabled:opacity-30 p-1">
+                                    <Trash2 className="w-3.5 h-3.5"/>
+                                  </button>
+                                </td>
+                              </tr>
                             );
                           })}
-                        </TableBody>
-                      </Table>
+                        </tbody>
+                      </table>
                     </div>
 
                     {/* Total */}
@@ -2132,6 +2434,1098 @@ export default function Inventario() {
               })()}
             </div>
           )}
+          {/* ── VISTA: REPORTES ESPECIALES ──────────────────────── */}
+          {view === 'reportes' && (() => {
+            const TIPOS = [
+              { id: 'mermas',           label: '📦 Reporte de Mermas',              desc: 'Pérdidas, vencimientos y ajustes negativos de stock' },
+              { id: 'ventas-producto',  label: '🛒 Historial Ventas por Producto',  desc: 'Qué productos se vendieron, cuánto y a qué precio' },
+              { id: 'flujo-caja',       label: '💰 Flujo de Caja Proyectado',       desc: 'CxP vencimientos vs. ventas proyectadas (30/60 días)' },
+              { id: 'estado-cliente',   label: '👤 Estado de Cuenta por Cliente',    desc: 'Historial de facturas y saldo de un cliente específico' },
+              { id: 'kardex-consolidado', label: '📋 Kardex Consolidado',            desc: 'Todos los movimientos de inventario de todos los productos' },
+            ] as const;
+
+            const exportarReporte = () => {
+              if (!rptData) return;
+              const fecha = new Date().toISOString().split('T')[0];
+              if (rptTipo === 'mermas') {
+                exportToExcel(
+                  (rptData.mermas || []).map((m: any) => ({
+                    'Fecha': m.fecha ? new Date(m.fecha).toLocaleString('es-EC') : '—',
+                    'Producto': m.producto,
+                    'Origen': m.origen,
+                    'Cantidad': m.cantidad,
+                    'Costo Unit.': m.costo_unitario,
+                    'Valor Pérdida': m.valor.toFixed(2),
+                    'Motivo': m.motivo,
+                  })),
+                  `mermas_${fecha}`, 'Reporte de Mermas'
+                );
+              } else if (rptTipo === 'ventas-producto') {
+                exportToExcel(
+                  (rptData.productos || []).map((p: any) => ({
+                    'Producto': p.nombre,
+                    'Código': p.codigo || '',
+                    'Categoría': p.categoria || '',
+                    'Cantidad Vendida': p.cantidad,
+                    'N° Ventas': p.ventas,
+                    'Subtotal $': p.subtotal,
+                    'Ticket Promedio $': p.ticket_promedio,
+                  })),
+                  `ventas_producto_${fecha}`, 'Historial Ventas por Producto'
+                );
+              } else if (rptTipo === 'flujo-caja') {
+                exportToExcel(
+                  (rptData.proyeccion || []).map((p: any) => ({
+                    'Semana': p.semana,
+                    'Ingresos Proyectados $': p.ingresos_proyectados,
+                    'Pagos CxP $': p.egresos_cxp,
+                    'Balance $': p.balance,
+                  })),
+                  `flujo_caja_${fecha}`, 'Flujo de Caja Proyectado'
+                );
+              } else if (rptTipo === 'estado-cliente') {
+                exportToExcel(
+                  (rptData.facturas || []).map((f: any) => ({
+                    'N° Factura': f.numero_factura || '—',
+                    'Fecha Emisión': f.fecha_emision || '—',
+                    'Total $': Number(f.total || 0).toFixed(2),
+                    'Estado': f.estado_autorizacion || f.estado || '—',
+                    'N° Autorización': f.numero_autorizacion || '—',
+                  })),
+                  `estado_cuenta_${rptData.cliente?.nombre || 'cliente'}_${fecha}`,
+                  `Estado de Cuenta — ${rptData.cliente?.nombre || 'Cliente'}`
+                );
+              } else if (rptTipo === 'kardex-consolidado') {
+                exportToExcel(
+                  (rptData.kardex || []).map((f: any) => ({
+                    'Fecha': new Date(f.fecha).toLocaleString('es-EC'),
+                    'Producto': f.producto,
+                    'Tipo': f.tipo,
+                    'Referencia': f.referencia,
+                    'Entrada': f.entrada ?? '',
+                    'Salida': f.salida ?? '',
+                    'Saldo': f.saldo,
+                    'Costo Unit.': f.costo_unitario,
+                    'Valor Mov. $': f.valor.toFixed(2),
+                  })),
+                  `kardex_consolidado_${fecha}`, 'Kardex Consolidado'
+                );
+              }
+            };
+
+            return (
+              <div className="space-y-5 p-2">
+                {/* Selector tipo de reporte */}
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {TIPOS.map(t => (
+                    <button key={t.id} onClick={() => { setRptTipo(t.id); setRptData(null); }}
+                      className={`rounded-xl border-2 p-4 text-left transition-all ${rptTipo === t.id
+                        ? 'border-orange-500 bg-orange-50'
+                        : 'border-gray-200 bg-white hover:border-orange-300'}`}>
+                      <div className="font-bold text-sm text-gray-900">{t.label}</div>
+                      <div className="text-xs text-gray-500 mt-1">{t.desc}</div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Parámetros del reporte */}
+                <div className="bg-gray-50 rounded-xl p-4 flex flex-wrap gap-3 items-end">
+                  {(rptTipo === 'mermas' || rptTipo === 'ventas-producto' || rptTipo === 'kardex-consolidado') && (<>
+                    <div>
+                      <label className="text-xs text-gray-600 block mb-1">Desde</label>
+                      <input type="date" value={rptDesde} onChange={e => setRptDesde(e.target.value)}
+                        className="border border-orange-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-600 block mb-1">Hasta</label>
+                      <input type="date" value={rptHasta} onChange={e => setRptHasta(e.target.value)}
+                        className="border border-orange-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900" />
+                    </div>
+                  </>)}
+                  {rptTipo === 'flujo-caja' && (
+                    <div>
+                      <label className="text-xs text-gray-600 block mb-1">Proyección (días)</label>
+                      <select value={rptDias} onChange={e => setRptDias(e.target.value)}
+                        className="border border-orange-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900">
+                        <option value="30">30 días</option>
+                        <option value="60">60 días</option>
+                        <option value="90">90 días</option>
+                      </select>
+                    </div>
+                  )}
+                  {rptTipo === 'estado-cliente' && (
+                    <div className="flex-1 min-w-[220px]">
+                      <label className="text-xs text-gray-600 block mb-1">Cliente</label>
+                      <select value={rptClienteId} onChange={e => setRptClienteId(e.target.value)}
+                        className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900">
+                        <option value="">— Seleccionar cliente —</option>
+                        {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre} ({c.identificacion || '—'})</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <Button onClick={fetchReporte} disabled={rptLoading}
+                    className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
+                    {rptLoading ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <FileText className="w-4 h-4 mr-2" />}
+                    Generar Reporte
+                  </Button>
+                  {rptData && (
+                    <Button variant="outline" onClick={exportarReporte}
+                      className="border-green-300 text-green-600 hover:bg-green-50">
+                      <Download className="w-4 h-4 mr-2" /> Exportar Excel
+                    </Button>
+                  )}
+                </div>
+
+                {/* Resultados */}
+                {rptLoading && <div className="text-center py-12"><RefreshCw className="w-8 h-8 mx-auto animate-spin text-orange-500 mb-2" /><p className="text-gray-500">Generando reporte…</p></div>}
+
+                {/* MERMAS */}
+                {rptData && rptTipo === 'mermas' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-red-600">{rptData.resumen?.total_eventos || 0}</div>
+                        <div className="text-xs text-red-500 mt-1">Total eventos de merma</div>
+                      </div>
+                      <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-orange-600">{Number(rptData.resumen?.total_cantidad || 0).toFixed(2)}</div>
+                        <div className="text-xs text-orange-500 mt-1">Unidades perdidas</div>
+                      </div>
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-red-700">${Number(rptData.resumen?.total_valor || 0).toFixed(2)}</div>
+                        <div className="text-xs text-red-500 mt-1">Valor total pérdida</div>
+                      </div>
+                    </div>
+                    {(rptData.por_producto || []).length > 0 && (
+                      <div className="rounded-xl border border-orange-100 overflow-hidden">
+                        <Table>
+                          <TableHeader><TableRow className="bg-gray-50">
+                            <TableHead className="text-xs font-bold uppercase text-gray-600">Producto</TableHead>
+                            <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Eventos</TableHead>
+                            <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Cantidad</TableHead>
+                            <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Valor Pérdida</TableHead>
+                          </TableRow></TableHeader>
+                          <TableBody>
+                            {(rptData.por_producto || []).map((p: any, i: number) => (
+                              <TableRow key={i} className={i % 2 === 0 ? '' : 'bg-gray-50/40'}>
+                                <TableCell className="font-medium text-gray-900">{p.producto}</TableCell>
+                                <TableCell className="text-right text-gray-600">{p.eventos}</TableCell>
+                                <TableCell className="text-right font-mono text-orange-600">{p.cantidad.toFixed(2)}</TableCell>
+                                <TableCell className="text-right font-mono font-bold text-red-600">${p.valor.toFixed(2)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                    {(rptData.mermas || []).length === 0 && <div className="text-center py-8 text-gray-400">Sin mermas registradas en el período</div>}
+                  </div>
+                )}
+
+                {/* VENTAS POR PRODUCTO */}
+                {rptData && rptTipo === 'ventas-producto' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-blue-600">{rptData.resumen?.total_productos_vendidos || 0}</div>
+                        <div className="text-xs text-blue-500 mt-1">Productos distintos vendidos</div>
+                      </div>
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-green-600">{Number(rptData.resumen?.total_cantidad || 0).toFixed(0)}</div>
+                        <div className="text-xs text-green-500 mt-1">Unidades totales</div>
+                      </div>
+                      <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-orange-600">${Number(rptData.resumen?.total_subtotal || 0).toFixed(2)}</div>
+                        <div className="text-xs text-orange-500 mt-1">Ingresos totales</div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-orange-100 overflow-hidden">
+                      <Table>
+                        <TableHeader><TableRow className="bg-gray-50">
+                          <TableHead className="text-xs font-bold uppercase text-gray-600">#</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600">Producto</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600">Categoría</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Cantidad</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">N° Ventas</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Subtotal $</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Ticket Prom.</TableHead>
+                        </TableRow></TableHeader>
+                        <TableBody>
+                          {(rptData.productos || []).map((p: any, i: number) => (
+                            <TableRow key={p.producto_id || i} className={i % 2 === 0 ? '' : 'bg-gray-50/40'}>
+                              <TableCell className="text-gray-400 text-sm">{i+1}</TableCell>
+                              <TableCell className="font-medium text-gray-900">{p.nombre}</TableCell>
+                              <TableCell className="text-gray-500 text-sm">{p.categoria || '—'}</TableCell>
+                              <TableCell className="text-right font-mono text-gray-700">{Number(p.cantidad).toFixed(2)}</TableCell>
+                              <TableCell className="text-right text-gray-500">{p.ventas}</TableCell>
+                              <TableCell className="text-right font-mono font-bold text-orange-600">${p.subtotal.toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-mono text-gray-600">${p.ticket_promedio.toFixed(2)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+
+                {/* FLUJO DE CAJA */}
+                {rptData && rptTipo === 'flujo-caja' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-green-600">${Number(rptData.saldo_caja_actual||0).toFixed(2)}</div>
+                        <div className="text-xs text-green-500 mt-1">Saldo caja actual</div>
+                      </div>
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-red-600">${Number(rptData.cxp_pendiente_total||0).toFixed(2)}</div>
+                        <div className="text-xs text-red-500 mt-1">CxP pendiente en {rptDias} días</div>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                        <div className="text-2xl font-bold text-blue-600">${Number(rptData.venta_promedio_diaria||0).toFixed(2)}</div>
+                        <div className="text-xs text-blue-500 mt-1">Venta promedio diaria (30d)</div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-orange-100 overflow-hidden">
+                      <Table>
+                        <TableHeader><TableRow className="bg-gray-50">
+                          <TableHead className="text-xs font-bold uppercase text-gray-600">Semana</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-green-600 text-right">Ingresos Proyectados</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-red-600 text-right">Pagos CxP</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Balance</TableHead>
+                        </TableRow></TableHeader>
+                        <TableBody>
+                          {(rptData.proyeccion || []).map((p: any, i: number) => (
+                            <TableRow key={i} className={i % 2 === 0 ? '' : 'bg-gray-50/40'}>
+                              <TableCell className="text-gray-700 font-medium">{p.semana}</TableCell>
+                              <TableCell className="text-right font-mono text-green-600">${p.ingresos_proyectados.toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-mono text-red-600">${p.egresos_cxp.toFixed(2)}</TableCell>
+                              <TableCell className={`text-right font-mono font-bold ${p.balance >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                {p.balance >= 0 ? '+' : ''}${p.balance.toFixed(2)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {(rptData.cxp || []).length > 0 && (
+                      <div>
+                        <h3 className="text-sm font-bold text-gray-700 mb-2">Pagos CxP pendientes en el período</h3>
+                        <div className="rounded-xl border border-red-100 overflow-hidden">
+                          <Table>
+                            <TableHeader><TableRow className="bg-red-50">
+                              <TableHead className="text-xs font-bold uppercase text-gray-600">Proveedor</TableHead>
+                              <TableHead className="text-xs font-bold uppercase text-gray-600">Vencimiento</TableHead>
+                              <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Saldo Pendiente</TableHead>
+                            </TableRow></TableHeader>
+                            <TableBody>
+                              {(rptData.cxp || []).map((p: any, i: number) => (
+                                <TableRow key={i}>
+                                  <TableCell className="text-gray-900">{p.proveedor_nombre || '—'}</TableCell>
+                                  <TableCell className="text-gray-600">{p.fecha_vencimiento || '—'}</TableCell>
+                                  <TableCell className="text-right font-mono font-bold text-red-600">${Number(p.saldo_pendiente||0).toFixed(2)}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ESTADO DE CUENTA CLIENTE */}
+                {rptData && rptTipo === 'estado-cliente' && (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <div className="font-bold text-lg text-gray-900">{rptData.cliente?.nombre || '—'}</div>
+                      <div className="text-gray-600 text-sm">{rptData.cliente?.identificacion} · {rptData.cliente?.email || ''} · {rptData.cliente?.telefono || ''}</div>
+                      <div className="grid grid-cols-3 gap-4 mt-3">
+                        <div><div className="text-2xl font-bold text-blue-600">{rptData.resumen?.total_documentos || 0}</div><div className="text-xs text-blue-500">Facturas</div></div>
+                        <div><div className="text-2xl font-bold text-green-600">{rptData.resumen?.autorizadas || 0}</div><div className="text-xs text-green-500">Autorizadas</div></div>
+                        <div><div className="text-2xl font-bold text-orange-600">${Number(rptData.resumen?.total_facturado||0).toFixed(2)}</div><div className="text-xs text-orange-500">Total Facturado</div></div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-blue-100 overflow-hidden">
+                      <Table>
+                        <TableHeader><TableRow className="bg-gray-50">
+                          <TableHead className="text-xs font-bold uppercase text-gray-600">N° Factura</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600">Fecha</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Total $</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600 text-center">Estado</TableHead>
+                        </TableRow></TableHeader>
+                        <TableBody>
+                          {(rptData.facturas || []).map((f: any, i: number) => (
+                            <TableRow key={i} className={i % 2 === 0 ? '' : 'bg-gray-50/40'}>
+                              <TableCell className="font-mono text-sm text-gray-900">{f.numero_factura || '—'}</TableCell>
+                              <TableCell className="text-gray-600 text-sm">{f.fecha_emision || '—'}</TableCell>
+                              <TableCell className="text-right font-mono font-bold text-gray-900">${Number(f.total||0).toFixed(2)}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge className={`text-xs ${(f.estado_autorizacion || f.estado) === 'AUTORIZADO' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                  {f.estado_autorizacion || f.estado || '—'}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+
+                {/* KARDEX CONSOLIDADO */}
+                {rptData && rptTipo === 'kardex-consolidado' && (
+                  <div className="space-y-3">
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-700">
+                      {rptData.total_movimientos} movimientos · Exporta a Excel para ver el detalle completo
+                    </div>
+                    <div className="rounded-xl border border-orange-100 overflow-hidden max-h-96 overflow-y-auto">
+                      <Table>
+                        <TableHeader><TableRow className="bg-gray-50 sticky top-0">
+                          <TableHead className="text-xs font-bold uppercase text-gray-600">Fecha</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600">Producto</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600">Tipo</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-green-600 text-right">Entrada</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-red-600 text-right">Salida</TableHead>
+                          <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Saldo</TableHead>
+                        </TableRow></TableHeader>
+                        <TableBody>
+                          {(rptData.kardex || []).slice(0, 200).map((f: any, i: number) => (
+                            <TableRow key={i} className={i % 2 === 0 ? '' : 'bg-gray-50/40'}>
+                              <TableCell className="text-xs text-gray-500 whitespace-nowrap">{new Date(f.fecha).toLocaleString('es-EC', {day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit'})}</TableCell>
+                              <TableCell className="text-sm text-gray-900 max-w-[160px] truncate">{f.producto}</TableCell>
+                              <TableCell><Badge className="text-xs bg-gray-100 text-gray-600">{f.tipo}</Badge></TableCell>
+                              <TableCell className="text-right font-mono text-green-600 text-sm">{f.entrada != null ? `+${Number(f.entrada).toFixed(2)}` : ''}</TableCell>
+                              <TableCell className="text-right font-mono text-red-600 text-sm">{f.salida != null ? `-${Number(f.salida).toFixed(2)}` : ''}</TableCell>
+                              <TableCell className="text-right font-mono font-bold text-gray-900 text-sm">{Number(f.saldo).toFixed(2)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {(rptData.kardex || []).length > 200 && <p className="text-xs text-gray-400 text-center">Mostrando primeros 200 de {rptData.total_movimientos} — exporta Excel para el listado completo</p>}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── VISTA: KARDEX ───────────────────────────────────────── */}
+          {view === 'kardex' && (
+            <div className="space-y-4 p-2">
+              {/* Selector de producto y fechas */}
+              <div className="flex flex-wrap gap-3 items-end">
+                <div className="flex-1 min-w-[220px]">
+                  <label className="text-xs text-gray-600 block mb-1">Producto</label>
+                  <select
+                    value={kardexProductoId}
+                    onChange={e => setKardexProductoId(e.target.value)}
+                    className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white"
+                  >
+                    <option value="">— Seleccionar producto —</option>
+                    {productos.map(p => (
+                      <option key={p.id} value={p.id}>{p.nombre}{p.codigo ? ` (${p.codigo})` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-600 block mb-1">Desde</label>
+                  <input type="date" value={kardexDesde} onChange={e => setKardexDesde(e.target.value)}
+                    className="border border-orange-200 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-600 block mb-1">Hasta</label>
+                  <input type="date" value={kardexHasta} onChange={e => setKardexHasta(e.target.value)}
+                    className="border border-orange-200 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white" />
+                </div>
+                <Button onClick={() => fetchKardex()} disabled={!kardexProductoId || kardexLoading}
+                  className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
+                  {kardexLoading ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
+                  Consultar
+                </Button>
+                {kardexData && (
+                  <Button variant="outline" size="sm" onClick={() => exportToExcel(
+                    (kardexData.kardex || []).map((f: any) => ({
+                      'Fecha': new Date(f.fecha).toLocaleString('es-EC'),
+                      'Tipo': f.tipo,
+                      'Referencia': f.referencia,
+                      'Motivo': f.motivo,
+                      'Entrada': f.entrada ?? '',
+                      'Salida': f.salida ?? '',
+                      'Saldo': f.saldo,
+                      'Costo Unit.': f.costo_unitario,
+                      'Valor Mov.': f.valor_movimiento.toFixed(2),
+                    })),
+                    `kardex_${kardexData.producto?.nombre}_${new Date().toISOString().split('T')[0]}`,
+                    `Kardex ${kardexData.producto?.nombre}`
+                  )} className="border-green-300 text-green-600 hover:bg-green-50">
+                    <Download className="w-4 h-4 mr-1" /> Excel
+                  </Button>
+                )}
+              </div>
+
+              {/* Resumen rápido */}
+              {kardexData && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+                    <div className="text-xl font-bold text-blue-600">{kardexData.total_movimientos}</div>
+                    <div className="text-xs text-blue-500 mt-1">Total movimientos</div>
+                  </div>
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+                    <div className="text-xl font-bold text-green-600">
+                      {(kardexData.kardex || []).filter((f: any) => f.entrada).reduce((s: number, f: any) => s + (f.entrada || 0), 0).toFixed(2)}
+                    </div>
+                    <div className="text-xs text-green-500 mt-1">Total entradas</div>
+                  </div>
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+                    <div className="text-xl font-bold text-red-600">
+                      {(kardexData.kardex || []).filter((f: any) => f.salida).reduce((s: number, f: any) => s + (f.salida || 0), 0).toFixed(2)}
+                    </div>
+                    <div className="text-xs text-red-500 mt-1">Total salidas</div>
+                  </div>
+                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
+                    <div className="text-xl font-bold text-orange-600">{Number(kardexData.saldo_final || 0).toFixed(2)}</div>
+                    <div className="text-xs text-orange-500 mt-1">Saldo final</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tabla Kardex */}
+              {!kardexData && !kardexLoading && (
+                <div className="text-center py-16 text-gray-500">
+                  <FileText className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                  <p>Selecciona un producto y haz clic en Consultar</p>
+                </div>
+              )}
+              {kardexLoading && (
+                <div className="text-center py-16 text-gray-500">
+                  <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin text-orange-500" />
+                  <p>Cargando movimientos…</p>
+                </div>
+              )}
+              {kardexData && !kardexLoading && (
+                <div className="overflow-x-auto rounded-xl border border-orange-100">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50 border-orange-100">
+                        <TableHead className="text-xs font-bold uppercase text-gray-600">Fecha</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-gray-600">Tipo</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-gray-600">Referencia / Motivo</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-gray-600 text-right text-green-700">Entrada</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-gray-600 text-right text-red-700">Salida</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Saldo</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Costo Unit.</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Valor</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(kardexData.kardex || []).length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center text-gray-400 py-8">
+                            Sin movimientos en el período seleccionado
+                          </TableCell>
+                        </TableRow>
+                      ) : (kardexData.kardex || []).map((fila: any, idx: number) => (
+                        <TableRow key={fila.id || idx} className={`border-orange-50 ${idx % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
+                          <TableCell className="text-xs text-gray-600 whitespace-nowrap">
+                            {new Date(fila.fecha).toLocaleString('es-EC', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={`text-xs ${
+                              fila.entrada
+                                ? 'bg-green-100 text-green-700 border-green-200'
+                                : 'bg-red-100 text-red-700 border-red-200'
+                            }`}>
+                              {fila.tipo}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-gray-600 max-w-[200px]">
+                            <div className="font-medium">{fila.referencia || '—'}</div>
+                            {fila.motivo && <div className="text-gray-400">{fila.motivo}</div>}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-green-700 font-bold text-sm">
+                            {fila.entrada != null ? `+${Number(fila.entrada).toFixed(2)}` : ''}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-red-600 font-bold text-sm">
+                            {fila.salida != null ? `-${Number(fila.salida).toFixed(2)}` : ''}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-bold text-gray-900 text-sm">
+                            {Number(fila.saldo).toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-gray-500 text-xs">
+                            ${Number(fila.costo_unitario).toFixed(4)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-gray-700 text-xs">
+                            ${Number(fila.valor_movimiento).toFixed(2)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── VISTA: COMPARATIVO ──────────────────────────────────── */}
+          {view === 'comparativo' && (
+            <div className="space-y-4 p-2">
+              {/* Selector de períodos */}
+              <div className="flex flex-wrap gap-3 items-end bg-gray-50 rounded-xl p-4">
+                <div>
+                  <label className="text-xs text-gray-600 block mb-1">Período 1 (base)</label>
+                  <input type="month" value={compPeriodo1} onChange={e => setCompPeriodo1(e.target.value)}
+                    className="border border-orange-200 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white" />
+                </div>
+                <div className="text-gray-400 font-bold text-xl pb-2">vs</div>
+                <div>
+                  <label className="text-xs text-gray-600 block mb-1">Período 2 (comparar)</label>
+                  <input type="month" value={compPeriodo2} onChange={e => setCompPeriodo2(e.target.value)}
+                    className="border border-orange-200 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white" />
+                </div>
+                <Button onClick={fetchComparativo} disabled={compLoading || !compPeriodo1 || !compPeriodo2}
+                  className="bg-gradient-to-r from-[#C2410C] to-[#F97316]">
+                  {compLoading ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <BarChart3 className="w-4 h-4 mr-2" />}
+                  Comparar
+                </Button>
+                {!compData?.periodo1?.tiene_snapshot || !compData?.periodo2?.tiene_snapshot ? (
+                  <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    ⚠️ Usa <strong>Cerrar Mes</strong> al final de cada mes para habilitar comparativas históricas
+                  </div>
+                ) : null}
+              </div>
+
+              {/* Snapshots disponibles */}
+              {snapshots.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-xs text-gray-500 self-center">Snapshots disponibles:</span>
+                  {snapshots.slice(0, 12).map(s => (
+                    <button key={s.id}
+                      onClick={() => {
+                        const p = `${s.anio}-${String(s.mes).padStart(2,'0')}`;
+                        if (!compPeriodo1) setCompPeriodo1(p);
+                        else setCompPeriodo2(p);
+                      }}
+                      className="text-xs bg-purple-100 text-purple-700 border border-purple-200 rounded-full px-3 py-1 hover:bg-purple-200 transition-colors">
+                      {String(s.mes).padStart(2,'0')}/{s.anio}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Resumen */}
+              {compData?.resumen && (
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                    <div className="text-xs text-blue-500 mb-1">{compPeriodo1}</div>
+                    <div className="text-2xl font-bold text-blue-700">${Number(compData.resumen.valor_total_p1||0).toFixed(2)}</div>
+                    <div className="text-xs text-blue-400 mt-1">Valor inventario</div>
+                  </div>
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                    <div className="text-xs text-green-500 mb-1">{compPeriodo2}</div>
+                    <div className="text-2xl font-bold text-green-700">${Number(compData.resumen.valor_total_p2||0).toFixed(2)}</div>
+                    <div className="text-xs text-green-400 mt-1">Valor inventario</div>
+                  </div>
+                  <div className={`border rounded-xl p-4 text-center ${(compData.resumen.var_valor_pct||0) >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <div className="text-xs text-gray-500 mb-1">Variación</div>
+                    <div className={`text-2xl font-bold ${(compData.resumen.var_valor_pct||0) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                      {(compData.resumen.var_valor_pct||0) > 0 ? '+' : ''}{compData.resumen.var_valor_pct ?? '—'}%
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">en valor de inventario</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Buscador + Exportar */}
+              {compData && (
+                <div className="flex gap-3 items-center">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input placeholder="Buscar producto…" value={compFiltro}
+                      onChange={e => setCompFiltro(e.target.value)}
+                      className="pl-9 bg-white border-orange-200" />
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => exportToExcel(
+                    (compData.comparativa || []).map((r: any) => ({
+                      'Producto':              r.nombre,
+                      'Unidad':                r.unidad,
+                      [`Stock ${compPeriodo1}`]:   r.stock_p1 ?? '—',
+                      [`Stock ${compPeriodo2}`]:   r.stock_p2 ?? '—',
+                      [`Salidas ${compPeriodo1}`]: r.ventas_p1?.toFixed(2) ?? '—',
+                      [`Salidas ${compPeriodo2}`]: r.ventas_p2?.toFixed(2) ?? '—',
+                      'Var. Stock %':   r.var_stock_pct ?? '—',
+                      'Var. Salidas %': r.var_ventas_pct ?? '—',
+                    })),
+                    `comparativo_${compPeriodo1}_vs_${compPeriodo2}`,
+                    `Comparativo ${compPeriodo1} vs ${compPeriodo2}`
+                  )} className="border-green-300 text-green-600 hover:bg-green-50 whitespace-nowrap">
+                    <Download className="w-4 h-4 mr-1" /> Excel
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => exportToPDF(
+                    (compData.comparativa || []).map((r: any) => ({
+                      nombre:     r.nombre,
+                      stock_p1:   String(r.stock_p1 ?? '—'),
+                      stock_p2:   String(r.stock_p2 ?? '—'),
+                      var_stock:  r.var_stock_pct != null ? `${r.var_stock_pct}%` : '—',
+                      ventas_p1:  r.ventas_p1?.toFixed(2) ?? '—',
+                      ventas_p2:  r.ventas_p2?.toFixed(2) ?? '—',
+                      var_ventas: r.var_ventas_pct != null ? `${r.var_ventas_pct}%` : '—',
+                    })),
+                    [
+                      { header: 'Producto',          key: 'nombre' },
+                      { header: `Stock ${compPeriodo1}`,   key: 'stock_p1' },
+                      { header: `Stock ${compPeriodo2}`,   key: 'stock_p2' },
+                      { header: 'Var. Stock',          key: 'var_stock' },
+                      { header: `Salidas ${compPeriodo1}`, key: 'ventas_p1' },
+                      { header: `Salidas ${compPeriodo2}`, key: 'ventas_p2' },
+                      { header: 'Var. Salidas',        key: 'var_ventas' },
+                    ],
+                    `Comparativo ${compPeriodo1} vs ${compPeriodo2}`,
+                    `comparativo_${compPeriodo1}_vs_${compPeriodo2}`
+                  )} className="border-red-300 text-red-600 hover:bg-red-50 whitespace-nowrap">
+                    <Download className="w-4 h-4 mr-1" /> PDF
+                  </Button>
+                </div>
+              )}
+
+              {/* Tabla comparativa */}
+              {!compData && !compLoading && (
+                <div className="text-center py-16 text-gray-500">
+                  <BarChart3 className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                  <p>Selecciona dos períodos y haz clic en Comparar</p>
+                  <p className="text-xs mt-2">Necesitas haber hecho "Cerrar Mes" en ambos períodos</p>
+                </div>
+              )}
+              {compLoading && (
+                <div className="text-center py-12">
+                  <RefreshCw className="w-8 h-8 mx-auto animate-spin text-orange-500 mb-2" />
+                  <p className="text-gray-500">Calculando comparativa…</p>
+                </div>
+              )}
+              {compData && !compLoading && (
+                <div className="overflow-x-auto rounded-xl border border-orange-100">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50">
+                        <TableHead className="text-xs font-bold uppercase text-gray-600">Producto</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-blue-600 text-right">Stock {compPeriodo1}</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-green-600 text-right">Stock {compPeriodo2}</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-blue-600 text-right">Salidas {compPeriodo1}</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-green-600 text-right">Salidas {compPeriodo2}</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Var. Stock</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-gray-600 text-right">Var. Salidas</TableHead>
+                        <TableHead className="text-xs font-bold uppercase text-gray-600 text-center">Tendencia</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(compData.comparativa || [])
+                        .filter((r: any) => !compFiltro || r.nombre.toLowerCase().includes(compFiltro.toLowerCase()))
+                        .map((r: any) => {
+                          const vsColor = r.var_ventas_pct === null ? '' : r.var_ventas_pct >= 0 ? 'text-green-600' : 'text-red-600';
+                          const vsIcon  = r.var_ventas_pct === null ? '—' : r.var_ventas_pct >= 20 ? '📈 Alto' : r.var_ventas_pct <= -20 ? '📉 Alerta' : r.var_ventas_pct >= 0 ? '↗ Sube' : '↘ Baja';
+                          return (
+                            <TableRow key={r.producto_id} className="border-orange-50 hover:bg-orange-50/30">
+                              <TableCell className="font-medium text-gray-900 text-sm">{r.nombre}</TableCell>
+                              <TableCell className="text-right font-mono text-gray-600 text-sm">{r.stock_p1 ?? '—'}</TableCell>
+                              <TableCell className="text-right font-mono text-gray-600 text-sm">{r.stock_p2 ?? '—'}</TableCell>
+                              <TableCell className="text-right font-mono text-blue-600 text-sm">{r.ventas_p1?.toFixed(2) ?? '—'}</TableCell>
+                              <TableCell className="text-right font-mono text-green-600 text-sm">{r.ventas_p2?.toFixed(2) ?? '—'}</TableCell>
+                              <TableCell className="text-right font-mono text-sm">
+                                {r.var_stock_pct !== null ? (
+                                  <span className={r.var_stock_pct >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                    {r.var_stock_pct > 0 ? '+' : ''}{r.var_stock_pct}%
+                                  </span>
+                                ) : '—'}
+                              </TableCell>
+                              <TableCell className={`text-right font-mono text-sm font-bold ${vsColor}`}>
+                                {r.var_ventas_pct !== null ? `${r.var_ventas_pct > 0 ? '+' : ''}${r.var_ventas_pct}%` : '—'}
+                              </TableCell>
+                              <TableCell className="text-center text-sm">{vsIcon}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── VISTA: CONTEO FÍSICO ─────────────────────────────────── */}
+          {view === 'conteo' && (() => {
+            const prodFiltrados = productos.filter(p => {
+              const matchSearch = !conteoFiltro ||
+                p.nombre?.toLowerCase().includes(conteoFiltro.toLowerCase()) ||
+                p.codigo?.toLowerCase().includes(conteoFiltro.toLowerCase());
+              const matchCat = conteoCategoria === 'todas' || p.categoria === conteoCategoria;
+              return matchSearch && matchCat;
+            });
+
+            // Calcular filas con diferencia
+            const filas = prodFiltrados.map(p => {
+              const stockSistema = Number(p.stock_actual ?? p.stock ?? 0);
+              const fisico       = conteoFisico[p.id] !== undefined ? Number(conteoFisico[p.id]) : null;
+              const diferencia   = fisico !== null ? fisico - stockSistema : null;
+              const costo        = Number(p.precio_compra || p.costo_unitario || p.precio_costo || 0);
+              const valorDif     = diferencia !== null ? diferencia * costo : null;
+              return { ...p, stockSistema, fisico, diferencia, costo, valorDif };
+            }).filter(f => !conteoSoloVarianza || (f.diferencia !== null && f.diferencia !== 0));
+
+            // Resumen
+            const contados  = filas.filter(f => f.fisico !== null).length;
+            const faltante  = filas.filter(f => f.diferencia !== null && f.diferencia < 0);
+            const sobrante  = filas.filter(f => f.diferencia !== null && f.diferencia > 0);
+            const valFalt   = faltante.reduce((s, f) => s + Math.abs(f.valorDif ?? 0), 0);
+            const valSobr   = sobrante.reduce((s, f) => s + (f.valorDif ?? 0), 0);
+
+            const aplicarAjuste = async () => {
+              const conDif = filas.filter(f => f.diferencia !== null && f.diferencia !== 0);
+              if (conDif.length === 0) { toast.error('No hay diferencias para ajustar'); return; }
+              if (!confirm(`¿Aplicar ajuste para ${conDif.length} productos? Esto actualizará el stock al conteo físico.`)) return;
+              setConteoAplicando(true);
+              const headers = await getAuthHeaders();
+              const { projectId } = await import('/utils/supabase/info');
+              const BASE_URL = `https://${projectId}.supabase.co/functions/v1/server`;
+
+              // Procesar en bloques de 50 (batch processing)
+              const BATCH = 50;
+              let ok = 0; const errores: string[] = [];
+
+              for (let i = 0; i < conDif.length; i += BATCH) {
+                const bloque = conDif.slice(i, i + BATCH);
+                await Promise.all(bloque.map(async f => {
+                  try {
+                    const tipo = f.diferencia! > 0 ? 'entrada' : 'salida';
+                    const res = await fetch(`${BASE_URL}/inventario/movimientos`, {
+                      method: 'POST',
+                      headers: { ...headers, 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        tipo,
+                        producto_id: f.id,
+                        producto_nombre: f.nombre,
+                        cantidad: Math.abs(f.diferencia!),
+                        costo_unitario: f.costo,
+                        motivo: 'ajuste_inventario',
+                        referencia: `Conteo ${conteoFecha}`,
+                        observaciones: conteoNota || `Ajuste conteo físico ${conteoFecha}`,
+                      }),
+                    });
+                    if (res.ok) ok++;
+                    else {
+                      const errData = await res.json().catch(() => ({}));
+                      errores.push(`${f.nombre}: ${errData.error || res.status}`);
+                    }
+                  } catch (e: any) {
+                    errores.push(`${f.nombre}: ${e.message}`);
+                  }
+                }));
+              }
+
+              setConteoAplicando(false);
+              if (ok > 0) {
+                toast.success(`✅ ${ok} ajustes aplicados en bloques de ${BATCH}${errores.length > 0 ? ` · ${errores.length} errores` : ''}`);
+                if (errores.length > 0) toast.error('Errores: ' + errores.slice(0,3).join(' | '));
+                await fetchInventario();
+                await fetchProductos();
+                setConteoFisico({});
+              } else {
+                toast.error('No se pudieron aplicar los ajustes. Errores: ' + errores.slice(0,2).join(' | '));
+              }
+            };
+
+            const exportarConteo = () => {
+              exportToExcel(
+                filas.map(f => ({
+                  'Código':         f.codigo || '',
+                  'Producto':       f.nombre,
+                  'Categoría':      f.categoria || '',
+                  'Unidad':         f.unidad_medida || 'und',
+                  'Stock Sistema':  f.stockSistema,
+                  'Stock Físico':   f.fisico ?? '',
+                  'Diferencia':     f.diferencia ?? '',
+                  'Costo Unit.':    f.costo,
+                  'Valor Diferencia': f.valorDif !== null ? Number(f.valorDif.toFixed(2)) : '',
+                  'Estado':         f.diferencia === null ? 'Sin contar' : f.diferencia < 0 ? 'FALTANTE' : f.diferencia > 0 ? 'SOBRANTE' : 'OK',
+                })),
+                `conteo_fisico_${conteoFecha}`,
+                `Conteo Físico ${conteoFecha}`
+              );
+            };
+
+            const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = (ev) => {
+                const text = ev.target?.result as string;
+                if (!text) { toast.error('No se pudo leer el archivo'); return; }
+
+                // Detectar separador: coma o punto y coma (Excel español usa ;)
+                const firstLine = text.split('\n')[0] || '';
+                const sep = firstLine.includes(';') ? ';' : ',';
+
+                // Columnas del template exportado:
+                // 0:Código | 1:Producto | 2:Categoría | 3:Unidad | 4:Stock Sistema | 5:Stock Físico | 6:Diferencia...
+                const lines = text.split('\n').slice(1); // saltar encabezado
+                const nuevos: Record<string, string> = {};
+                let importados = 0;
+
+                // Encontrar índice de "Stock Físico" en el encabezado
+                const header = firstLine.split(sep).map(c => c.replace(/^"|"$/g, '').trim().toLowerCase());
+                const idxStockFisico = header.findIndex(h =>
+                  h.includes('físico') || h.includes('fisico') || h.includes('stock f') || h.includes('conteo')
+                );
+                // Si no se encuentra en encabezado, usar columna 5 por defecto
+                const colStockFisico = idxStockFisico >= 0 ? idxStockFisico : 5;
+
+                for (const line of lines) {
+                  if (!line.trim()) continue;
+                  const cols = line.split(sep).map(c => c.replace(/^"|"$/g, '').trim());
+                  if (cols.length < 2) continue;
+
+                  const codigo  = cols[0] || '';
+                  const nombre  = cols[1] || '';
+                  // Normalizar número: reemplazar coma decimal europea por punto
+                  const cantRaw = cols[colStockFisico] || '';
+                  const cantStr = cantRaw.replace(/[^0-9.,]/g, '').replace(',', '.');
+
+                  if (!cantStr || cantStr === '' || isNaN(Number(cantStr))) continue;
+                  if (Number(cantStr) < 0) continue;
+
+                  const prod = productos.find((p: any) =>
+                    (codigo && (p.codigo === codigo || p.id === codigo)) ||
+                    (nombre && p.nombre?.toLowerCase().trim() === nombre.toLowerCase().trim())
+                  );
+
+                  if (prod) {
+                    nuevos[prod.id] = cantStr;
+                    importados++;
+                  }
+                }
+
+                if (importados > 0) {
+                  setConteoFisico(prev => ({ ...prev, ...nuevos }));
+                  toast.success(`✅ ${importados} productos importados — columna "${header[colStockFisico] || 'Stock Físico'}" (índice ${colStockFisico})`);
+                } else {
+                  toast.error(
+                    `No se importó nada. Encabezados detectados: [${header.slice(0,6).join(' | ')}]. ` +
+                    `Separador: "${sep}". ` +
+                    `Asegúrate de llenar la columna "Stock Físico" y guardar como CSV UTF-8.`
+                  );
+                }
+              };
+              reader.readAsText(file, 'UTF-8');
+              e.target.value = '';
+            };
+
+            return (
+              <div className="space-y-4 p-2">
+                {/* Barra de herramientas */}
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div>
+                    <label className="text-xs text-gray-600 block mb-1">Fecha del conteo</label>
+                    <input type="date" value={conteoFecha} onChange={e => setConteoFecha(e.target.value)}
+                      className="border border-orange-200 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white" />
+                  </div>
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="text-xs text-gray-600 block mb-1">Buscar producto</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input placeholder="Nombre o código…" value={conteoFiltro}
+                        onChange={e => setConteoFiltro(e.target.value)}
+                        className="pl-9 bg-white border-orange-200 text-sm" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 block mb-1">Categoría</label>
+                    <select value={conteoCategoria} onChange={e => setConteoCategoria(e.target.value)}
+                      className="border border-orange-200 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white">
+                      <option value="todas">Todas</option>
+                      {categorias.map(c => <option key={c.id || c} value={c.nombre || c}>{c.nombre || c}</option>)}
+                    </select>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer mt-4">
+                    <input type="checkbox" checked={conteoSoloVarianza}
+                      onChange={e => setConteoSoloVarianza(e.target.checked)}
+                      className="accent-orange-500" />
+                    Solo con diferencia
+                  </label>
+                  <div className="flex gap-2 mt-4">
+                    <Button variant="outline" size="sm" onClick={exportarConteo}
+                      className="border-orange-300 text-orange-600 hover:bg-orange-50">
+                      <Download className="w-4 h-4 mr-1" /> Exportar
+                    </Button>
+                    <label className="cursor-pointer">
+                      <Button variant="outline" size="sm" asChild
+                        className="border-blue-300 text-blue-600 hover:bg-blue-50">
+                        <span><FileText className="w-4 h-4 mr-1" /> Importar CSV</span>
+                      </Button>
+                      <input type="file" accept=".csv,.txt,.xls,.xlsx" className="hidden" onChange={importarExcel} />
+                    </label>
+                    <Button size="sm" onClick={aplicarAjuste} disabled={conteoAplicando}
+                      className="bg-gradient-to-r from-green-600 to-green-500 text-white">
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      {conteoAplicando ? 'Aplicando…' : 'Aplicar Ajuste'}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setConteoFisico({})}
+                      className="border-gray-300 text-gray-500">
+                      <X className="w-4 h-4 mr-1" /> Limpiar
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Notas del conteo */}
+                <Input placeholder="Notas del conteo (opcional)…" value={conteoNota}
+                  onChange={e => setConteoNota(e.target.value)}
+                  className="bg-white border-orange-200 text-sm" />
+
+                {/* Tarjetas resumen */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-bold text-blue-600">{productos.length}</div>
+                    <div className="text-xs text-blue-500 mt-1">Total productos</div>
+                  </div>
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-bold text-green-600">{contados}</div>
+                    <div className="text-xs text-green-500 mt-1">Contados</div>
+                  </div>
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-bold text-red-600">{faltante.length}</div>
+                    <div className="text-xs text-red-500 mt-1">Con faltante</div>
+                  </div>
+                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
+                    <div className="text-2xl font-bold text-orange-600">{sobrante.length}</div>
+                    <div className="text-xs text-orange-500 mt-1">Con sobrante</div>
+                  </div>
+                  <div className={`rounded-xl p-3 text-center border ${valFalt > valSobr ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                    <div className={`text-xl font-bold ${valFalt > valSobr ? 'text-red-600' : 'text-green-600'}`}>
+                      ${Math.abs(valSobr - valFalt).toFixed(2)}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {valFalt > valSobr ? `Pérdida neta` : `Ganancia neta`}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tabla principal */}
+                <div className="overflow-x-auto rounded-xl border border-orange-100">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50 border-orange-100">
+                        <TableHead className="text-gray-600 text-xs font-bold uppercase">Producto</TableHead>
+                        <TableHead className="text-gray-600 text-xs font-bold uppercase">Código</TableHead>
+                        <TableHead className="text-gray-600 text-xs font-bold uppercase">Unidad</TableHead>
+                        <TableHead className="text-gray-600 text-xs font-bold uppercase text-right">Sistema</TableHead>
+                        <TableHead className="text-gray-600 text-xs font-bold uppercase text-center w-36">Físico (contar)</TableHead>
+                        <TableHead className="text-gray-600 text-xs font-bold uppercase text-right">Diferencia</TableHead>
+                        <TableHead className="text-gray-600 text-xs font-bold uppercase text-right">Costo Unit.</TableHead>
+                        <TableHead className="text-gray-600 text-xs font-bold uppercase text-right">Valor Dif.</TableHead>
+                        <TableHead className="text-gray-600 text-xs font-bold uppercase text-center">Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filas.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center text-gray-500 py-12">
+                            <Package className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                            No hay productos para mostrar
+                          </TableCell>
+                        </TableRow>
+                      ) : filas.map((f, idx) => {
+                        const rowBg = f.diferencia === null ? ''
+                          : f.diferencia < 0 ? 'bg-red-50'
+                          : f.diferencia > 0 ? 'bg-orange-50'
+                          : 'bg-green-50';
+                        return (
+                          <TableRow key={f.id} className={`border-orange-100/50 hover:brightness-95 transition-all ${rowBg}`}>
+                            <TableCell className="font-medium text-gray-900 text-sm">{f.nombre}</TableCell>
+                            <TableCell className="text-gray-500 text-xs font-mono">{f.codigo || '—'}</TableCell>
+                            <TableCell className="text-gray-500 text-xs">{f.unidad_medida || 'und'}</TableCell>
+                            <TableCell className="text-right font-mono text-gray-700 text-sm">{f.stockSistema.toFixed(2)}</TableCell>
+                            <TableCell className="text-center">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                placeholder="0"
+                                value={conteoFisico[f.id] ?? ''}
+                                onChange={e => setConteoFisico(prev => ({
+                                  ...prev,
+                                  [f.id]: e.target.value,
+                                }))}
+                                className="w-24 mx-auto text-center text-sm font-mono bg-white border-orange-200 focus:border-orange-400 h-8"
+                              />
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-bold text-sm">
+                              {f.diferencia !== null ? (
+                                <span className={f.diferencia < 0 ? 'text-red-600' : f.diferencia > 0 ? 'text-orange-600' : 'text-green-600'}>
+                                  {f.diferencia > 0 ? '+' : ''}{f.diferencia.toFixed(2)}
+                                </span>
+                              ) : <span className="text-gray-300">—</span>}
+                            </TableCell>
+                            <TableCell className="text-right text-gray-500 text-xs font-mono">${f.costo.toFixed(4)}</TableCell>
+                            <TableCell className="text-right font-mono font-bold text-sm">
+                              {f.valorDif !== null ? (
+                                <span className={f.valorDif < 0 ? 'text-red-600' : f.valorDif > 0 ? 'text-orange-600' : 'text-green-600'}>
+                                  {f.valorDif > 0 ? '+' : ''}${Math.abs(f.valorDif).toFixed(2)}
+                                </span>
+                              ) : <span className="text-gray-300">—</span>}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {f.diferencia === null ? (
+                                <Badge variant="outline" className="text-xs text-gray-400 border-gray-200">Sin contar</Badge>
+                              ) : f.diferencia < 0 ? (
+                                <Badge className="text-xs bg-red-100 text-red-700 border-red-200">
+                                  ▼ Faltante
+                                </Badge>
+                              ) : f.diferencia > 0 ? (
+                                <Badge className="text-xs bg-orange-100 text-orange-700 border-orange-200">
+                                  ▲ Sobrante
+                                </Badge>
+                              ) : (
+                                <Badge className="text-xs bg-green-100 text-green-700 border-green-200">
+                                  ✓ OK
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Resumen de valores al final */}
+                {contados > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                      <div className="text-sm text-red-600 font-semibold mb-2 flex items-center gap-2">
+                        <TrendingDown className="w-4 h-4" /> Total Faltante
+                      </div>
+                      <div className="text-2xl font-bold text-red-700">${valFalt.toFixed(2)}</div>
+                      <div className="text-xs text-red-500 mt-1">{faltante.length} productos · {faltante.reduce((s,f)=>s+Math.abs(f.diferencia??0),0).toFixed(2)} unidades</div>
+                    </div>
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                      <div className="text-sm text-orange-600 font-semibold mb-2 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4" /> Total Sobrante
+                      </div>
+                      <div className="text-2xl font-bold text-orange-700">${valSobr.toFixed(2)}</div>
+                      <div className="text-xs text-orange-500 mt-1">{sobrante.length} productos · {sobrante.reduce((s,f)=>s+(f.diferencia??0),0).toFixed(2)} unidades</div>
+                    </div>
+                    <div className={`border rounded-xl p-4 ${valFalt > valSobr ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                      <div className={`text-sm font-semibold mb-2 flex items-center gap-2 ${valFalt > valSobr ? 'text-red-600' : 'text-green-600'}`}>
+                        <DollarSign className="w-4 h-4" /> Balance Neto
+                      </div>
+                      <div className={`text-2xl font-bold ${valFalt > valSobr ? 'text-red-700' : 'text-green-700'}`}>
+                        {valFalt > valSobr ? '-' : '+'}${Math.abs(valSobr - valFalt).toFixed(2)}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">{contados} de {productos.length} productos contados</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
         </CardContent>
       </Card>
 

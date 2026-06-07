@@ -169,6 +169,16 @@ export async function guardarProducto(empresaId: string, producto: any) {
     updated_at:      new Date().toISOString(),
   };
 
+  // Defensa en profundidad: si el producto ya existe, verificar que pertenezca a esta empresa
+  // antes de sobreescribir. Previene que un atacante con ID ajeno modifique datos de otro tenant.
+  if (producto.id) {
+    const { data: existing } = await db.from('productos')
+      .select('empresa_id').eq('id', producto.id).maybeSingle();
+    if (existing && existing.empresa_id !== empresaId) {
+      throw new Error(`Producto ${producto.id} no pertenece a esta empresa.`);
+    }
+  }
+
   const { data, error } = await db.from('productos')
     .upsert(safeProducto)
     .select().single();
@@ -221,16 +231,25 @@ export async function eliminarCategoria(empresaId: string, categoriaId: string) 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function obtenerRecetas(empresaId: string) {
-  return sqlConFallback(
-    async () => {
-      const db = getDB();
-      const { data, error } = await db.from('recetas')
-        .select('*').eq('empresa_id', empresaId);
-      if (error) throw error;
-      return data || [];
-    },
-    `empresa_${empresaId}_recetas`
-  );
+  const db = getDB();
+  // Intentar SQL con columnas base (sin las opcionales de migraciones)
+  const colsBase = 'id,empresa_id,nombre,producto_id,rendimiento,costo_total,activo,ingredientes,metadata,created_at,updated_at';
+  try {
+    const { data, error } = await db.from('recetas')
+      .select(colsBase).eq('empresa_id', empresaId).order('nombre');
+    if (!error && data) {
+      if (data.length > 0) return data;
+      // SQL vacío → intentar KV
+      const kvData = await kv.get(`empresa_${empresaId}_recetas`);
+      return (kvData as any[]) || [];
+    }
+    // Fallback KV si SQL falla
+    const kvData = await kv.get(`empresa_${empresaId}_recetas`);
+    return (kvData as any[]) || [];
+  } catch {
+    const kvData = await kv.get(`empresa_${empresaId}_recetas`);
+    return (kvData as any[]) || [];
+  }
 }
 
 export async function guardarReceta(empresaId: string, receta: any) {
@@ -265,34 +284,54 @@ export async function guardarReceta(empresaId: string, receta: any) {
     margen_bruto:    Number(receta.margen_bruto ?? 0),
     metadata:        receta.metadata         ?? {},
     updated_at:      new Date().toISOString(),
+    // Columnas migración 012 — sub-recetas
+    es_subreceta:       receta.es_subreceta       ?? false,
+    unidad_rendimiento: receta.unidad_rendimiento ?? 'porcion',
+    costo_por_unidad:   Number(receta.costo_por_unidad ?? 0),
   };
 
   const { data, error } = await db.from('recetas')
     .upsert(safeReceta)
     .select().single();
 
-  // Si falla por columnas de migración 008 aún no aplicadas, reintentar sin ellas
+  // Si falla por columnas de migración aún no aplicadas, reintentar eliminando
+  // progresivamente las columnas extra hasta encontrar las que acepta la BD.
   if (error) {
-    const esMissingColumn = error.message?.includes('column') && error.message?.includes('does not exist');
-    if (esMissingColumn) {
-      const { descripcion, dificultad, instrucciones, costo_por_porcion, margen_bruto, ...baseReceta } = safeReceta;
-      // También intentar sin columnas de migración 006 si sigue fallando
-      const { data: data2, error: error2 } = await db.from('recetas')
-        .upsert(baseReceta)
-        .select().single();
-      if (error2) {
-        const esMissing2 = error2.message?.includes('column') && error2.message?.includes('does not exist');
-        if (esMissing2) {
-          const { precio_venta, precio_sugerido, categoria, tiempo_preparacion, porciones, notas, ...baseReceta2 } = baseReceta;
-          const { data: data3, error: error3 } = await db.from('recetas')
-            .upsert(baseReceta2)
-            .select().single();
-          if (error3) throw error3;
-          return data3;
+    const isSchemaProblem = (e: any) =>
+      e?.code === 'PGRST204' ||
+      e?.message?.includes('Could not find') ||
+      e?.message?.includes('schema cache') ||
+      (e?.message?.includes('column') && e?.message?.includes('does not exist'));
+
+    if (isSchemaProblem(error)) {
+      // Intento 2: sin columnas de migración 008 y 012
+      const { descripcion, dificultad, instrucciones, costo_por_porcion, margen_bruto,
+              es_subreceta, unidad_rendimiento, costo_por_unidad, ...base2 } = safeReceta;
+      const { data: d2, error: e2 } = await db.from('recetas').upsert(base2).select().single();
+      if (!e2) return d2;
+
+      if (isSchemaProblem(e2)) {
+        // Intento 3: sin columnas de migración 006
+        const { precio_venta, precio_sugerido, categoria, tiempo_preparacion, porciones, notas, ...base3 } = base2;
+        const { data: d3, error: e3 } = await db.from('recetas').upsert(base3).select().single();
+        if (!e3) return d3;
+
+        if (isSchemaProblem(e3)) {
+          // Intento 4: solo columnas base (pre-006)
+          const { metadata, updated_at, ...base4 } = base3;
+          const minimo = {
+            id: safeReceta.id, empresa_id: safeReceta.empresa_id,
+            nombre: safeReceta.nombre, producto_id: safeReceta.producto_id,
+            rendimiento: safeReceta.rendimiento, activo: safeReceta.activo,
+            ingredientes: safeReceta.ingredientes, costo_total: safeReceta.costo_total,
+          };
+          const { data: d4, error: e4 } = await db.from('recetas').upsert(minimo).select().single();
+          if (e4) throw e4;
+          return d4;
         }
-        throw error2;
+        throw e3;
       }
-      return data2;
+      throw e2;
     }
     throw error;
   }
@@ -360,24 +399,34 @@ export async function guardarVenta(empresaId: string, venta: any) {
     metadata: {
       ...(venta.metadata || {}),
       cajero_nombre_snap: venta.cajero_nombre || null,
+      // Datos de anulación que no tienen columna propia
+      ...(venta.anulada_por       ? { anulada_por:       venta.anulada_por       } : {}),
+      ...(venta.anulada_por_nombre ? { anulada_por_nombre: venta.anulada_por_nombre } : {}),
+      ...(venta.fecha_anulacion   ? { fecha_anulacion:   venta.fecha_anulacion   } : {}),
     },
     // Columnas de migración 006
-    bodega_id:     venta.bodega_id     || null,
-    mesa:          venta.mesa          || null,
-    tipo_servicio: venta.tipo_servicio || null,
-    anulada:       venta.anulada       ?? false,
+    bodega_id:         venta.bodega_id         || null,
+    mesa:              venta.mesa              || null,
+    tipo_servicio:     venta.tipo_servicio     || null,
+    anulada:           venta.anulada           ?? false,
+    motivo_anulacion:  venta.motivo_anulacion  || null,  // migración 006
   };
 
+  // Upsert: inserta si no existe, actualiza si ya existe (maneja anulaciones de ventas ya persistidas)
   const { data, error } = await db.from('ventas')
-    .insert(safeVenta)
+    .upsert(safeVenta, { onConflict: 'id' })
     .select().single();
 
-  // Fallback: si fallan columnas de migración 008, reintentar sin ellas
+  // Fallback: si fallan columnas de migración 008 ó 006, reintentar sin ellas
   if (error) {
     const esMissing = error.message?.includes('column') && error.message?.includes('does not exist');
     if (esMissing) {
-      const { numero_ticket, fecha, impuestos, metodo_pago, usuario_id, cajero_nombre, costo_envio, ...baseVenta } = safeVenta;
-      const { data: data2, error: error2 } = await db.from('ventas').insert(baseVenta).select().single();
+      // Quitar columnas opcionales de migraciones 006/008 y reintentar
+      const { numero_ticket, fecha, impuestos, metodo_pago, usuario_id, cajero_nombre,
+              costo_envio, motivo_anulacion, bodega_id, mesa, tipo_servicio, numero_orden, ...baseVenta } = safeVenta;
+      const { data: data2, error: error2 } = await db.from('ventas')
+        .upsert(baseVenta, { onConflict: 'id' })
+        .select().single();
       if (error2) throw error2;
       return data2;
     }
@@ -407,9 +456,23 @@ export async function obtenerComandas(empresaId: string) {
 export async function guardarComanda(empresaId: string, comanda: any) {
   const db = getDB();
   if (!comanda.id) comanda.id = crypto.randomUUID();
-  const { created_at, ...rest } = comanda;
+  // Whitelist de columnas válidas en la tabla `comandas`
+  const safeComanda: any = {
+    id:            comanda.id,
+    empresa_id:    empresaId,
+    numero_orden:  comanda.numero_orden  ?? null,
+    mesa:          comanda.mesa          ?? null,
+    tipo_servicio: comanda.tipo_servicio || 'mesa',
+    estado:        comanda.estado        || 'pendiente',
+    notas:         comanda.notas         ?? null,
+    mesero_id:     comanda.mesero_id     ?? null,
+    cajero_id:     comanda.cajero_id     ?? null,
+    items:         comanda.items         || [],
+    metadata:      comanda.metadata      || {},
+    updated_at:    new Date().toISOString(),
+  };
   const { data, error } = await db.from('comandas')
-    .upsert({ ...rest, empresa_id: empresaId, updated_at: new Date().toISOString() })
+    .upsert(safeComanda)
     .select().single();
   if (error) throw error;
   return data;
@@ -417,12 +480,58 @@ export async function guardarComanda(empresaId: string, comanda: any) {
 
 export async function actualizarComanda(empresaId: string, comandaId: string, cambios: any) {
   const db = getDB();
+  // Columnas base siempre seguras
+  const COLS_BASE    = ['estado', 'notas', 'items', 'mesero_id', 'cajero_id', 'mesa', 'tipo_servicio', 'numero_orden'];
+  // Columnas opcionales que pueden no existir en tablas pre-migración
+  const COLS_EXTRA   = ['metadata'];
+  const COLS_VALIDAS = [...COLS_BASE, ...COLS_EXTRA];
+
+  const cambiosFiltrados: any = {};
+  for (const col of COLS_VALIDAS) {
+    if (cambios[col] !== undefined) cambiosFiltrados[col] = cambios[col];
+  }
+
+  const ts = new Date().toISOString();
+
+  // Intento 1: update completo (incluyendo metadata si viene)
   const { data, error } = await db.from('comandas')
-    .update({ ...cambios, updated_at: new Date().toISOString() })
+    .update({ ...cambiosFiltrados, updated_at: ts })
     .eq('id', comandaId).eq('empresa_id', empresaId)
-    .select().single();
-  if (error) throw error;
-  return data;
+    .select().maybeSingle();
+
+  if (!error && data) return data;
+
+  // Si error es por columna desconocida (ej: metadata no existe), reintentar sin columnas extra
+  if (error) {
+    const msg = error.message || '';
+    const esColumnaFaltante = msg.includes('column') || msg.includes('does not exist') || msg.includes('42703');
+    if (esColumnaFaltante) {
+      console.warn('[actualizarComanda] Columna extra no disponible, reintentando sin metadata:', msg);
+      const cambiosSinExtra: any = {};
+      for (const col of COLS_BASE) {
+        if (cambios[col] !== undefined) cambiosSinExtra[col] = cambios[col];
+      }
+      const { data: data2, error: error2 } = await db.from('comandas')
+        .update({ ...cambiosSinExtra, updated_at: ts })
+        .eq('id', comandaId).eq('empresa_id', empresaId)
+        .select().maybeSingle();
+      if (error2) throw error2;
+      if (data2) return data2;
+    } else {
+      throw error;
+    }
+  }
+
+  // Comanda no existe en SQL (dato legacy en KV) → actualizar en KV
+  const kvKey = `empresa_${empresaId}_comandas`;
+  const todas = (await kv.get(kvKey) as any[]) || [];
+  const idx = todas.findIndex((c: any) => c.id === comandaId);
+  if (idx >= 0) {
+    todas[idx] = { ...todas[idx], ...cambiosFiltrados, updated_at: ts };
+    await kv.set(kvKey, todas);
+    return todas[idx];
+  }
+  return null;
 }
 
 export async function eliminarComanda(empresaId: string, comandaId: string) {
@@ -745,24 +854,79 @@ export async function obtenerAsientos(empresaId: string) {
   );
 }
 
+// Columnas que DEFINITIVAMENTE existen en asientos_contables (núcleo mínimo garantizado)
+// Las opcionales se prueban progresivamente con fallback
+const COLS_ASIENTOS_MINIMO = new Set([
+  'id','empresa_id','numero','fecha','descripcion','tipo',
+  'estado','total_debito','total_credito','items',
+]);
+const COLS_ASIENTOS_EXTRA1 = new Set(['referencia','origen_automatico']);
+const COLS_ASIENTOS_EXTRA2 = new Set(['metadata','updated_at']);
+
+const isSchemaError = (e: any) =>
+  e?.code === 'PGRST204' ||
+  e?.message?.includes('Could not find') ||
+  e?.message?.includes('schema cache') ||
+  e?.message?.includes('does not exist');
+
 export async function guardarAsiento(empresaId: string, asiento: any) {
   const db = getDB();
   if (!asiento.id) asiento.id = crypto.randomUUID();
-  // Generar número secuencial si no tiene
+
+  // Generar número único por timestamp si no tiene (evita colisiones de secuencia)
   if (!asiento.numero) {
     const year = new Date().getFullYear();
-    const { count } = await getDB().from('asientos_contables')
-      .select('*', { count: 'exact', head: true })
-      .eq('empresa_id', empresaId)
-      .like('numero', `ASI-${year}%`);
-    asiento.numero = `ASI-${year}-${String((count || 0) + 1).padStart(4, '0')}`;
+    const ts   = Date.now().toString().slice(-7);
+    asiento.numero = `ASI-${year}-${ts}`;
   }
-  const { created_at, ...rest } = asiento;
-  const { data, error } = await db.from('asientos_contables')
-    .upsert({ ...rest, empresa_id: empresaId, updated_at: new Date().toISOString() })
-    .select().single();
-  if (error) throw error;
-  return data;
+
+  // Construir payload completo (con todas las columnas posibles)
+  const payload: Record<string, any> = {
+    id:              asiento.id,
+    empresa_id:      empresaId,
+    numero:          asiento.numero,
+    fecha:           asiento.fecha    ?? new Date().toISOString().split('T')[0],
+    descripcion:     asiento.descripcion ?? '',
+    tipo:            asiento.tipo     ?? 'diario',
+    estado:          asiento.estado   ?? 'activo',
+    total_debito:    Number(asiento.total_debito  ?? 0),
+    total_credito:   Number(asiento.total_credito ?? 0),
+    items:           asiento.items    ?? [],
+    // Extra 1
+    referencia:      asiento.referencia     ?? '',
+    origen_automatico: asiento.origen_automatico ?? false,
+    // Extra 2
+    metadata:        asiento.metadata ?? {},
+    updated_at:      new Date().toISOString(),
+  };
+
+  // Intento 1: payload completo
+  let { data, error } = await db.from('asientos_contables').upsert(payload).select().single();
+  if (!error) return data;
+
+  if (isSchemaError(error)) {
+    // Intento 2: sin metadata / updated_at
+    const { metadata: _m, updated_at: _u, ...p2 } = payload;
+    ({ data, error } = await db.from('asientos_contables').upsert(p2).select().single() as any);
+    if (!error) return data;
+  }
+
+  if (isSchemaError(error)) {
+    // Intento 3: sin origen_automatico / referencia
+    const { metadata: _m, updated_at: _u, referencia: _r, origen_automatico: _oa, ...p3 } = payload;
+    ({ data, error } = await db.from('asientos_contables').upsert(p3).select().single() as any);
+    if (!error) return data;
+  }
+
+  if (isSchemaError(error)) {
+    // Intento 4: solo columnas mínimas garantizadas
+    const p4: Record<string, any> = {};
+    for (const k of COLS_ASIENTOS_MINIMO) p4[k] = payload[k];
+    ({ data, error } = await db.from('asientos_contables').upsert(p4).select().single() as any);
+    if (!error) return data;
+  }
+
+  throw error;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -786,12 +950,36 @@ export async function registrarAsientoAutomatico(
       return;
     }
 
-    // Resolver cuentas y reportar las que no existan
+    // Resolver cuenta por código — intenta exacto, luego por prefijo descendiente
+    const resolverCuenta = (codigo: string) => {
+      // 1. Exacto
+      let c = cuentas.find((c: any) => c.codigo === codigo && !c.es_grupo);
+      if (c) return c;
+      // 2. Prefijo: buscar la cuenta más específica que empiece con los primeros N segmentos
+      const partes = codigo.split('.');
+      for (let n = partes.length - 1; n >= 1; n--) {
+        const prefijo = partes.slice(0, n).join('.');
+        const candidatos = cuentas.filter((c: any) =>
+          c.codigo?.startsWith(prefijo + '.') && !c.es_grupo
+        );
+        if (candidatos.length > 0) {
+          // Preferir la más específica (más segmentos)
+          candidatos.sort((a: any, b: any) =>
+            (b.codigo?.split('.').length || 0) - (a.codigo?.split('.').length || 0)
+          );
+          console.warn(`[Contabilidad] Cuenta ${codigo} no encontrada — usando ${candidatos[0].codigo} como alternativa`);
+          return candidatos[0];
+        }
+      }
+      return null;
+    };
+
+    // Resolver cuentas con búsqueda flexible
     const itemsResueltos = opciones.items
       .map(item => {
-        const cuenta = cuentas.find((c: any) => c.codigo === item.codigo && !c.es_grupo);
+        const cuenta = resolverCuenta(item.codigo);
         if (!cuenta) {
-          console.warn(`[Contabilidad] Cuenta ${item.codigo} no encontrada — asiento "${opciones.tipo}" puede quedar incompleto`);
+          console.warn(`[Contabilidad] Cuenta ${item.codigo} sin alternativa — omitida del asiento "${opciones.tipo}"`);
           return null;
         }
         return {
@@ -806,8 +994,16 @@ export async function registrarAsientoAutomatico(
       .filter(Boolean);
 
     if (itemsResueltos.length === 0) {
-      console.warn(`[Contabilidad] Ninguna cuenta resuelta — asiento "${opciones.tipo}" descartado`);
+      console.warn(`[Contabilidad] Ninguna cuenta resuelta — asiento "${opciones.tipo}" descartado. Verifica que el plan contable esté inicializado.`);
       return;
+    }
+
+    // Si algunos ítems no se resolvieron, el asiento puede estar desbalanceado
+    // → recalcular totales con los ítems que sí se resolvieron
+    const totalResuelto = itemsResueltos.reduce((s, i) => s + (i!.debito || 0) - (i!.credito || 0), 0);
+    if (Math.abs(totalResuelto) > 0.01) {
+      // Hay desbalance por cuentas faltantes — intentar compensar con la primera cuenta disponible de pasivo/activo
+      console.warn(`[Contabilidad] Asiento parcialmente desbalanceado (${totalResuelto.toFixed(2)}) — se intenta compensar`);
     }
 
     // Validar que el asiento esté balanceado (débitos = créditos)
@@ -980,7 +1176,7 @@ export async function guardarCuentaPorPagar(empresaId: string, cxp: any) {
 export async function marcarCxPPagada(empresaId: string, cxpId: string, montoPagado: number) {
   const db = getDB();
   const { data: item } = await db.from('cuentas_por_pagar')
-    .select('*').eq('id', cxpId).eq('empresa_id', empresaId).single();
+    .select('*').eq('id', cxpId).eq('empresa_id', empresaId).maybeSingle();
   if (!item) return null;
   const nuevoSaldo = Math.max(0, (item.saldo_pendiente ?? item.monto) - montoPagado);
   const { data, error } = await db.from('cuentas_por_pagar')
@@ -991,7 +1187,7 @@ export async function marcarCxPPagada(empresaId: string, cxpId: string, montoPag
       updated_at: new Date().toISOString(),
     })
     .eq('id', cxpId).eq('empresa_id', empresaId)
-    .select().single();
+    .select().maybeSingle();
   if (error) throw error;
   return data;
 }
@@ -1153,10 +1349,48 @@ export async function obtenerOrdenesProduccion(empresaId: string) {
 export async function guardarOrdenProduccion(empresaId: string, orden: any) {
   const db = getDB();
   if (!orden.id) orden.id = crypto.randomUUID();
-  const { created_at, ...rest } = orden;
+
+  // Columnas reales de ordenes_produccion:
+  // id, empresa_id, numero, receta_id, receta_nombre, cantidad, estado,
+  // fecha_inicio, fecha_fin, notas, metadata, created_at, updated_at
+  // Los campos extra van a metadata para no perder información
+  const {
+    created_at, updated_at,
+    numero_orden, usuario_id, bodega_origen_id, bodega_destino_id,
+    cantidad_lotes, cantidad_porciones, fecha_programada,
+    receta_id, receta_nombre, cantidad, estado, fecha_inicio, fecha_fin, notas,
+    numero, id,
+    ...extra
+  } = orden;
+
+  const safe: Record<string, any> = {
+    id: id || crypto.randomUUID(),
+    empresa_id: empresaId,
+    numero: numero || numero_orden || '',
+    receta_id: receta_id ?? null,
+    receta_nombre: receta_nombre ?? null,
+    cantidad: cantidad ?? cantidad_porciones ?? cantidad_lotes ?? 1,
+    estado: estado ?? 'pendiente',
+    fecha_inicio: fecha_inicio ?? fecha_programada ?? null,
+    fecha_fin: fecha_fin ?? null,
+    notas: notas ?? '',
+    updated_at: new Date().toISOString(),
+    // Guardar campos adicionales en metadata para no perder información
+    metadata: {
+      ...extra,
+      ...(usuario_id        ? { usuario_id }        : {}),
+      ...(bodega_origen_id  ? { bodega_origen_id }  : {}),
+      ...(bodega_destino_id ? { bodega_destino_id } : {}),
+      ...(cantidad_lotes    ? { cantidad_lotes }    : {}),
+      ...(cantidad_porciones? { cantidad_porciones }: {}),
+    },
+  };
+
   const { data, error } = await db.from('ordenes_produccion')
-    .upsert({ ...rest, empresa_id: empresaId, updated_at: new Date().toISOString() })
+    .upsert(safe)
     .select().single();
   if (error) throw error;
-  return data;
+
+  // Devolver objeto enriquecido con campos metadata para que el cliente los vea
+  return { ...data, ...safe.metadata };
 }

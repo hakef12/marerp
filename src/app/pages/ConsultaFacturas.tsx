@@ -16,12 +16,12 @@ import { ExportButtons } from '../components/ExportButtons';
 import { exportToPDF, exportToExcel } from '../utils/exportUtils';
 import { RIDE } from '../components/facturacion/RIDE';
 import { printHtml, cssTermico, esc } from '../utils/printThermal';
-import { 
-  FileText, 
-  Search, 
-  Download, 
-  Eye, 
-  Send, 
+import {
+  FileText,
+  Search,
+  Download,
+  Eye,
+  Send,
   RefreshCw,
   Filter,
   Calendar,
@@ -31,7 +31,9 @@ import {
   Clock,
   Printer,
   Mail,
-  FileDown
+  FileDown,
+  RotateCcw,
+  X,
 } from 'lucide-react';
 
 interface Factura {
@@ -40,6 +42,7 @@ interface Factura {
   secuencial: number;
   clave_acceso: string;
   fecha_emision: string;
+  hora_emision?: string;
   cliente_identificacion: string;
   cliente_razon_social: string;
   cliente_email?: string;
@@ -71,6 +74,14 @@ export default function ConsultaFacturas() {
   const [facturaSeleccionada, setFacturaSeleccionada] = useState<Factura | null>(null);
   const [dialogRIDE, setDialogRIDE] = useState(false);
   const [dialogDetalles, setDialogDetalles] = useState(false);
+
+  // Nota de Crédito
+  const [dialogNC, setDialogNC] = useState(false);
+  const [facturaParaNC, setFacturaParaNC] = useState<any>(null);
+  const [ncMotivo, setNcMotivo] = useState('');
+  const [ncTipo, setNcTipo] = useState<'total'|'parcial'>('total');
+  const [ncMontoParcial, setNcMontoParcial] = useState('');
+  const [ncEmitiendo, setNcEmitiendo] = useState(false);
 
   // Email dialog
   const [dialogEmail, setDialogEmail] = useState(false);
@@ -113,6 +124,7 @@ export default function ConsultaFacturas() {
           descuento: Number(f.descuento ?? f.total_descuento ?? 0),
           mensajes_sri: Array.isArray(f.mensajes_sri) ? f.mensajes_sri : [],
           fecha_emision: f.fecha_emision || f.created_at || '',
+          hora_emision: f.hora_emision || '',
           cliente_razon_social: f.cliente_razon_social || f.cliente_nombre || 'Sin nombre',
           cliente_identificacion: f.cliente_identificacion || '-',
           numero_factura: f.numero_factura || f.id || '-',
@@ -238,7 +250,10 @@ export default function ConsultaFacturas() {
         ));
         setDialogEmail(false);
       } else {
-        toast.error(data.error || 'Error enviando email');
+        // Mostrar el error completo (incluye mensajes de Resend como "domain not verified")
+        const errMsg = data.error || 'Error enviando email';
+        const errDetalle = data.detalle ? ` — ${data.detalle}` : '';
+        toast.error(`${errMsg}${errDetalle}`, { duration: 8000 });
       }
     } catch {
       toast.error('Error de conexión');
@@ -290,6 +305,51 @@ export default function ConsultaFacturas() {
       toast.error('Error de conexión');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const emitirNotaCredito = async () => {
+    if (!facturaParaNC || !ncMotivo.trim()) {
+      toast.error('El motivo es obligatorio');
+      return;
+    }
+    if (ncTipo === 'parcial' && (!ncMontoParcial || Number(ncMontoParcial) <= 0)) {
+      toast.error('Ingresa el monto parcial a acreditar');
+      return;
+    }
+    setNcEmitiendo(true);
+    try {
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/facturacion/notas-credito`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            factura_id: facturaParaNC.id,
+            motivo: ncMotivo,
+            tipo: ncTipo,
+            monto_parcial: ncTipo === 'parcial' ? Number(ncMontoParcial) : undefined,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (res.ok) {
+        const estado = data.estado_autorizacion || data.estado;
+        if (estado === 'AUTORIZADO') {
+          toast.success(`✅ Nota de Crédito ${data.numero_nc} AUTORIZADA por el SRI`);
+        } else {
+          toast.info(`⏳ Nota de Crédito ${data.numero_nc} enviada — estado: ${estado}`);
+        }
+        setDialogNC(false);
+        setNcMotivo(''); setNcMontoParcial(''); setNcTipo('total');
+        await cargarFacturas();
+      } else {
+        toast.error(data.error || 'Error al emitir nota de crédito');
+      }
+    } catch (e: any) {
+      toast.error('Error de conexión: ' + e.message);
+    } finally {
+      setNcEmitiendo(false);
     }
   };
 
@@ -534,7 +594,16 @@ export default function ConsultaFacturas() {
                               <p className="text-gray-600">Fecha Emisión</p>
                               <p className="text-gray-900">
                                 {factura.fecha_emision
-                                ? (() => { try { return new Date(factura.fecha_emision).toLocaleString('es-EC', { dateStyle: 'short', timeStyle: 'short' }); } catch { return factura.fecha_emision; } })()
+                                ? (() => {
+                                    try {
+                                      // Combinar fecha + hora para interpretar como hora local Ecuador
+                                      // "2026-05-27T14:30:00" (sin Z) → hora local → correcto
+                                      const iso = factura.hora_emision
+                                        ? `${factura.fecha_emision}T${factura.hora_emision}`
+                                        : `${factura.fecha_emision}T12:00:00`;
+                                      return new Date(iso).toLocaleString('es-EC', { dateStyle: 'short', timeStyle: 'short' });
+                                    } catch { return factura.fecha_emision; }
+                                  })()
                                 : '—'
                               }
                               </p>
@@ -606,8 +675,19 @@ export default function ConsultaFacturas() {
                           >
                             <Mail className="w-4 h-4" />
                           </Button>
-                          {/* Mostrar Reintentar para TODOS los estados — permite re-verificar facturas
-                              marcadas incorrectamente como AUTORIZADO por bug anterior */}
+                          {/* Nota de Crédito — solo para facturas autorizadas */}
+                          {(factura.estado === 'AUTORIZADO' || (factura as any).estado_autorizacion === 'AUTORIZADO') && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => { setFacturaParaNC(factura); setDialogNC(true); setNcMotivo(''); setNcTipo('total'); setNcMontoParcial(''); }}
+                              title="Emitir Nota de Crédito"
+                              className="border-red-300 text-red-500 hover:bg-red-50"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </Button>
+                          )}
+                          {/* Reintentar autorización */}
                           {(factura.estado === 'ERROR' || factura.estado === 'PENDIENTE' || factura.estado === 'NO_AUTORIZADO' || factura.estado === 'AUTORIZADO') && (
                             <Button
                               size="sm"
@@ -856,6 +936,101 @@ export default function ConsultaFacturas() {
                   {enviandoEmail
                     ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Enviando…</>
                     : <><Send className="w-4 h-4 mr-2" />Enviar</>}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MODAL: NOTA DE CRÉDITO ─────────────────────────────────────────── */}
+      <Dialog open={dialogNC} onOpenChange={v => { if (!v) { setDialogNC(false); setNcMotivo(''); } }}>
+        <DialogContent className="bg-white border-[#F97316]/20 max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-gray-900 flex items-center gap-2">
+              <RotateCcw className="w-5 h-5 text-red-500" />
+              Emitir Nota de Crédito
+            </DialogTitle>
+          </DialogHeader>
+
+          {facturaParaNC && (
+            <div className="space-y-4 mt-2">
+              {/* Info factura original */}
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm">
+                <div className="font-bold text-gray-900">Factura: {facturaParaNC.numero_factura}</div>
+                <div className="text-gray-600 mt-0.5">
+                  {facturaParaNC.cliente_razon_social} · Total: <strong>${Number(facturaParaNC.total||0).toFixed(2)}</strong>
+                </div>
+                <div className="text-xs text-green-600 mt-1">✅ {facturaParaNC.numero_autorizacion || 'Autorizada'}</div>
+              </div>
+
+              {/* Tipo de nota de crédito */}
+              <div>
+                <Label className="text-xs text-gray-600 block mb-2">Tipo de nota de crédito</Label>
+                <div className="flex gap-2">
+                  <button onClick={() => setNcTipo('total')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${ncTipo==='total' ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 text-gray-600 hover:border-red-300'}`}>
+                    Anulación total<br/>
+                    <span className="font-normal text-xs">${Number(facturaParaNC.total||0).toFixed(2)}</span>
+                  </button>
+                  <button onClick={() => setNcTipo('parcial')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-all ${ncTipo==='parcial' ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-600 hover:border-orange-300'}`}>
+                    Ajuste parcial<br/>
+                    <span className="font-normal text-xs">Monto a acreditar</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Monto parcial */}
+              {ncTipo === 'parcial' && (
+                <div>
+                  <Label className="text-xs text-gray-600">Monto a acreditar (máx. ${Number(facturaParaNC.total||0).toFixed(2)})</Label>
+                  <input type="number" value={ncMontoParcial}
+                    onChange={e => setNcMontoParcial(e.target.value)}
+                    max={Number(facturaParaNC.total||0)}
+                    placeholder="0.00"
+                    className="w-full mt-1 border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900 font-mono"/>
+                </div>
+              )}
+
+              {/* Motivo */}
+              <div>
+                <Label className="text-xs text-gray-600">Motivo <span className="text-red-500">*</span></Label>
+                <select value={ncMotivo} onChange={e => setNcMotivo(e.target.value)}
+                  className="w-full mt-1 border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900">
+                  <option value="">— Seleccionar motivo —</option>
+                  <option value="Error en facturación">Error en facturación</option>
+                  <option value="Devolución de mercadería">Devolución de mercadería</option>
+                  <option value="Descuento no aplicado">Descuento no aplicado</option>
+                  <option value="Error en precio">Error en precio</option>
+                  <option value="Error en cantidad">Error en cantidad</option>
+                  <option value="Anulación de venta">Anulación de venta</option>
+                  <option value="Otro">Otro</option>
+                </select>
+                {ncMotivo === 'Otro' && (
+                  <input className="w-full mt-2 border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900"
+                    placeholder="Describir el motivo…"
+                    onChange={e => setNcMotivo(e.target.value === 'Otro' ? '' : e.target.value)}/>
+                )}
+              </div>
+
+              {/* Advertencia */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                <strong>⚠️ Importante:</strong> La nota de crédito será enviada al SRI para autorización.
+                Una vez autorizada, queda registrada y no se puede deshacer.
+                El SRI requiere conservar la nota de crédito junto con la factura original.
+              </div>
+
+              {/* Botones */}
+              <div className="flex gap-2 pt-1">
+                <Button variant="outline" onClick={() => setDialogNC(false)} className="flex-1 border-gray-200 text-gray-700">
+                  Cancelar
+                </Button>
+                <Button onClick={emitirNotaCredito} disabled={ncEmitiendo || !ncMotivo}
+                  className="flex-1 bg-gradient-to-r from-red-600 to-red-500 text-white">
+                  {ncEmitiendo
+                    ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin"/>Enviando al SRI…</>
+                    : <><RotateCcw className="w-4 h-4 mr-2"/>Emitir Nota de Crédito</>}
                 </Button>
               </div>
             </div>

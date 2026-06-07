@@ -70,7 +70,7 @@ export default function Caja() {
   const [loading, setLoading] = useState(true);
   const [historial, setHistorial] = useState<Sesion[]>([]);
   const [arqueo, setArqueo] = useState<any>(null);
-  const [tab, setTab] = useState<'principal' | 'movimientos' | 'historial' | 'arqueo'>('principal');
+  const [tab, setTab] = useState<'principal' | 'movimientos' | 'historial' | 'arqueo' | 'ventas'>('principal');
 
   // Modales
   const [modalApertura, setModalApertura] = useState(false);
@@ -85,6 +85,15 @@ export default function Caja() {
   const [fTipoMov, setFTipoMov] = useState<'ingreso_manual' | 'gasto' | 'retiro'>('ingreso_manual');
   const [fMontoMov, setFMontoMov] = useState('');
   const [fDescMov, setFDescMov] = useState('');
+
+  // Ventas del día + anulación
+  const [ventas, setVentas] = useState<any[]>([]);
+  const [ventasLoading, setVentasLoading] = useState(false);
+  const [modalAnular, setModalAnular] = useState(false);
+  const [ventaAnularId, setVentaAnularId] = useState('');
+  const [ventaAnularTicket, setVentaAnularTicket] = useState('');
+  const [motivoAnulacion, setMotivoAnulacion] = useState('');
+  const [anulando, setAnulando] = useState(false);
 
   const fetchEstado = useCallback(async () => {
     if (!token) return;
@@ -118,6 +127,48 @@ export default function Caja() {
     } catch { /* */ }
   }, [token, sesion, bodegaActiva]);
 
+  const fetchVentas = useCallback(async () => {
+    if (!token) return;
+    setVentasLoading(true);
+    try {
+      const hoy = new Date().toISOString().split('T')[0];
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/pos/ventas?fecha_inicio=${hoy}&fecha_fin=${hoy}&limit=100`,
+        { headers: apiH(token) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setVentas((data.ventas || []).sort((a: any, b: any) =>
+          new Date(b.created_at || b.fecha).getTime() - new Date(a.created_at || a.fecha).getTime()
+        ));
+      }
+    } catch { /* silencioso */ }
+    finally { setVentasLoading(false); }
+  }, [token]);
+
+  const handleAnularVenta = async () => {
+    if (!motivoAnulacion.trim()) { toast.error('Ingresa el motivo de anulación'); return; }
+    setAnulando(true);
+    try {
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/pos/ventas/${ventaAnularId}/anular`,
+        { method: 'POST', headers: apiH(token), body: JSON.stringify({ motivo: motivoAnulacion }) }
+      );
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`Venta ${ventaAnularTicket} anulada correctamente`);
+        setModalAnular(false);
+        setMotivoAnulacion('');
+        fetchVentas();
+        fetchEstado(); // actualizar totales de caja
+        window.dispatchEvent(new Event('dashboard:refresh')); // sincronizar KPIs del dashboard
+      } else {
+        toast.error(data.error || 'Error al anular la venta');
+      }
+    } catch { toast.error('Error de conexión'); }
+    finally { setAnulando(false); }
+  };
+
   // Carga inicial
   useEffect(() => { fetchEstado(); }, [fetchEstado]);
 
@@ -125,7 +176,8 @@ export default function Caja() {
   useEffect(() => {
     if (tab === 'historial') fetchHistorial();
     if (tab === 'arqueo') fetchArqueo();
-  }, [tab, fetchHistorial, fetchArqueo]);
+    if (tab === 'ventas') fetchVentas();
+  }, [tab, fetchHistorial, fetchArqueo, fetchVentas]);
 
   const post = async (url: string, body: any) => {
     const res = await fetch(url, { method: 'POST', headers: apiH(token!), body: JSON.stringify(body) });
@@ -318,6 +370,7 @@ export default function Caja() {
             {[
               { id: 'principal', label: 'Resumen' },
               { id: 'movimientos', label: `Movimientos (${movimientos.length})` },
+              { id: 'ventas', label: 'Ventas del día' },
               { id: 'arqueo', label: 'Arqueo' },
               { id: 'historial', label: 'Historial' },
             ].map(t => (
@@ -478,6 +531,108 @@ export default function Caja() {
             </div>
           )}
 
+          {/* ── Tab: Ventas del día ──────────────────────── */}
+          {tab === 'ventas' && (
+            <Card className="bg-white border-[#F97316]/10">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-gray-900 text-base flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-[#F97316]" /> Ventas del día
+                </CardTitle>
+                <button onClick={fetchVentas} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600" title="Refrescar">
+                  <RefreshCw className={`w-4 h-4 ${ventasLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </CardHeader>
+              <CardContent className="p-0">
+                {ventasLoading ? (
+                  <div className="text-center py-8 text-gray-600 text-sm">Cargando ventas...</div>
+                ) : ventas.length === 0 ? (
+                  <div className="text-center py-8 text-gray-600 text-sm">Sin ventas registradas hoy</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-100 bg-gray-50">
+                          <th className="text-left text-gray-600 px-4 py-3 font-medium">Hora</th>
+                          <th className="text-left text-gray-600 px-4 py-3 font-medium">Ticket</th>
+                          <th className="text-left text-gray-600 px-4 py-3 font-medium">Cliente / Mesa</th>
+                          <th className="text-left text-gray-600 px-4 py-3 font-medium">Pago</th>
+                          <th className="text-right text-gray-600 px-4 py-3 font-medium">Total</th>
+                          <th className="text-center text-gray-600 px-4 py-3 font-medium">Estado</th>
+                          {esAdmin && <th className="px-4 py-3"></th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ventas.map(v => {
+                          const anulada = v.anulada || v.estado === 'anulada';
+                          return (
+                            <tr key={v.id} className={`border-b border-gray-100 hover:bg-gray-50 ${anulada ? 'opacity-50' : ''}`}>
+                              <td className="px-4 py-3 text-gray-600 text-xs">
+                                {new Date(v.created_at || v.fecha).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                              <td className="px-4 py-3 text-gray-900 font-mono text-xs">{v.numero_ticket || v.numero || '—'}</td>
+                              <td className="px-4 py-3 text-gray-900 text-xs">
+                                {v.mesa ? `Mesa ${v.mesa}` : v.cliente_nombre || v.tipo_servicio || '—'}
+                              </td>
+                              <td className="px-4 py-3 text-gray-600 text-xs capitalize">{v.forma_pago || v.metodo_pago || '—'}</td>
+                              <td className="px-4 py-3 text-right font-bold text-gray-900">${fmt(Number(v.total || 0))}</td>
+                              <td className="px-4 py-3 text-center">
+                                {anulada ? (
+                                  <span className="bg-red-100 text-red-600 text-xs font-semibold px-2 py-0.5 rounded-full">Anulada</span>
+                                ) : (
+                                  <span className="bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">Válida</span>
+                                )}
+                              </td>
+                              {esAdmin && (
+                                <td className="px-4 py-3 text-center">
+                                  <div className="flex gap-1.5 justify-center">
+                                    {!anulada && (
+                                      <button
+                                        onClick={() => { setVentaAnularId(v.id); setVentaAnularTicket(v.numero_ticket || v.numero || v.id); setModalAnular(true); }}
+                                        className="px-2 py-1 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                                      >
+                                        Anular
+                                      </button>
+                                    )}
+                                    {!anulada && (
+                                      <button
+                                        onClick={async () => {
+                                          const idCliente = prompt('RUC/Cédula del cliente (dejar vacío = Consumidor Final):') || '9999999999999';
+                                          const nombre = idCliente === '9999999999999' ? 'Consumidor Final' : (prompt('Razón social:') || 'Consumidor Final');
+                                          const email  = prompt('Email (opcional):') || '';
+                                          try {
+                                            const res = await fetch(`https://${projectId}.supabase.co/functions/v1/server/facturacion/generar`, {
+                                              method: 'POST',
+                                              headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '', 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({
+                                                venta_id: v.id,
+                                                cliente: { identificacion: idCliente, tipo_identificacion: idCliente.length === 13 ? '04' : '05', razon_social: nombre, email },
+                                              }),
+                                            });
+                                            const d = await res.json();
+                                            if (res.ok) toast.success(`✅ Factura ${d.numero_factura || ''} generada`);
+                                            else toast.error(d.error || 'Error generando factura');
+                                          } catch (e: any) { toast.error(e.message); }
+                                        }}
+                                        title="Generar factura electrónica para esta venta"
+                                        className="px-2 py-1 text-xs font-medium text-orange-600 border border-orange-200 rounded-lg hover:bg-orange-50 transition-colors"
+                                      >
+                                        📄 Fact.
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* ── Tab: Historial ───────────────────────────── */}
           {tab === 'historial' && (
             <div className="space-y-3">
@@ -513,6 +668,47 @@ export default function Caja() {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Modal: Anular Venta ────────────────────────── */}
+      {modalAnular && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-md bg-white border-red-400/40 shadow-2xl">
+            <CardContent className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-gray-900 text-xl font-bold flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-500" /> Anular Venta
+                </h2>
+                <button onClick={() => { setModalAnular(false); setMotivoAnulacion(''); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                <p className="font-semibold">Ticket: {ventaAnularTicket}</p>
+                <p className="mt-1 text-xs">Esta acción marcará la venta como anulada y revertirá el stock de los productos. <strong>No se puede deshacer.</strong></p>
+              </div>
+              <div>
+                <Label className="text-gray-700 mb-1.5 block text-sm font-medium">Motivo de anulación *</Label>
+                <Input
+                  value={motivoAnulacion}
+                  onChange={e => setMotivoAnulacion(e.target.value)}
+                  placeholder="Ej: Error en el pedido, cliente canceló..."
+                  className="bg-gray-50 border-red-200 text-gray-900"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" className="flex-1 border-gray-300 text-gray-700" onClick={() => { setModalAnular(false); setMotivoAnulacion(''); }}>
+                  Cancelar
+                </Button>
+                <Button
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold"
+                  onClick={handleAnularVenta}
+                  disabled={anulando || !motivoAnulacion.trim()}
+                >
+                  {anulando ? 'Anulando...' : 'Confirmar Anulación'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ── Modal: Apertura de Caja ─────────────────────── */}

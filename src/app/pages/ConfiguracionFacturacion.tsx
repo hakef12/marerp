@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Save, Upload, CheckCircle, AlertCircle, KeyRound, ShieldCheck, ShieldX, Eye, EyeOff, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { Save, Upload, CheckCircle, AlertCircle, KeyRound, ShieldCheck, ShieldX, Eye, EyeOff, Wifi, WifiOff, RefreshCw, Mail, Send } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -30,6 +30,9 @@ export default function ConfiguracionFacturacion() {
   const [certLoading, setCertLoading] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
+  const [emailTestLoading, setEmailTestLoading] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<any>(null);
+  const [emailTestDest, setEmailTestDest] = useState('');
   const [certPassword, setCertPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [certInfo, setCertInfo] = useState<CertData | null>(null);
@@ -79,6 +82,23 @@ export default function ConfiguracionFacturacion() {
       if (data.certificado) setCertInfo(data.certificado);
     } catch {
       // silent
+    }
+  };
+
+  const testearEmail = async () => {
+    setEmailTestLoading(true);
+    setEmailTestResult(null);
+    try {
+      const data = await api.post(
+        '/facturacion/test-email',
+        emailTestDest ? { destinatario: emailTestDest } : {},
+        token
+      );
+      setEmailTestResult(data);
+    } catch (e: any) {
+      setEmailTestResult({ diagnostico: `❌ Error: ${e.message}` });
+    } finally {
+      setEmailTestLoading(false);
     }
   };
 
@@ -443,6 +463,104 @@ export default function ConfiguracionFacturacion() {
                   <p>• <strong>SSL/TLS:</strong> El certificado SSL del SRI puede no ser reconocido por Deno.</p>
                 </div>
               )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Diagnóstico de Email (Resend) ── */}
+      <Card className="bg-white border-[#F97316]/20">
+        <CardHeader>
+          <CardTitle className="text-gray-900 flex items-center gap-2">
+            <Mail className="w-5 h-5 text-[#F97316]" />
+            Diagnóstico de Envío de Emails
+          </CardTitle>
+          <CardDescription>
+            Verifica que Resend esté configurado correctamente y envía un email de prueba
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <Input
+              type="email"
+              placeholder="email@destino.com (opcional — usa el email del emisor si se deja vacío)"
+              value={emailTestDest}
+              onChange={e => setEmailTestDest(e.target.value)}
+              className="bg-gray-50 border-gray-200 text-gray-900 flex-1"
+            />
+            <Button
+              type="button"
+              onClick={testearEmail}
+              disabled={emailTestLoading}
+              className="bg-gradient-to-r from-blue-600 to-blue-500 hover:opacity-90 shrink-0"
+            >
+              {emailTestLoading
+                ? <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Probando...</>
+                : <><Send className="w-4 h-4 mr-2" />Probar Email</>
+              }
+            </Button>
+          </div>
+
+          {emailTestResult && (
+            <div className="space-y-3">
+              {/* Diagnóstico principal */}
+              <div className={`flex items-start gap-3 rounded-lg p-3 border ${
+                emailTestResult.diagnostico?.startsWith('✅')
+                  ? 'bg-green-50 border-green-300 text-green-700'
+                  : emailTestResult.diagnostico?.startsWith('⚠️')
+                  ? 'bg-yellow-50 border-yellow-300 text-yellow-700'
+                  : 'bg-red-50 border-red-300 text-red-600'
+              }`}>
+                <Mail className="w-5 h-5 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">{emailTestResult.diagnostico}</p>
+                  {emailTestResult.sugerencia && (
+                    <p className="text-sm mt-1">{emailTestResult.sugerencia}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Detalles técnicos */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs font-mono space-y-1.5">
+                {emailTestResult.secrets && (
+                  <>
+                    <div>
+                      <span className={`font-bold ${emailTestResult.secrets.resend_api_key_set ? 'text-green-600' : 'text-red-500'}`}>
+                        RESEND_API_KEY:
+                      </span>
+                      <span className="text-gray-600 ml-2">{emailTestResult.secrets.resend_api_key_prefix}</span>
+                    </div>
+                    <div>
+                      <span className={`font-bold ${emailTestResult.secrets.resend_from_domain_set ? 'text-green-600' : 'text-yellow-600'}`}>
+                        RESEND_FROM_DOMAIN:
+                      </span>
+                      <span className="text-gray-600 ml-2">{emailTestResult.secrets.resend_from_domain}</span>
+                    </div>
+                  </>
+                )}
+                {emailTestResult.from_calculado && (
+                  <div>
+                    <span className="font-bold text-blue-600">From (calculado):</span>
+                    <span className="text-gray-600 ml-2">{emailTestResult.from_calculado}</span>
+                  </div>
+                )}
+                {emailTestResult.destinatario_prueba && (
+                  <div>
+                    <span className="font-bold text-blue-600">Enviado a:</span>
+                    <span className="text-gray-600 ml-2">{emailTestResult.destinatario_prueba}</span>
+                  </div>
+                )}
+                {emailTestResult.resend_http_status && (
+                  <div>
+                    <span className={`font-bold ${emailTestResult.resend_http_status < 300 ? 'text-green-600' : 'text-red-500'}`}>
+                      Resend HTTP {emailTestResult.resend_http_status}:
+                    </span>
+                    <span className="text-gray-600 ml-2 break-all">
+                      {JSON.stringify(emailTestResult.resend_response)}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </CardContent>

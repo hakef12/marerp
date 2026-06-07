@@ -89,7 +89,11 @@ export function DatosClienteDialog({ open, onOpenChange, onConfirmar, onOmitir }
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) handleCancelar(); }}>
-      <DialogContent className="bg-white border-[#F97316]/20 max-w-md">
+      <DialogContent
+        className="bg-white border-[#F97316]/20 max-w-md"
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="text-gray-900 text-xl flex items-center gap-2">
             <FileText className="w-5 h-5 text-[#F97316]" />

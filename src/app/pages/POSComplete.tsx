@@ -17,7 +17,7 @@ import { DatosClienteDialog, type DatosCliente } from '../components/facturacion
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, DollarSign, CreditCard,
   Wallet, Utensils, Receipt, Percent, CheckCircle2, FileText, Printer,
-  MessageSquare, X, ChefHat, Clock, Users, Package, AlertCircle,
+  MessageSquare, X, ChefHat, Clock, Users, Package, AlertCircle, ClipboardList,
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -122,6 +122,77 @@ function imprimirComanda(comanda: {
   `;
 
   printHtml(html, `Comanda ${comanda.numero_orden}`, ancho);
+}
+
+// ─── Pre-cuenta Print ────────────────────────────────────────────────────────
+
+function imprimirPreCuenta(datos: {
+  tipo_servicio: TipoServicio;
+  mesa?: string;
+  cliente?: string;
+  items: ItemOrden[];
+  notas?: string;
+  descuento: number;
+  descuentoVal: number;
+  subtotalBase: number;
+  ivaVal: number;
+  total: number;
+  aplicarIVA: boolean;
+}) {
+  const ancho = (parseInt(localStorage.getItem('print_ancho') || '58') as 58 | 80) === 80 ? 80 : 58;
+  const ahora = new Date();
+  const hora = ahora.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+  const fecha = ahora.toLocaleDateString('es-EC');
+
+  const tipoLabel = datos.tipo_servicio === 'mesa'
+    ? `Mesa ${datos.mesa}`
+    : datos.tipo_servicio === 'para_llevar'
+    ? 'Para Llevar'
+    : 'Delivery';
+
+  const itemsHtml = datos.items.map(item => `
+    <div class="row" style="margin:2px 0;font-size:${ancho===58?'11px':'12px'}">
+      <span>${item.cantidad}x ${esc(item.producto.nombre)}</span>
+      <span>$${item.subtotal.toFixed(2)}</span>
+    </div>
+    ${item.descuento_item > 0 ? `<div style="font-size:9px;color:#555;margin-left:10px;">Dcto ${item.descuento_item}%</div>` : ''}
+  `).join('');
+
+  const descuentoHtml = datos.descuento > 0
+    ? `<div class="row" style="font-size:10px;color:#555;"><span>Descuento (${datos.descuento}%)</span><span>-$${datos.descuentoVal.toFixed(2)}</span></div>`
+    : '';
+
+  const ivaHtml = datos.aplicarIVA && datos.ivaVal > 0
+    ? `<div class="row" style="font-size:10px;"><span>IVA</span><span>$${datos.ivaVal.toFixed(2)}</span></div>`
+    : '';
+
+  const html = `
+    <div class="huge" style="border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:5px;">
+      PRE-CUENTA
+    </div>
+    <div class="c bold" style="font-size:${ancho===58?'12px':'14px'};margin-bottom:2px;">${esc(tipoLabel)}</div>
+    ${datos.cliente ? `<div class="c" style="font-size:9px;">Cliente: ${esc(datos.cliente)}</div>` : ''}
+    <div class="sep"></div>
+    <div class="row"><span class="lbl">Fecha:</span><span class="val">${fecha}</span></div>
+    <div class="row"><span class="lbl">Hora:</span><span class="val">${hora}</span></div>
+    <div class="sep"></div>
+    <div class="bold" style="margin-bottom:3px;font-size:10px;">DETALLE:</div>
+    ${itemsHtml}
+    <div class="sep"></div>
+    <div class="row" style="font-size:10px;"><span>Subtotal</span><span>$${datos.subtotalBase.toFixed(2)}</span></div>
+    ${descuentoHtml}
+    ${ivaHtml}
+    <div class="sep"></div>
+    <div class="row bold" style="font-size:${ancho===58?'14px':'16px'};">
+      <span>TOTAL</span><span>$${datos.total.toFixed(2)}</span>
+    </div>
+    <div class="sep"></div>
+    <div class="c sm" style="font-style:italic;margin-top:4px;">Este documento no es un comprobante fiscal.</div>
+    <div class="c sm">Solicite su factura al momento del pago.</div>
+    <div class="feed"></div>
+  `;
+
+  printHtml(html, 'Pre-cuenta', ancho);
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -408,7 +479,12 @@ export default function POS() {
         { method: 'POST', headers: apiHeaders(token), body: JSON.stringify(body) }
       );
       if (res.ok) return numero_orden;
-    } catch { /* continuar */ }
+      // Log del error para diagnóstico
+      const errData = await res.json().catch(() => ({}));
+      console.error('❌ [enviarCocina] HTTP', res.status, errData);
+    } catch (e: any) {
+      console.error('❌ [enviarCocina] Error de red:', e.message);
+    }
     return null;
   };
 
@@ -456,7 +532,13 @@ export default function POS() {
       let numero_orden = generarNumeroOrden();
       if (!comandaEnviada) {
         const n = await enviarCocina();
-        if (n) { numero_orden = n; setComandaEnviada(true); }
+        if (n) {
+          numero_orden = n;
+          setComandaEnviada(true);
+        } else {
+          // Avisar al usuario que la comanda no llegó a cocina
+          toast.warning('⚠️ Venta registrada pero no se pudo enviar la comanda a cocina. Usa "Enviar Cocina" manualmente.', { duration: 6000 });
+        }
       }
 
       const items = orden.map(i => ({
@@ -1064,14 +1146,14 @@ export default function POS() {
           </ScrollArea>
         </div>
 
-        {/* ── Panel derecho: Orden ── */}
+        {/* ── Panel derecho: Orden (sidebar scrollable) ── */}
         <div className={`
-          w-full md:w-[340px] lg:w-[380px] flex-none flex flex-col bg-gray-50 border-l border-[#F97316]/15
+          w-full md:w-[340px] lg:w-[380px] flex-none flex flex-col bg-gray-50 border-l border-[#F97316]/15 overflow-hidden
           ${vistaMovil === 'productos' ? 'hidden md:flex' : 'flex'}
         `}>
 
-          {/* Header orden */}
-          <div className="flex-none px-4 py-3 border-b border-[#F97316]/15">
+          {/* Header orden — sticky arriba */}
+          <div className="flex-none px-4 py-3 border-b border-[#F97316]/15 bg-gray-50 z-10">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4 text-[#F97316]" />
@@ -1094,7 +1176,6 @@ export default function POS() {
                 </button>
               )}
             </div>
-            {/* Resumen mesa/cliente */}
             {(mesa || cliente) && (
               <div className="mt-1.5 flex gap-2 text-xs text-gray-600">
                 {mesa && tipoServicio === 'mesa' && <span className="text-[#F97316]">Mesa {mesa}</span>}
@@ -1103,213 +1184,221 @@ export default function POS() {
             )}
           </div>
 
-          {/* Items */}
-          <ScrollArea className="flex-1">
+          {/* Contenido scrollable: items + totales + botones */}
+          <div className="flex-1 overflow-y-auto">
             {orden.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 text-gray-600 px-6">
                 <ShoppingCart className="w-12 h-12 mb-3 opacity-15" />
                 <p className="text-sm text-center">Toca un producto para agregarlo a la orden</p>
               </div>
             ) : (
-              <div className="p-3 space-y-2">
-                {orden.map(item => (
-                  <div key={item.producto.id} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-                    <div className="flex items-start gap-2">
-                      {/* Cantidad */}
-                      <div className="flex items-center gap-1 bg-white rounded-lg p-1 flex-none">
-                        <button
-                          onClick={() => cambiarCantidad(item.producto.id, -1)}
-                          className="w-6 h-6 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span className="text-gray-900 font-bold text-sm w-6 text-center">{item.cantidad}</span>
-                        <button
-                          onClick={() => cambiarCantidad(item.producto.id, +1)}
-                          className="w-6 h-6 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-gray-900 text-sm font-medium truncate">{item.producto.nombre}</p>
-                        <p className="text-xs text-gray-600">${item.precio_unitario.toFixed(2)} c/u</p>
-                        {item.notas && (
-                          <p className="text-xs text-amber-400 mt-0.5 flex items-center gap-1">
-                            <MessageSquare className="w-3 h-3" /> {item.notas}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Subtotal + acciones */}
-                      <div className="flex flex-col items-end gap-1 flex-none">
-                        <p className="text-[#F97316] font-bold text-sm">${item.subtotal.toFixed(2)}</p>
-                        <div className="flex gap-1">
+              <>
+                {/* Items */}
+                <div className="p-3 space-y-2">
+                  {orden.map(item => (
+                    <div key={item.producto.id} className="bg-white rounded-xl p-3 border border-gray-100">
+                      <div className="flex items-start gap-2">
+                        {/* Cantidad */}
+                        <div className="flex items-center gap-1 bg-gray-50 rounded-lg p-1 flex-none">
                           <button
-                            onClick={() => {
-                              setEditandoNota(item.producto.id);
-                              setNotaTemp(item.notas);
-                            }}
-                            className="w-5 h-5 flex items-center justify-center text-gray-600 hover:text-amber-400 transition-colors"
-                            title="Agregar nota"
+                            onClick={() => cambiarCantidad(item.producto.id, -1)}
+                            className="w-6 h-6 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
                           >
-                            <MessageSquare className="w-3.5 h-3.5" />
+                            <Minus className="w-3 h-3" />
                           </button>
+                          <span className="text-gray-900 font-bold text-sm w-6 text-center">{item.cantidad}</span>
                           <button
-                            onClick={() => eliminarItem(item.producto.id)}
-                            className="w-5 h-5 flex items-center justify-center text-gray-600 hover:text-red-400 transition-colors"
+                            onClick={() => cambiarCantidad(item.producto.id, +1)}
+                            className="w-6 h-6 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded"
                           >
-                            <X className="w-3.5 h-3.5" />
+                            <Plus className="w-3 h-3" />
                           </button>
                         </div>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-900 text-sm font-medium truncate">{item.producto.nombre}</p>
+                          <p className="text-xs text-gray-600">${item.precio_unitario.toFixed(2)} c/u</p>
+                          {item.notas && (
+                            <p className="text-xs text-amber-400 mt-0.5 flex items-center gap-1">
+                              <MessageSquare className="w-3 h-3" /> {item.notas}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Subtotal + acciones */}
+                        <div className="flex flex-col items-end gap-1 flex-none">
+                          <p className="text-[#F97316] font-bold text-sm">${item.subtotal.toFixed(2)}</p>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => { setEditandoNota(item.producto.id); setNotaTemp(item.notas); }}
+                              className="w-5 h-5 flex items-center justify-center text-gray-600 hover:text-amber-400 transition-colors"
+                              title="Agregar nota"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => eliminarItem(item.producto.id)}
+                              className="w-5 h-5 flex items-center justify-center text-gray-600 hover:text-red-400 transition-colors"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Descuento por ítem */}
+                      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
+                        <span className="text-xs text-gray-600 whitespace-nowrap flex items-center gap-1">
+                          <Percent className="w-3 h-3" /> Dcto:
+                        </span>
+                        <input
+                          type="number" min="0" max="100" step="1"
+                          value={item.descuento_item || ''}
+                          onChange={e => cambiarDescuentoItem(item.producto.id, Number(e.target.value))}
+                          placeholder="0"
+                          className="w-16 h-7 text-sm bg-gray-100 border border-amber-400/40 rounded px-2 text-amber-300 placeholder:text-gray-400 focus:outline-none focus:border-amber-400"
+                        />
+                        <span className="text-xs text-gray-600">%</span>
+                        {(item.descuento_item || 0) > 0 && (
+                          <span className="text-xs text-amber-400 font-bold ml-auto">
+                            -{item.descuento_item}% = -${(item.precio_unitario * item.cantidad * (item.descuento_item / 100)).toFixed(2)}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    {/* Descuento por ítem */}
-                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
-                      <span className="text-xs text-gray-600 whitespace-nowrap flex items-center gap-1">
-                        <Percent className="w-3 h-3" /> Dcto:
-                      </span>
-                      <input
-                        type="number" min="0" max="100" step="1"
-                        value={item.descuento_item || ''}
-                        onChange={e => cambiarDescuentoItem(item.producto.id, Number(e.target.value))}
-                        placeholder="0"
-                        className="w-16 h-7 text-sm bg-gray-100 border border-amber-400/40 rounded px-2 text-amber-300 placeholder:text-gray-400 focus:outline-none focus:border-amber-400"
-                      />
-                      <span className="text-xs text-gray-600">%</span>
-                      {(item.descuento_item || 0) > 0 && (
-                        <span className="text-xs text-amber-400 font-bold ml-auto">
-                          -{item.descuento_item}% = -${((item.precio_unitario * item.cantidad * (item.descuento_item / 100))).toFixed(2)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  ))}
 
-                {/* Notas generales */}
-                <div>
+                  {/* Notas generales */}
                   <textarea
                     value={notas}
                     onChange={e => setNotas(e.target.value)}
                     placeholder="Notas generales de la orden..."
                     rows={2}
-                    className="w-full text-xs bg-gray-50 border border-gray-100 rounded-lg p-2 text-gray-600 placeholder:text-gray-400 resize-none focus:outline-none focus:border-[#F97316]/30"
+                    className="w-full text-xs bg-white border border-gray-100 rounded-lg p-2 text-gray-600 placeholder:text-gray-400 resize-none focus:outline-none focus:border-[#F97316]/30"
                   />
                 </div>
-              </div>
+
+                {/* Totales + botones */}
+                <div className="border-t border-[#F97316]/15 p-4 space-y-3 bg-gray-50">
+                  {/* Descuento global e IVA */}
+                  <div className="flex gap-3 items-center">
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <Percent className="w-3.5 h-3.5 text-gray-600" />
+                      <Input
+                        type="number" min="0" max="100"
+                        value={descuento || ''}
+                        onChange={e => setDescuento(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+                        placeholder="Dcto global %"
+                        className="h-8 text-sm bg-white border-gray-100 text-gray-900 placeholder:text-gray-400"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={aplicarIVA}
+                        onChange={e => setAplicarIVA(e.target.checked)}
+                        className="w-4 h-4 accent-[#F97316]"
+                      />
+                      IVA
+                    </label>
+                  </div>
+
+                  {/* Costo de envío (solo delivery) */}
+                  {tipoServicio === 'delivery' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600 whitespace-nowrap">🛵 Envío $</span>
+                      <Input
+                        type="number" min="0" step="0.01"
+                        value={costoEnvio || ''}
+                        onChange={e => setCostoEnvio(Math.max(0, parseFloat(e.target.value) || 0))}
+                        placeholder="0.00"
+                        className="h-8 text-sm bg-white border-orange-400/30 text-gray-900 placeholder:text-gray-400 flex-1"
+                      />
+                    </div>
+                  )}
+
+                  {/* Resumen de totales */}
+                  <div className="bg-white rounded-xl border border-gray-100 p-3 space-y-1 text-sm">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Subtotal{hayIVAIncluido ? ' (c/IVA incl.)' : ''}</span>
+                      <span className="text-gray-900">${subtotalBruto.toFixed(2)}</span>
+                    </div>
+                    {orden.some(i => (i.descuento_item || 0) > 0) && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Dcto. por ítem</span>
+                        <span className="text-amber-400">incluido</span>
+                      </div>
+                    )}
+                    {descuento > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Descuento ({descuento}%)</span>
+                        <span className="text-red-400">-${descuentoVal.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {hayIVAIncluido && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Base sin IVA</span>
+                        <span className="text-gray-900">${subtotalBase.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {aplicarIVA && ivaVal > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>IVA{hayIVAIncluido ? ' desglosado' : ''}</span>
+                        <span className="text-gray-900">${ivaVal.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {tipoServicio === 'delivery' && costoEnvio > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>🛵 Costo de envío</span>
+                        <span className="text-orange-400">+${costoEnvio.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <Separator className="bg-gray-100 my-1" />
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-900 font-bold text-base">TOTAL</span>
+                      <span className="text-[#F97316] font-bold text-2xl">${total.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  {/* Botones: Pre-cuenta | Cocina / Cobrar */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      onClick={() => imprimirPreCuenta({
+                        tipo_servicio: tipoServicio, mesa, cliente, items: orden, notas,
+                        descuento, descuentoVal, subtotalBase, ivaVal, total, aplicarIVA,
+                      })}
+                      disabled={procesando}
+                      variant="outline"
+                      className="h-11 font-semibold text-sm border-gray-200 text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                    >
+                      <ClipboardList className="w-4 h-4 mr-1.5 text-gray-500" />
+                      Pre-cuenta
+                    </Button>
+                    <Button
+                      onClick={handleEnviarCocina}
+                      disabled={procesando}
+                      className={`h-11 font-bold text-sm ${
+                        comandaEnviada
+                          ? 'bg-green-700/80 hover:bg-green-700 text-white'
+                          : 'bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-white'
+                      }`}
+                    >
+                      <ChefHat className="w-4 h-4 mr-1.5" />
+                      {comandaEnviada ? '✓ Cocina' : 'Cocina'}
+                    </Button>
+                  </div>
+                  <Button
+                    onClick={handleCobrar}
+                    disabled={procesando}
+                    className="w-full h-12 font-bold text-base bg-gradient-to-r from-[#F97316] to-[#C2410C] hover:from-[#F97316]/90 hover:to-[#C2410C]/90 text-white"
+                  >
+                    <DollarSign className="w-5 h-5 mr-2" />
+                    Cobrar ${total.toFixed(2)}
+                  </Button>
+                </div>
+              </>
             )}
-          </ScrollArea>
-
-          {/* Totales + acciones */}
-          {orden.length > 0 && (
-            <div className="flex-none border-t border-[#F97316]/15 p-4 space-y-3 bg-gray-50">
-              {/* Descuento global e IVA */}
-              <div className="flex gap-3 items-center">
-                <div className="flex items-center gap-1.5 flex-1">
-                  <Percent className="w-3.5 h-3.5 text-gray-600" />
-                  <Input
-                    type="number" min="0" max="100"
-                    value={descuento || ''}
-                    onChange={e => setDescuento(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
-                    placeholder="Dcto global %"
-                    className="h-8 text-sm bg-gray-50 border-gray-100 text-gray-900 placeholder:text-gray-400"
-                  />
-                </div>
-                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={aplicarIVA}
-                    onChange={e => setAplicarIVA(e.target.checked)}
-                    className="w-4 h-4 accent-[#F97316]"
-                  />
-                  IVA
-                </label>
-              </div>
-
-              {/* Costo de envío (solo delivery) */}
-              {tipoServicio === 'delivery' && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-600 whitespace-nowrap">🛵 Envío $</span>
-                  <Input
-                    type="number" min="0" step="0.01"
-                    value={costoEnvio || ''}
-                    onChange={e => setCostoEnvio(Math.max(0, parseFloat(e.target.value) || 0))}
-                    placeholder="0.00"
-                    className="h-8 text-sm bg-gray-50 border-orange-400/30 text-gray-900 placeholder:text-gray-400 flex-1"
-                  />
-                </div>
-              )}
-
-              {/* Resumen */}
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between text-gray-600">
-                  <span>Subtotal{hayIVAIncluido ? ' (c/IVA incl.)' : ''}</span>
-                  <span className="text-gray-900">${subtotalBruto.toFixed(2)}</span>
-                </div>
-                {orden.some(i => (i.descuento_item || 0) > 0) && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>Dcto. por ítem</span>
-                    <span className="text-amber-400">incluido</span>
-                  </div>
-                )}
-                {descuento > 0 && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>Descuento global ({descuento}%)</span>
-                    <span className="text-red-400">-${descuentoVal.toFixed(2)}</span>
-                  </div>
-                )}
-                {hayIVAIncluido && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>Base sin IVA</span>
-                    <span className="text-gray-900">${subtotalBase.toFixed(2)}</span>
-                  </div>
-                )}
-                {aplicarIVA && ivaVal > 0 && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>IVA{hayIVAIncluido ? ' desglosado' : ''}</span>
-                    <span className="text-gray-900">${ivaVal.toFixed(2)}</span>
-                  </div>
-                )}
-                {tipoServicio === 'delivery' && costoEnvio > 0 && (
-                  <div className="flex justify-between text-gray-600">
-                    <span>🛵 Costo de envío</span>
-                    <span className="text-orange-400">+${costoEnvio.toFixed(2)}</span>
-                  </div>
-                )}
-                <Separator className="bg-gray-100 my-1" />
-                <div className="flex justify-between">
-                  <span className="text-gray-900 font-bold text-base">TOTAL</span>
-                  <span className="text-[#F97316] font-bold text-2xl">${total.toFixed(2)}</span>
-                </div>
-              </div>
-
-              {/* Botones principales */}
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  onClick={handleEnviarCocina}
-                  disabled={procesando}
-                  className={`h-12 font-bold text-sm ${
-                    comandaEnviada
-                      ? 'bg-green-700/80 hover:bg-green-700 text-gray-900'
-                      : 'bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-gray-900'
-                  }`}
-                >
-                  <ChefHat className="w-4 h-4 mr-1.5" />
-                  {comandaEnviada ? '✓ Cocina' : 'Enviar Cocina'}
-                </Button>
-                <Button
-                  onClick={handleCobrar}
-                  disabled={procesando}
-                  className="h-12 font-bold text-sm bg-gradient-to-r from-[#F97316] to-[#C2410C] hover:from-[#F97316]/90 hover:to-[#C2410C]/90 text-white"
-                >
-                  <DollarSign className="w-4 h-4 mr-1.5" />
-                  Cobrar
-                </Button>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
 

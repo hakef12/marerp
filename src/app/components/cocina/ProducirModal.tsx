@@ -53,7 +53,7 @@ export default function ProducirModal({ isOpen, onClose, onSuccess, recetaPresel
         }
         
         // 3. ✅ Cargar Catálogo de Productos (Para traducciones seguras)
-        const productosResponse = await fetch(`https://${projectId}.supabase.co/functions/v1/server/productos`, { headers });
+        const productosResponse = await fetch(`https://${projectId}.supabase.co/functions/v1/server/pos/productos`, { headers });
         if (productosResponse.ok) {
           const productosData = await productosResponse.json();
           setCatalogoProductos(productosData.productos || []);

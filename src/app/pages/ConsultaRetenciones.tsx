@@ -13,6 +13,8 @@ import {
   CheckCircle, XCircle, Clock, Printer,
 } from 'lucide-react';
 import { Pagination, PaginationContent, PaginationItem, PaginationPrevious, PaginationNext, PaginationLink } from '../components/ui/pagination';
+import { ExportButtons } from '../components/ExportButtons';
+import { exportToPDF, exportToExcel } from '../utils/exportUtils';
 import { projectId } from '/utils/supabase/info';
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/server`;
@@ -255,9 +257,53 @@ export default function ConsultaRetenciones() {
             {total} retención{total !== 1 ? 'es' : ''} registrada{total !== 1 ? 's' : ''}
           </p>
         </div>
-        <Button onClick={() => load(page)} variant="outline" className="border-[#F97316]/30 text-gray-700">
-          <RefreshCw className="w-4 h-4 mr-2" />Actualizar
-        </Button>
+        <div className="flex gap-2">
+          <ExportButtons
+            variant="compact"
+            onExportExcel={() => exportToExcel(
+              retenciones.map(r => ({
+                'N° Retención': r.numero_retencion || r.secuencial || '—',
+                'Fecha Emisión': r.fecha_emision || '',
+                'Proveedor / Sujeto': r.sujeto_retencion_razon_social || r.proveedor_nombre || '—',
+                'RUC / CI': r.sujeto_retencion_identificacion || '—',
+                'N° Factura Ref.': r.numero_documento_sustento || '—',
+                'Base Imponible Renta': r.impuestos?.find((i: any) => i.codigo === '1' || i.tipo === 'renta')?.base_imponible ?? 0,
+                '% Ret. Renta': r.impuestos?.find((i: any) => i.codigo === '1' || i.tipo === 'renta')?.porcentaje_retener ?? '',
+                'Valor Ret. Renta': r.impuestos?.find((i: any) => i.codigo === '1' || i.tipo === 'renta')?.valor_retenido ?? 0,
+                'Base Imponible IVA': r.impuestos?.find((i: any) => i.codigo === '2' || i.tipo === 'iva')?.base_imponible ?? 0,
+                '% Ret. IVA': r.impuestos?.find((i: any) => i.codigo === '2' || i.tipo === 'iva')?.porcentaje_retener ?? '',
+                'Valor Ret. IVA': r.impuestos?.find((i: any) => i.codigo === '2' || i.tipo === 'iva')?.valor_retenido ?? 0,
+                'Total Retenido': r.total_retenido ?? 0,
+                'Estado': r.estado_autorizacion || r.estado || '—',
+                'N° Autorización': r.numero_autorizacion || '—',
+                'Clave Acceso': r.clave_acceso || '—',
+              })),
+              `retenciones_${new Date().toISOString().split('T')[0]}`,
+              'Retenciones en la Fuente'
+            )}
+            onExportPDF={() => exportToPDF(
+              retenciones.map(r => ({
+                numero_retencion: r.numero_retencion || r.secuencial || '—',
+                fecha_emision: r.fecha_emision || '—',
+                proveedor: r.sujeto_retencion_razon_social || r.proveedor_nombre || '—',
+                total_retenido: `$${Number(r.total_retenido || 0).toFixed(2)}`,
+                estado: r.estado_autorizacion || r.estado || '—',
+              })),
+              [
+                { header: 'N° Retención', key: 'numero_retencion' },
+                { header: 'Fecha', key: 'fecha_emision' },
+                { header: 'Proveedor / Sujeto', key: 'proveedor' },
+                { header: 'Total Retenido', key: 'total_retenido' },
+                { header: 'Estado', key: 'estado' },
+              ],
+              'Retenciones en la Fuente',
+              `retenciones_${new Date().toISOString().split('T')[0]}`
+            )}
+          />
+          <Button onClick={() => load(page)} variant="outline" className="border-[#F97316]/30 text-gray-700">
+            <RefreshCw className="w-4 h-4 mr-2" />Actualizar
+          </Button>
+        </div>
       </div>
 
       {/* Filtros */}

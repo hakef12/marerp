@@ -237,8 +237,20 @@ export async function handleEmitirRetencion(req: Request, empresaId: string): Pr
     const yy  = String(nowEc.getUTCFullYear());
     const ambCod = config.ambiente === 'produccion' ? '2' : '1';
 
-    // Obtener secuencial actual de retenciones
+    // ── Incremento atómico del secuencial de retenciones (race condition fix) ──
     const secuencialActual = config.secuencial_retenciones || 1;
+    const { data: secRetResult } = await getDB()
+      .from('configuracion_facturacion')
+      .update({ secuencial_retenciones: secuencialActual + 1, updated_at: new Date().toISOString() })
+      .eq('empresa_id', empresaId)
+      .eq('secuencial_retenciones', secuencialActual)
+      .select('secuencial_retenciones')
+      .maybeSingle();
+    if (!secRetResult) {
+      return Response.json({
+        error: 'Conflicto al reservar el secuencial de retención. Intente de nuevo.',
+      }, { status: 409 });
+    }
     const secStr = String(secuencialActual).padStart(9, '0');
     const cod8 = Math.floor(10000000 + Math.random() * 90000000).toString();
     const estab3  = String(config.codigo_establecimiento || '001').padStart(3, '0').substring(0, 3);
@@ -334,11 +346,7 @@ export async function handleEmitirRetencion(req: Request, empresaId: string): Pr
 
     const retencionId = inserted.id;
 
-    // ── Incrementar secuencial ────────────────────────────
-    await getDB().from('configuracion_facturacion').update({
-      secuencial_retenciones: secuencialActual + 1,
-      updated_at: new Date().toISOString(),
-    }).eq('empresa_id', empresaId);
+    // (secuencial ya fue incrementado atómicamente antes de generar el XML)
 
     // ── Enviar al SRI ─────────────────────────────────────
     const ambienteStr = normalizeAmbiente(config.ambiente);

@@ -159,7 +159,7 @@ export function setupCajaRoutes(app: any, authMiddleware: any) {
         diferencia,
         observaciones_cierre: body.observaciones || null,
         movimientos: [...(sesion.movimientos || []), movCierre],
-      }).eq('id', sesion.id).select().single();
+      }).eq('id', sesion.id).eq('empresa_id', auth.empresaId).select().single();
       if (error) throw error;
 
       const movs: MovimientoCaja[] = data.movimientos || [];
@@ -214,7 +214,7 @@ export function setupCajaRoutes(app: any, authMiddleware: any) {
 
       const movs = [...(sesion.movimientos || []), movimiento];
       const db = getDB();
-      await db.from('turnos_caja').update({ movimientos: movs }).eq('id', sesion.id);
+      await db.from('turnos_caja').update({ movimientos: movs }).eq('id', sesion.id).eq('empresa_id', auth.empresaId);
 
       // Asientos contables automáticos
       const fechaHoy = new Date().toISOString().split('T')[0];

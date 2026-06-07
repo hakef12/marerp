@@ -25,12 +25,12 @@ async function getCajaAbierta(empresaId: string, bodegaId?: string): Promise<{ s
   let query = db.from('turnos_caja').select('*')
     .eq('empresa_id', empresaId).eq('estado', 'abierta');
   if (bodegaId) query = query.eq('bodega_id', bodegaId);
-  const { data } = await query.limit(1).single();
+  const { data } = await query.limit(1).maybeSingle();
   if (data) return { sesion: data };
   // If bodega_id filter found nothing, try any open caja
   if (bodegaId) {
     const { data: any } = await db.from('turnos_caja').select('*')
-      .eq('empresa_id', empresaId).eq('estado', 'abierta').limit(1).single();
+      .eq('empresa_id', empresaId).eq('estado', 'abierta').limit(1).maybeSingle();
     if (any) return { sesion: any };
   }
   return null;
@@ -259,13 +259,24 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
       let q = db.from('ventas')
         .select('*', { count: 'exact' })
         .eq('empresa_id', auth.empresaId)
-        .order('fecha', { ascending: false })
         .order('created_at', { ascending: false })
         .range(from, to);
 
-      if (incluir_anuladas !== 'true') q = q.eq('anulada', false);
-      if (fecha_inicio) q = q.gte('fecha', fecha_inicio);
-      if (fecha_fin)    q = q.lte('fecha', fecha_fin);
+      // anulada puede ser NULL en ventas antiguas → tratar NULL como false
+      if (incluir_anuladas !== 'true') q = q.or('anulada.is.null,anulada.eq.false');
+
+      // Filtrar por fecha usando created_at (siempre existe) con soporte de zona horaria Ecuador (UTC-5)
+      if (fecha_inicio) {
+        // inicio del día en Ecuador = fecha_inicio 05:00 UTC
+        const inicioUtc = new Date(`${fecha_inicio}T05:00:00.000Z`).toISOString();
+        q = q.gte('created_at', inicioUtc);
+      }
+      if (fecha_fin) {
+        // fin del día en Ecuador = fecha_fin+1 05:00 UTC (= medianoche Ecuador)
+        const finDate = new Date(`${fecha_fin}T05:00:00.000Z`);
+        finDate.setDate(finDate.getDate() + 1);
+        q = q.lt('created_at', finDate.toISOString());
+      }
 
       const { data, error, count } = await q;
       if (error) throw error;

@@ -13,10 +13,18 @@ const POLL_INTERVAL = 8000; // 8 segundos
 
 function fmt(seconds: number) {
   if (!seconds || seconds < 0) return '00:00';
+  if (seconds >= 3600) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return `${h}h ${String(m).padStart(2, '0')}m`;
+  }
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
+
+/** Una comanda se considera "vencida/stale" si lleva más de 4 horas sin atenderse */
+const STALE_SECS = 4 * 60 * 60;
 
 function elapsed(from: string, now: number) {
   try {
@@ -35,26 +43,28 @@ function timeColor(secs: number) {
 // ─── Comanda card ─────────────────────────────────────────────────────────────
 
 function ComandaCard({
-  comanda, now, onAccion, accionLabel, accionColor,
+  comanda, now, onAccion, onArchivar, accionLabel, accionColor,
 }: {
-  comanda: any; now: number; onAccion: () => void; accionLabel: string; accionColor: string;
+  comanda: any; now: number; onAccion: () => void; onArchivar: () => void; accionLabel: string; accionColor: string;
 }) {
   const secs = elapsed(comanda.created_at || comanda.fecha_creacion, now);
   const urgente = secs > 900;
+  const stale   = secs > STALE_SECS; // +4 horas → vencida
 
   return (
     <div
       className="rounded-2xl border-2 overflow-hidden flex flex-col"
       style={{
-        borderColor: urgente ? '#ef4444' : accionColor + '66',
-        backgroundColor: '#0a1220',
-        boxShadow: urgente ? '0 0 20px rgba(239,68,68,0.25)' : undefined,
+        borderColor: stale ? '#d1d5db' : urgente ? '#ef4444' : accionColor + '66',
+        backgroundColor: 'white',
+        opacity: stale ? 0.75 : 1,
+        boxShadow: urgente && !stale ? '0 0 20px rgba(239,68,68,0.25)' : undefined,
       }}
     >
       {/* Header */}
-      <div className="px-4 py-3 flex items-center justify-between" style={{ background: accionColor + '18' }}>
+      <div className="px-4 py-3 flex items-center justify-between" style={{ background: stale ? '#f3f4f6' : accionColor + '18' }}>
         <div>
-          <div className="text-gray-900 font-black text-xl flex items-center gap-2">
+          <div className="text-gray-900 font-black text-xl flex items-center gap-2 flex-wrap">
             {comanda.mesa
               ? `Mesa ${comanda.mesa}`
               : comanda.tipo_servicio === 'para_llevar'
@@ -62,11 +72,15 @@ function ComandaCard({
               : comanda.tipo_servicio === 'delivery'
               ? '🛵 Delivery'
               : comanda.numero_orden || '—'}
-            {urgente && (
+            {stale ? (
+              <span className="text-xs font-bold bg-gray-500 text-white px-2 py-0.5 rounded-full">
+                VENCIDA
+              </span>
+            ) : urgente ? (
               <span className="text-xs font-bold bg-red-500 text-white px-2 py-0.5 rounded-full animate-pulse">
                 URGENTE
               </span>
-            )}
+            ) : null}
           </div>
           {comanda.cliente && (
             <div className="text-sm mt-0.5" style={{ color: accionColor }}>
@@ -77,10 +91,10 @@ function ComandaCard({
           <div className="text-xs text-gray-600 mt-0.5">{comanda.numero_orden}</div>
         </div>
         <div className="text-right">
-          <div className="text-3xl font-black tabular-nums" style={{ color: timeColor(secs) }}>
+          <div className="text-3xl font-black tabular-nums" style={{ color: stale ? '#6b7280' : timeColor(secs) }}>
             {fmt(secs)}
           </div>
-          <div className="text-xs text-gray-600">min</div>
+          <div className="text-xs text-gray-600">{secs >= 3600 ? 'horas' : 'min'}</div>
         </div>
       </div>
 
@@ -102,21 +116,30 @@ function ComandaCard({
           </div>
         ))}
         {comanda.notas && (
-          <div className="border border-yellow-500/30 bg-yellow-500/8 rounded-xl px-3 py-2 text-yellow-300 text-sm">
+          <div className="border border-yellow-400/50 bg-yellow-50 rounded-xl px-3 py-2 text-yellow-700 text-sm">
             💬 {comanda.notas}
           </div>
         )}
       </div>
 
       {/* Acción */}
-      <div className="p-3 pt-0">
-        <button
-          onClick={onAccion}
-          className="w-full py-3 rounded-xl font-bold text-base transition-all hover:brightness-110 active:scale-95"
-          style={{ backgroundColor: accionColor, color: '#000' }}
-        >
-          {accionLabel}
-        </button>
+      <div className="p-3 pt-0 flex gap-2">
+        {stale ? (
+          <button
+            onClick={onArchivar}
+            className="flex-1 py-3 rounded-xl font-bold text-base transition-all hover:brightness-110 active:scale-95 bg-gray-600 text-white"
+          >
+            🗑 Archivar (vencida)
+          </button>
+        ) : (
+          <button
+            onClick={onAccion}
+            className="flex-1 py-3 rounded-xl font-bold text-base transition-all hover:brightness-110 active:scale-95"
+            style={{ backgroundColor: accionColor, color: '#000' }}
+          >
+            {accionLabel}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -139,7 +162,7 @@ function Columna({ title, icon, color, count, children }: {
           {count}
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+      <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-gray-300">
         {count === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-gray-600">
             <div style={{ color: color + '40' }} className="mb-2">{icon}</div>
@@ -221,7 +244,14 @@ export default function KDSScreen() {
 
   const cambiarEstado = async (id: string, estado: string) => {
     if (!id || id === 'undefined') return;
-    setComandas(prev => prev.map(c => c.id === id ? { ...c, estado } : c));
+    setComandas(prev => {
+      const updated = prev.map(c => c.id === id ? { ...c, estado } : c);
+      // Remover inmediatamente del KDS si se marca como entregada/cancelada
+      if (estado === 'entregada' || estado === 'cancelada') {
+        return updated.filter(c => c.id !== id);
+      }
+      return updated;
+    });
     const token = localStorage.getItem('erp_token') || '';
     try {
       await fetch(
@@ -241,12 +271,28 @@ export default function KDSScreen() {
     }
   };
 
+  /** Archivar (marcar como entregada) una comanda vencida */
+  const archivarComanda = (id: string) => cambiarEstado(id, 'entregada');
+
+  /** Archivar TODAS las vencidas de golpe */
+  const archivarTodasVencidas = () => {
+    const nowMs = Date.now();
+    const vencidas = comandas.filter(
+      c => elapsed(c.created_at || c.fecha_creacion, nowMs) > STALE_SECS
+    );
+    vencidas.forEach(c => archivarComanda(c.id));
+  };
+
+  const nowMs = Date.now();
   const pendientes = comandas.filter(c => c.estado === 'pendiente');
   const enPrep = comandas.filter(c => c.estado === 'en_preparacion');
   const listas = comandas.filter(c => c.estado === 'lista');
+  const totalVencidas = [...pendientes, ...enPrep].filter(
+    c => elapsed(c.created_at || c.fecha_creacion, nowMs) > STALE_SECS
+  ).length;
 
   return (
-    <div className="min-h-screen bg-[#060d18] flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* ── Top bar ── */}
       <div className="flex-none flex items-center justify-between px-6 py-3 bg-white border-b border-gray-100">
         <div className="flex items-center gap-3">
@@ -267,6 +313,17 @@ export default function KDSScreen() {
             {online ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
             {online ? 'En línea' : 'Sin conexión'}
           </div>
+
+          {/* Archivar vencidas */}
+          {totalVencidas > 0 && (
+            <button
+              onClick={archivarTodasVencidas}
+              className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors flex items-center gap-1.5"
+              title="Archivar todas las comandas con más de 4 horas"
+            >
+              🗑 Archivar vencidas ({totalVencidas})
+            </button>
+          )}
 
           {/* Botón refresh */}
           <button
@@ -300,6 +357,7 @@ export default function KDSScreen() {
               comanda={c}
               now={now}
               onAccion={() => cambiarEstado(c.id, 'en_preparacion')}
+              onArchivar={() => archivarComanda(c.id)}
               accionLabel="🔥 Iniciar preparación"
               accionColor="#3b82f6"
             />
@@ -319,6 +377,7 @@ export default function KDSScreen() {
               comanda={c}
               now={now}
               onAccion={() => cambiarEstado(c.id, 'lista')}
+              onArchivar={() => archivarComanda(c.id)}
               accionLabel="✓ Lista para servir"
               accionColor="#22c55e"
             />
@@ -338,6 +397,7 @@ export default function KDSScreen() {
               comanda={c}
               now={now}
               onAccion={() => cambiarEstado(c.id, 'entregada')}
+              onArchivar={() => archivarComanda(c.id)}
               accionLabel="Entregada ✓"
               accionColor="#6b7280"
             />
