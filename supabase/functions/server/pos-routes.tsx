@@ -14,6 +14,9 @@ import {
 
 const ROLES_ADMIN = ['gerente', 'admin', 'super_admin'];
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUUID = (v: any): boolean => typeof v === 'string' && UUID_RE.test(v);
+
 const getDB = () => createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -213,24 +216,32 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
         fecha_anulacion: new Date().toISOString(),
       };
 
-      // Guardar venta anulada en SQL (guardarVenta hace upsert por id)
+      // Guardar venta anulada en SQL (guardarVenta hace upsert por id) — esto
+      // es lo que realmente importa; lo demás (revertir stock) es best-effort
+      // y NO debe hacer fallar la anulación si algo sale mal.
       await guardarVenta(auth.empresaId, ventas[idx]);
 
-      // Revertir stock
-      const items = ventas[idx].items || [];
-      for (const item of items) {
-        if (item.producto_id && item.cantidad > 0) {
-          await guardarMovimiento(auth.empresaId, {
-            tipo: 'entrada',
-            producto_id: item.producto_id,
-            bodega_id: item.bodega_id || '',
-            cantidad: item.cantidad,
-            costo_unitario: item.precio_unitario || 0,
-            referencia: `Anulación venta ${ventas[idx].numero_ticket}`,
-            observaciones: `Anulación: ${motivo}`,
-            usuario_id: auth.userId,
-          });
+      // Revertir stock (best-effort — no debe bloquear ni revertir la anulación)
+      try {
+        const items = ventas[idx].items || [];
+        for (const item of items) {
+          // producto_id debe ser un UUID válido (columna UUID en movimientos_inventario);
+          // bodega_id vacío ('') también revienta el insert por ser columna UUID — usar null.
+          if (isUUID(item.producto_id) && Number(item.cantidad) > 0) {
+            await guardarMovimiento(auth.empresaId, {
+              tipo: 'entrada',
+              producto_id: item.producto_id,
+              bodega_id: isUUID(item.bodega_id) ? item.bodega_id : null,
+              cantidad: item.cantidad,
+              costo_unitario: item.precio_unitario || 0,
+              referencia: `Anulación venta ${ventas[idx].numero_ticket}`,
+              observaciones: `Anulación: ${motivo}`,
+              usuario_id: auth.userId,
+            });
+          }
         }
+      } catch (stockErr: any) {
+        console.warn('[anular-venta] No se pudo revertir stock (la anulación sí se aplicó):', stockErr?.message);
       }
 
       console.log('🚫 Venta anulada:', ventaId, 'motivo:', motivo);
