@@ -131,7 +131,11 @@ export default function Caja() {
     if (!token) return;
     setVentasLoading(true);
     try {
-      const hoy = new Date().toISOString().split('T')[0];
+      // Fecha "de hoy" en horario de Ecuador (UTC-5, sin horario de verano).
+      // OJO: new Date().toISOString() devuelve la fecha en UTC; entre las 19:00 y
+      // 23:59 hora Ecuador ya es "mañana" en UTC, lo que hacía que se consultara
+      // un día que aún no inicia localmente y se perdieran las ventas del día actual.
+      const hoy = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().split('T')[0];
       const res = await fetch(
         `https://${projectId}.supabase.co/functions/v1/server/pos/ventas?fecha_inicio=${hoy}&fecha_fin=${hoy}&limit=100`,
         { headers: apiH(token) }

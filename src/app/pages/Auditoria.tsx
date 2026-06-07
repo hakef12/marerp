@@ -21,7 +21,9 @@ export default function Auditoria() {
   const [kpis, setKpis] = useState<any>(null);
 
   // Filtros de fecha y búsqueda
-  const hoy = new Date().toISOString().split('T')[0];
+  // Fecha de hoy en horario de Ecuador (UTC-5) — evita que entre 19:00 y 23:59
+  // hora local el filtro por defecto muestre "mañana" (fecha UTC) en vez de hoy.
+  const hoy = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().split('T')[0];
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin]       = useState(hoy);
   const [busqueda, setBusqueda]       = useState('');

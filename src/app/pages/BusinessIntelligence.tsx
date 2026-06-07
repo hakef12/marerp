@@ -82,7 +82,9 @@ export default function BusinessIntelligence() {
   const [tendenciaMensual,      setTendenciaMensual]      = useState<any[]>([]);
 
   // ── Estado Reportes ───────────────────────────────────────────────────────
-  const hoy = new Date().toISOString().split('T')[0];
+  // Fecha de hoy en horario de Ecuador (UTC-5) — evita que entre 19:00 y 23:59
+  // hora local el filtro por defecto muestre "mañana" (fecha UTC) en vez de hoy.
+  const hoy = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().split('T')[0];
   const hace30 = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
   const [rpFechaInicio,  setRpFechaInicio]  = useState(hace30);
   const [rpFechaFin,     setRpFechaFin]     = useState(hoy);
