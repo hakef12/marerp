@@ -71,6 +71,14 @@ export function setupRRHHRoutes(app: any, authMiddleware: any) {
     const auth = c.get('auth');
     const empleadoId = c.req.param('id');
     try {
+      // SEGURIDAD: guardarEmpleado() hace upsert por `id` sin filtrar por empresa.
+      // Verificar propiedad primero — si no, otra empresa podría secuestrar/
+      // sobrescribir un empleado ajeno (y reasignarle el empresa_id) vía la URL.
+      const actuales = await obtenerEmpleados(auth.empresaId);
+      if (!actuales.find((e: any) => e.id === empleadoId)) {
+        return c.json({ error: 'Empleado no encontrado' }, 404);
+      }
+
       const body = await c.req.json();
       const empleado = await guardarEmpleado(auth.empresaId, { ...body, id: empleadoId });
       if (!empleado) return c.json({ error: 'Empleado no encontrado' }, 404);

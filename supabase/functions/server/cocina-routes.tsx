@@ -470,6 +470,14 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
     const auth = c.get('auth');
     const recetaId = c.req.param('id');
     try {
+      // SEGURIDAD: guardarReceta() hace upsert por `id` sin filtrar por empresa.
+      // Verificar propiedad primero — si no, otra empresa podría secuestrar/
+      // sobrescribir (y reasignarse) una receta ajena pasando su id por la URL.
+      const recetasActuales = await obtenerRecetas(auth.empresaId);
+      if (!recetasActuales.find((r: any) => r.id === recetaId)) {
+        return c.json({ error: 'Receta no encontrada' }, 404);
+      }
+
       const body = await c.req.json();
       const recetaData = { ...body, id: recetaId, empresa_id: auth.empresaId };
       const receta = await guardarReceta(auth.empresaId, recetaData);

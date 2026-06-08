@@ -306,6 +306,21 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
     const auth = c.get('auth');
     const id = c.req.param('id');
     try {
+      // IMPORTANTE: guardarCuenta() hace un upsert por `id` (onConflict: 'id') sin
+      // filtrar por empresa_id. Si no verificamos aquí que la cuenta exista Y
+      // pertenezca a esta empresa, otra empresa podría enviar el id de una cuenta
+      // ajena y "secuestrarla" — el upsert la sobrescribiría completa, incluido
+      // su empresa_id, robándola hacia el tenant atacante. Por eso este chequeo
+      // de propiedad es obligatorio antes de delegar al helper.
+      const db = getDB();
+      const { data: existente } = await db
+        .from('cuentas_contables')
+        .select('id')
+        .eq('id', id)
+        .eq('empresa_id', auth.empresaId)
+        .maybeSingle();
+      if (!existente) return c.json({ error: 'Cuenta no encontrada' }, 404);
+
       const body = await c.req.json();
       const cuenta = await guardarCuenta(auth.empresaId, { ...body, id });
       return c.json({ cuenta });

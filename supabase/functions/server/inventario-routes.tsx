@@ -128,6 +128,10 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
 
       const productosActuales = await obtenerProductos(auth.empresaId);
       const anterior = productosActuales.find((p: any) => p.id === productoId);
+      // SEGURIDAD: guardarProducto() hace upsert por `id` (sin filtrar por empresa).
+      // Si el id no pertenece a esta empresa, NO continuar — de lo contrario
+      // otra empresa podría sobrescribir/secuestrar un producto ajeno pasando su id.
+      if (!anterior) return c.json({ error: 'Producto no encontrado' }, 404);
 
       const producto = await guardarProducto(auth.empresaId, { ...body, id: productoId, empresa_id: auth.empresaId });
 
@@ -242,6 +246,14 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
     const auth = c.get('auth');
     const categoriaId = c.req.param('id');
     try {
+      // SEGURIDAD: guardarCategoria() hace upsert por `id` sin filtrar por empresa.
+      // Verificar que la categoría exista y sea de esta empresa antes de continuar
+      // — si no, otra empresa podría secuestrar/sobrescribir una categoría ajena.
+      const actuales = await obtenerCategorias(auth.empresaId);
+      if (!actuales.find((cat: any) => cat.id === categoriaId)) {
+        return c.json({ error: 'Categoría no encontrada' }, 404);
+      }
+
       const body = await c.req.json();
       const categoria = await guardarCategoria(auth.empresaId, { ...body, id: categoriaId });
 
@@ -314,6 +326,14 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
     const auth = c.get('auth');
     const bodegaId = c.req.param('id');
     try {
+      // SEGURIDAD: guardarBodega() hace upsert por `id` sin filtrar por empresa.
+      // Sin esta verificación, otra empresa podría secuestrar/sobrescribir
+      // (incluso reasignar el empresa_id de) una bodega ajena pasando su id.
+      const actuales = await obtenerBodegas(auth.empresaId);
+      if (!actuales.find((b: any) => b.id === bodegaId)) {
+        return c.json({ error: 'Bodega no encontrada' }, 404);
+      }
+
       const body = await c.req.json();
       const bodega = await guardarBodega(auth.empresaId, { ...body, id: bodegaId });
 
@@ -399,6 +419,14 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
     const auth = c.get('auth');
     const proveedorId = c.req.param('id');
     try {
+      // SEGURIDAD: guardarProveedor() hace upsert por `id` sin filtrar por empresa.
+      // Verificar propiedad antes de continuar para evitar que otra empresa
+      // secuestre/sobrescriba un proveedor ajeno pasando su id por la URL.
+      const actuales = await obtenerProveedores(auth.empresaId);
+      if (!actuales.find((p: any) => p.id === proveedorId)) {
+        return c.json({ error: 'Proveedor no encontrado' }, 404);
+      }
+
       const body = await c.req.json();
       const proveedor = await guardarProveedor(auth.empresaId, { ...body, id: proveedorId });
 
