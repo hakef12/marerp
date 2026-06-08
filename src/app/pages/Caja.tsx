@@ -70,7 +70,7 @@ export default function Caja() {
   const [loading, setLoading] = useState(true);
   const [historial, setHistorial] = useState<Sesion[]>([]);
   const [arqueo, setArqueo] = useState<any>(null);
-  const [tab, setTab] = useState<'principal' | 'movimientos' | 'historial' | 'arqueo' | 'ventas'>('principal');
+  const [tab, setTab] = useState<'principal' | 'movimientos' | 'historial' | 'arqueo' | 'ventas' | 'todas_cajas'>('principal');
 
   // Modales
   const [modalApertura, setModalApertura] = useState(false);
@@ -94,6 +94,11 @@ export default function Caja() {
   const [ventaAnularTicket, setVentaAnularTicket] = useState('');
   const [motivoAnulacion, setMotivoAnulacion] = useState('');
   const [anulando, setAnulando] = useState(false);
+
+  // Vista consolidada (solo admin/gerente): todas las cajas abiertas, en
+  // todas las sucursales/bodegas, simultáneamente.
+  const [cajasTodas, setCajasTodas] = useState<any[]>([]);
+  const [cajasTodasLoading, setCajasTodasLoading] = useState(false);
 
   const fetchEstado = useCallback(async () => {
     if (!token) return;
@@ -157,6 +162,19 @@ export default function Caja() {
     finally { setVentasLoading(false); }
   }, [token, sesion]);
 
+  const fetchCajasTodas = useCallback(async () => {
+    if (!token || !esAdmin) return;
+    setCajasTodasLoading(true);
+    try {
+      const res = await fetch(`${BASE}/todas`, { headers: apiH(token) });
+      if (res.ok) {
+        const data = await res.json();
+        setCajasTodas(data.sesiones || []);
+      }
+    } catch { /* silencioso */ }
+    finally { setCajasTodasLoading(false); }
+  }, [token, esAdmin]);
+
   const handleAnularVenta = async () => {
     if (!motivoAnulacion.trim()) { toast.error('Ingresa el motivo de anulación'); return; }
     setAnulando(true);
@@ -192,7 +210,8 @@ export default function Caja() {
     if (tab === 'historial') fetchHistorial();
     if (tab === 'arqueo') fetchArqueo();
     if (tab === 'ventas') fetchVentas();
-  }, [tab, fetchHistorial, fetchArqueo, fetchVentas]);
+    if (tab === 'todas_cajas') fetchCajasTodas();
+  }, [tab, fetchHistorial, fetchArqueo, fetchVentas, fetchCajasTodas]);
 
   const post = async (url: string, body: any) => {
     const res = await fetch(url, { method: 'POST', headers: apiH(token!), body: JSON.stringify(body) });
@@ -388,6 +407,7 @@ export default function Caja() {
               { id: 'ventas', label: 'Ventas de esta caja' },
               { id: 'arqueo', label: 'Arqueo' },
               { id: 'historial', label: 'Historial' },
+              ...(esAdmin ? [{ id: 'todas_cajas', label: '🏢 Todas las sucursales' }] : []),
             ].map(t => (
               <button key={t.id} onClick={() => setTab(t.id as any)}
                 className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 ${
@@ -680,6 +700,73 @@ export default function Caja() {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+
+          {/* ── Tab: Todas las sucursales (solo admin/gerente) ── */}
+          {tab === 'todas_cajas' && esAdmin && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-gray-600 text-sm">
+                  Vista consolidada: todas las cajas abiertas <strong>simultáneamente</strong> en todas las sucursales/bodegas de la empresa.
+                </p>
+                <button onClick={fetchCajasTodas} disabled={cajasTodasLoading}
+                  className="text-sm text-[#F97316] hover:underline disabled:opacity-50">
+                  {cajasTodasLoading ? 'Actualizando…' : 'Actualizar'}
+                </button>
+              </div>
+
+              {cajasTodasLoading && cajasTodas.length === 0 && (
+                <div className="text-center py-8 text-gray-600">Cargando cajas abiertas…</div>
+              )}
+              {!cajasTodasLoading && cajasTodas.length === 0 && (
+                <div className="text-center py-8 text-gray-600">No hay ninguna caja abierta en este momento.</div>
+              )}
+
+              {cajasTodas.length > 0 && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm text-orange-700">
+                  <strong>{cajasTodas.length}</strong> {cajasTodas.length === 1 ? 'caja abierta' : 'cajas abiertas'} en este momento.
+                </div>
+              )}
+
+              {cajasTodas.map((s: any) => {
+                const ventasSesion = (s.movimientos || []).filter((m: any) => m.tipo === 'venta');
+                const totalVentas  = ventasSesion.reduce((a: number, m: any) => a + (m.monto || 0), 0);
+                const esLaMia = bodegaActiva && s.bodega_id === bodegaActiva.id;
+                return (
+                  <Card key={s.id} className={`bg-white border-gray-100 ${esLaMia ? 'ring-2 ring-[#F97316]/40' : ''}`}>
+                    <CardContent className="p-4 flex flex-wrap items-center gap-4">
+                      <div>
+                        <p className="text-gray-900 font-semibold text-sm flex items-center gap-2">
+                          🏢 {s.bodega_nombre || s.bodega_id}
+                          {esLaMia && <span className="text-[10px] px-1.5 py-0.5 bg-[#F97316]/10 text-[#F97316] rounded">Mi sucursal</span>}
+                        </p>
+                        <p className="text-gray-600 text-xs">
+                          Cajero: {s.cajero_nombre} — Abierta: {new Date(s.fecha_apertura).toLocaleDateString('es-EC')} {new Date(s.fecha_apertura).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <div className="ml-auto flex gap-6 text-sm">
+                        <div className="text-center">
+                          <p className="text-gray-600 text-xs">Apertura</p>
+                          <p className="text-gray-900 font-medium">${fmt(s.monto_apertura)}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-gray-600 text-xs">Ventas ({ventasSesion.length})</p>
+                          <p className="text-green-400 font-medium">${fmt(totalVentas)}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-gray-600 text-xs">Esperado en caja</p>
+                          <p className="text-gray-900 font-semibold">${fmt(s.monto_real)}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+
+              <p className="text-gray-600 text-xs">
+                💡 Cada sucursal mantiene su propia caja independiente: el efectivo y los movimientos de una sucursal nunca se mezclan con los de otra.
+              </p>
             </div>
           )}
         </>

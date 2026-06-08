@@ -23,20 +23,21 @@ const getDB = () => createClient(
 );
 
 // ── Buscar sesión de caja activa (SQL) ────────────────────────
+// IMPORTANTE: la búsqueda es ESTRICTA por bodega_id (igual que getSesionActiva
+// en caja-routes.tsx). NO debe existir un fallback "cualquier caja abierta de
+// la empresa": con varias sucursales operando simultáneamente, eso mezclaría
+// silenciosamente el efectivo/movimientos de una sucursal con los de otra.
+// Si no se puede determinar la bodega, o esa bodega no tiene caja abierta,
+// se devuelve null y el endpoint debe responder CAJA_CERRADA explícitamente.
 async function getCajaAbierta(empresaId: string, bodegaId?: string): Promise<{ sesion: any } | null> {
+  if (!bodegaId) return null;
   const db = getDB();
-  let query = db.from('turnos_caja').select('*')
-    .eq('empresa_id', empresaId).eq('estado', 'abierta');
-  if (bodegaId) query = query.eq('bodega_id', bodegaId);
-  const { data } = await query.limit(1).maybeSingle();
-  if (data) return { sesion: data };
-  // If bodega_id filter found nothing, try any open caja
-  if (bodegaId) {
-    const { data: any } = await db.from('turnos_caja').select('*')
-      .eq('empresa_id', empresaId).eq('estado', 'abierta').limit(1).maybeSingle();
-    if (any) return { sesion: any };
-  }
-  return null;
+  const { data } = await db.from('turnos_caja').select('*')
+    .eq('empresa_id', empresaId)
+    .eq('estado', 'abierta')
+    .eq('bodega_id', bodegaId)
+    .limit(1).maybeSingle();
+  return data ? { sesion: data } : null;
 }
 
 export function setupPOSRoutes(app: any, authMiddleware: any) {
@@ -81,12 +82,18 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
     try {
       const body = await c.req.json();
 
-      // ── VERIFICAR CAJA ABIERTA (obligatorio) ──────────────────
+      // ── VERIFICAR CAJA ABIERTA (obligatorio, estricta por bodega) ──
       const bodegaIdReq = body.bodega_id || auth.user?.bodega_id || '';
+      if (!bodegaIdReq) {
+        return c.json({
+          error: 'No se pudo determinar la sucursal/bodega de esta venta. Selecciona una sucursal antes de vender.',
+          codigo: 'BODEGA_INDEFINIDA',
+        }, 409);
+      }
       const cajaResult = await getCajaAbierta(auth.empresaId, bodegaIdReq);
       if (!cajaResult) {
         return c.json({
-          error: 'La caja está cerrada. Debe abrir la caja antes de registrar ventas.',
+          error: 'La caja de esta sucursal está cerrada. Debe abrir la caja de esta sucursal antes de registrar ventas.',
           codigo: 'CAJA_CERRADA',
         }, 409);
       }

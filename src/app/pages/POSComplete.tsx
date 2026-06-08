@@ -579,7 +579,9 @@ export default function POS() {
         const err = await res.json();
         if (err.codigo === 'CAJA_CERRADA') {
           setCaja({ abierta: false });
-          toast.error('La caja fue cerrada. Vuelve a abrirla para continuar.');
+          toast.error(err.error || 'La caja de esta sucursal está cerrada. Vuelve a abrirla para continuar.');
+        } else if (err.codigo === 'BODEGA_INDEFINIDA') {
+          toast.error(err.error || 'Selecciona una sucursal antes de vender.');
         } else {
           toast.error(err.error || 'Error al procesar venta');
         }
