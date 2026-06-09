@@ -19,6 +19,16 @@ CREATE TABLE IF NOT EXISTS planes (
   updated_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── 1b. Agregar columnas nuevas a `planes` si ya existía con esquema viejo ──
+ALTER TABLE planes ADD COLUMN IF NOT EXISTS precio            DECIMAL(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE planes ADD COLUMN IF NOT EXISTS descripcion       TEXT;
+ALTER TABLE planes ADD COLUMN IF NOT EXISTS modulos_incluidos JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE planes ADD COLUMN IF NOT EXISTS limites           JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE planes ADD COLUMN IF NOT EXISTS caracteristicas   JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE planes ADD COLUMN IF NOT EXISTS soporte           TEXT DEFAULT 'email';
+ALTER TABLE planes ADD COLUMN IF NOT EXISTS activo            BOOLEAN DEFAULT true;
+ALTER TABLE planes ADD COLUMN IF NOT EXISTS updated_at        TIMESTAMPTZ DEFAULT NOW();
+
 -- ── 2. Insertar / actualizar los 4 planes ───────────────────────────
 INSERT INTO planes (codigo, nombre, descripcion, precio, modulos_incluidos, limites, caracteristicas, soporte, activo)
 VALUES
