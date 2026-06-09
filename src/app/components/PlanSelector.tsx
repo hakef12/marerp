@@ -6,7 +6,8 @@ interface Plan {
   id: string;
   codigo: string;
   nombre: string;
-  precio_mensual: number;
+  precio: number;
+  precio_mensual?: number; // alias legacy, se ignora
   descripcion: string;
   caracteristicas: string[];
   popular?: boolean;
@@ -34,38 +35,38 @@ const PLANES_FALLBACK: Plan[] = [
   {
     id: 'basico',
     codigo: 'basico',
-    nombre: 'Básico',
-    precio_mensual: 49,
-    descripcion: 'Ideal para pequeños negocios',
-    caracteristicas: ['POS + Inventario', 'Hasta 2 usuarios', '1 bodega', 'Soporte básico'],
-    color: ''
-  },
-  {
-    id: 'profesional',
-    codigo: 'profesional',
-    nombre: 'Profesional',
-    precio_mensual: 129,
-    descripcion: 'Para negocios en crecimiento',
-    caracteristicas: ['Todos los módulos', 'Hasta 10 usuarios', 'Bodegas ilimitadas', 'Soporte prioritario'],
-    popular: true,
+    nombre: 'Plan Básico',
+    precio: 20,
+    descripcion: 'Para food trucks y pequeños locales',
+    caracteristicas: ['Punto de Venta (POS)', 'Cocina / KDS / Comandas', 'Mesas (hasta 15)', 'Hasta 3 usuarios', 'Facturación SRI'],
     color: ''
   },
   {
     id: 'restaurante',
     codigo: 'restaurante',
-    nombre: 'Restaurante',
-    precio_mensual: 99,
-    descripcion: 'Especializado en gastronomía',
-    caracteristicas: ['POS + Mesas + Cocina', 'KDS integrado', 'Facturación SRI', 'Hasta 5 usuarios'],
+    nombre: 'Plan Restaurante',
+    precio: 45,
+    descripcion: 'Para restaurantes con operación completa',
+    caracteristicas: ['Todo lo del Plan Básico', 'Mesas ilimitadas (hasta 50)', 'Ingeniería de menú', 'Hasta 10 usuarios', 'Reportes avanzados'],
+    color: ''
+  },
+  {
+    id: 'profesional',
+    codigo: 'profesional',
+    nombre: 'Plan Profesional',
+    precio: 100,
+    descripcion: 'Control total: contabilidad, RRHH y reportes',
+    caracteristicas: ['Todo lo del Plan Restaurante', 'Contabilidad completa (asientos, balance, P&L)', 'RRHH y Nómina (roles y permisos)', 'Hasta 25 usuarios', 'BI y analítica'],
+    popular: true,
     color: ''
   },
   {
     id: 'enterprise',
     codigo: 'enterprise',
-    nombre: 'Enterprise',
-    precio_mensual: 299,
-    descripcion: 'Sin límites, máximo rendimiento',
-    caracteristicas: ['Todo ilimitado', 'Multiempresa', 'API personalizada', 'Soporte 24/7'],
+    nombre: 'Plan Enterprise',
+    precio: 230,
+    descripcion: 'Para cadenas y grupos gastronómicos',
+    caracteristicas: ['Todo lo del Plan Profesional', 'Sucursales ilimitadas', 'Usuarios ilimitados', 'Soporte dedicado 24/7', 'API personalizada'],
     color: ''
   }
 ];
@@ -176,7 +177,7 @@ export function PlanSelector({ selectedPlan, onSelectPlan }: PlanSelectorProps) 
                 <h4 className="text-gray-900 font-bold text-lg">{plan.nombre}</h4>
                 <p className="text-gray-600 text-xs mb-2">{plan.descripcion}</p>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-bold text-gray-900">${plan.precio_mensual}</span>
+                  <span className="text-3xl font-bold text-gray-900">${plan.precio ?? plan.precio_mensual}</span>
                   <span className="text-gray-600 text-sm">/mes</span>
                 </div>
               </div>
