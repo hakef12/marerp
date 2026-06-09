@@ -9,7 +9,7 @@
     "deploy:win": "deploy.bat",
     "supabase:login": "supabase login",
     "supabase:link": "supabase link --project-ref ayaczqzezswnimabmvqx",
-    "supabase:deploy": "supabase functions deploy server",
+    "supabase:deploy": "supabase functions deploy server && supabase functions deploy avisos-vencimiento --no-verify-jwt",
     "supabase:logs": "supabase functions logs server",
     "supabase:logs:follow": "supabase functions logs server --follow",
     "dev": "vite"
