@@ -1,168 +1,246 @@
-// Definición de planes del sistema
+// ═══════════════════════════════════════════════════════════════════
+//  PLANES DE SUSCRIPCIÓN — MAR ERP
+//  Todos los planes incluyen KDS/Cocina porque el sistema es para
+//  restaurantes. La diferencia está en la escala y módulos avanzados.
+// ═══════════════════════════════════════════════════════════════════
+
 export const PLANES = {
+  // ── $20 ─────────────────────────────────────────────────────────
   basico: {
     nombre: 'Plan Básico',
     precio: 20,
-    descripcion: 'Ideal para pequeños negocios',
+    descripcion: 'Para food trucks y pequeños locales',
     modulos_incluidos: {
-      pos: true,
-      inventario: true,
+      pos:          true,
+      inventario:   true,
+      cocina:       true,   // KDS incluido en todos los planes
       contabilidad: false,
-      rrhh: false,
-      cocina: false,
-      auditoria: false,
-      bi: false
+      rrhh:         false,
+      auditoria:    false,
+      bi:           false,
     },
     limites: {
-      usuarios_max: 3,
-      productos_max: 500,
-      facturas_mes: 100,
-      almacenamiento_gb: 5
+      usuarios_max:     3,
+      productos_max:    300,
+      facturas_mes:     150,
+      mesas_max:        15,
+      sucursales_max:   1,
+      almacenamiento_gb: 5,
     },
     caracteristicas: [
-      'Punto de Venta básico',
-      'Gestión de inventario',
+      'Punto de Venta (POS)',
+      'Cocina / KDS / Comandas',
+      'Mesas (hasta 15)',
+      'Facturación electrónica SRI',
+      'Inventario básico',
       'Hasta 3 usuarios',
-      'Soporte por email'
-    ]
+      'Soporte por email',
+    ],
+    soporte: 'email',
   },
-  
-  profesional: {
-    nombre: 'Plan Profesional',
-    precio: 50,
-    descripcion: 'Para empresas en crecimiento',
-    modulos_incluidos: {
-      pos: true,
-      inventario: true,
-      contabilidad: true,
-      rrhh: true,
-      cocina: false,
-      auditoria: true,
-      bi: false
-    },
-    limites: {
-      usuarios_max: 10,
-      productos_max: 2000,
-      facturas_mes: 500,
-      almacenamiento_gb: 20
-    },
-    caracteristicas: [
-      'Todos los módulos básicos',
-      'Contabilidad completa',
-      'Gestión de talento humano',
-      'Auditoría y trazabilidad',
-      'Hasta 10 usuarios',
-      'Soporte prioritario'
-    ]
-  },
-  
+
+  // ── $45 ─────────────────────────────────────────────────────────
   restaurante: {
     nombre: 'Plan Restaurante',
-    precio: 80,
-    descripcion: 'Especializado para restaurantes',
+    precio: 45,
+    descripcion: 'Para restaurantes con operación completa',
     modulos_incluidos: {
-      pos: true,
-      inventario: true,
-      contabilidad: true,
-      rrhh: true,
-      cocina: true,
-      auditoria: true,
-      bi: true
+      pos:          true,
+      inventario:   true,
+      cocina:       true,
+      contabilidad: false,
+      rrhh:         false,
+      auditoria:    false,
+      bi:           false,
     },
     limites: {
-      usuarios_max: 20,
-      productos_max: 5000,
-      facturas_mes: 2000,
-      almacenamiento_gb: 50
+      usuarios_max:     10,
+      productos_max:    1500,
+      facturas_mes:     800,
+      mesas_max:        50,
+      sucursales_max:   1,
+      almacenamiento_gb: 20,
     },
     caracteristicas: [
-      'POS para restaurantes',
-      'Sistema de cocina (KDS)',
-      'Gestión de comandas',
-      'Control de mesas',
-      'Todos los módulos incluidos',
-      'Hasta 20 usuarios',
-      'Soporte 24/7'
-    ]
+      'Todo lo del Plan Básico',
+      'Mesas ilimitadas (hasta 50)',
+      'Ingeniería de menú',
+      'Órdenes de producción',
+      'Transferencias entre bodegas',
+      'Hasta 10 usuarios',
+      'Soporte por WhatsApp',
+    ],
+    soporte: 'whatsapp',
   },
-  
+
+  // ── $100 ────────────────────────────────────────────────────────
+  profesional: {
+    nombre: 'Plan Profesional',
+    precio: 100,
+    descripcion: 'Control total: contabilidad, RRHH y reportes',
+    modulos_incluidos: {
+      pos:          true,
+      inventario:   true,
+      cocina:       true,
+      contabilidad: true,
+      rrhh:         true,
+      auditoria:    true,
+      bi:           true,
+    },
+    limites: {
+      usuarios_max:     25,
+      productos_max:    5000,
+      facturas_mes:     -1,   // ilimitado
+      mesas_max:        -1,
+      sucursales_max:   3,
+      almacenamiento_gb: 50,
+    },
+    caracteristicas: [
+      'Todo lo del Plan Restaurante',
+      'Contabilidad completa (asientos, balance, P&L)',
+      'RRHH y Nómina (roles de pago, IESS)',
+      'Business Intelligence y dashboards',
+      'Auditoría completa',
+      'Retenciones SRI',
+      'Hasta 3 sucursales',
+      'Hasta 25 usuarios',
+      'Soporte WhatsApp prioritario',
+    ],
+    soporte: 'whatsapp_prioritario',
+  },
+
+  // ── $230 ────────────────────────────────────────────────────────
   enterprise: {
     nombre: 'Plan Enterprise',
-    precio: 150,
-    descripcion: 'Solución completa sin límites',
+    precio: 230,
+    descripcion: 'Para cadenas y grupos gastronómicos',
     modulos_incluidos: {
-      pos: true,
-      inventario: true,
+      pos:          true,
+      inventario:   true,
+      cocina:       true,
       contabilidad: true,
-      rrhh: true,
-      cocina: true,
-      auditoria: true,
-      bi: true
+      rrhh:         true,
+      auditoria:    true,
+      bi:           true,
     },
     limites: {
-      usuarios_max: -1, // Ilimitado
-      productos_max: -1,
-      facturas_mes: -1,
-      almacenamiento_gb: -1
+      usuarios_max:     -1,  // ilimitado
+      productos_max:    -1,
+      facturas_mes:     -1,
+      mesas_max:        -1,
+      sucursales_max:   -1,
+      almacenamiento_gb: -1,
     },
     caracteristicas: [
-      'Todos los módulos incluidos',
+      'Todo lo del Plan Profesional',
+      'Sucursales ilimitadas',
       'Usuarios ilimitados',
       'Productos ilimitados',
-      'Business Intelligence avanzado',
-      'Multi-sucursales',
-      'API personalizada',
-      'Soporte dedicado 24/7',
-      'Capacitación incluida'
-    ]
-  }
+      'Onboarding y capacitación incluidos',
+      'Canal WhatsApp dedicado (respuesta < 2h)',
+      'Llamada mensual de seguimiento',
+      'Acceso anticipado a nuevas funciones',
+    ],
+    soporte: 'dedicado',
+  },
 };
 
-// Validar si una empresa tiene acceso a un módulo
+export type PlanCodigo = keyof typeof PLANES;
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+/** Verifica si un plan tiene acceso a un módulo específico. */
 export function tieneAccesoModulo(planTipo: string, modulo: string): boolean {
-  const plan = PLANES[planTipo as keyof typeof PLANES];
+  const plan = PLANES[planTipo as PlanCodigo];
   if (!plan) return false;
-  
-  return plan.modulos_incluidos[modulo as keyof typeof plan.modulos_incluidos] || false;
+  return !!(plan.modulos_incluidos as any)[modulo];
 }
 
-// Validar límites del plan
+/** Valida si el valor actual supera el límite del plan (-1 = ilimitado). */
 export function validarLimite(
-  planTipo: string, 
-  limite: 'usuarios_max' | 'productos_max' | 'facturas_mes' | 'almacenamiento_gb',
+  planTipo: string,
+  limite: keyof typeof PLANES.basico.limites,
   valorActual: number
-): { valido: boolean; mensaje?: string } {
-  const plan = PLANES[planTipo as keyof typeof PLANES];
-  if (!plan) {
-    return { valido: false, mensaje: 'Plan no válido' };
-  }
+): { valido: boolean; limite_max: number; mensaje?: string } {
+  const plan = PLANES[planTipo as PlanCodigo];
+  if (!plan) return { valido: false, limite_max: 0, mensaje: 'Plan no válido' };
 
-  const limiteMax = plan.limites[limite];
-  
-  // -1 significa ilimitado
-  if (limiteMax === -1) {
-    return { valido: true };
-  }
+  const limiteMax = plan.limites[limite] ?? -1;
+  if (limiteMax === -1) return { valido: true, limite_max: -1 };
 
   if (valorActual >= limiteMax) {
-    return { 
-      valido: false, 
-      mensaje: `Has alcanzado el límite de ${limiteMax} para ${limite} en tu plan ${plan.nombre}. Actualiza tu plan para continuar.`
+    const etiquetas: Record<string, string> = {
+      usuarios_max:     'usuarios',
+      productos_max:    'productos',
+      facturas_mes:     'facturas por mes',
+      mesas_max:        'mesas',
+      sucursales_max:   'sucursales',
+      almacenamiento_gb:'GB de almacenamiento',
+    };
+    return {
+      valido: false,
+      limite_max: limiteMax,
+      mensaje: `Límite de ${etiquetas[limite] ?? limite} alcanzado (máx. ${limiteMax} en ${plan.nombre}). Actualiza tu plan para continuar.`,
     };
   }
-
-  return { valido: true };
+  return { valido: true, limite_max: limiteMax };
 }
 
-// Obtener información de un plan
+/** Devuelve los datos de un plan por su código. */
 export function obtenerPlan(planTipo: string) {
-  return PLANES[planTipo as keyof typeof PLANES];
+  return PLANES[planTipo as PlanCodigo] ?? null;
 }
 
-// Listar todos los planes
+/** Lista todos los planes como array. */
 export function listarPlanes() {
-  return Object.entries(PLANES).map(([id, plan]) => ({
-    id,
-    ...plan
-  }));
+  return Object.entries(PLANES).map(([codigo, plan]) => ({ codigo, ...plan }));
+}
+
+/** Días de gracia antes de suspender la cuenta tras vencer. */
+export const DIAS_GRACIA = 5;
+
+/** Días antes del vencimiento para mostrar la advertencia. */
+export const DIAS_ADVERTENCIA = 7;
+
+/**
+ * Analiza el estado de suscripción de una empresa.
+ * Retorna: 'activa' | 'por_vencer' | 'en_gracia' | 'vencida'
+ */
+export function estadoSuscripcion(fecha_expiracion: string | null): {
+  estado: 'activa' | 'por_vencer' | 'en_gracia' | 'vencida';
+  dias_restantes: number;
+  mensaje: string;
+} {
+  if (!fecha_expiracion) {
+    return { estado: 'vencida', dias_restantes: 0, mensaje: 'Sin fecha de expiración — contacta al administrador.' };
+  }
+
+  const ahora  = new Date();
+  const expira = new Date(fecha_expiracion);
+  const diffMs = expira.getTime() - ahora.getTime();
+  const dias   = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (dias > DIAS_ADVERTENCIA) {
+    return { estado: 'activa', dias_restantes: dias, mensaje: '' };
+  }
+  if (dias > 0) {
+    return {
+      estado: 'por_vencer',
+      dias_restantes: dias,
+      mensaje: `Tu suscripción vence en ${dias} día${dias === 1 ? '' : 's'}. Renueva para no perder el acceso.`,
+    };
+  }
+  if (dias > -DIAS_GRACIA) {
+    const diasGracia = DIAS_GRACIA + dias; // días restantes de gracia
+    return {
+      estado: 'en_gracia',
+      dias_restantes: diasGracia,
+      mensaje: `Tu suscripción venció. Tienes ${diasGracia} día${diasGracia === 1 ? '' : 's'} de gracia — renueva ya para evitar la suspensión.`,
+    };
+  }
+  return {
+    estado: 'vencida',
+    dias_restantes: 0,
+    mensaje: 'Cuenta suspendida por falta de pago. Contacta a soporte para reactivar.',
+  };
 }

@@ -2,7 +2,7 @@ import { Hono } from "npm:hono";
 import { logger } from "npm:hono/logger";
 import { createClient } from "npm:@supabase/supabase-js";
 import * as kv from "./kv_store.tsx";
-import { PLANES, tieneAccesoModulo, validarLimite, obtenerPlan, listarPlanes } from "./planes.tsx";
+import { PLANES, tieneAccesoModulo, validarLimite, obtenerPlan, listarPlanes, estadoSuscripcion, DIAS_GRACIA, DIAS_ADVERTENCIA } from "./planes.tsx";
 import { setupPOSRoutes } from "./pos-routes.tsx";
 import { setupInventarioRoutes } from "./inventario-routes.tsx";
 import { setupCocinaRoutes } from "./cocina-routes.tsx";
@@ -88,9 +88,34 @@ async function authMiddleware(c: any, next: any) {
     }
     userData.empresas = empresaData;
 
-    // Super admin no tiene empresa asignada — permitir siempre
-    if (userData.rol !== 'super_admin' && userData.empresas?.estado !== 'activo') {
-      return c.json({ error: 'Empresa suspendida o inactiva. Contacte al administrador.' }, 403);
+    // Super admin siempre pasa — no tiene empresa ni plan
+    if (userData.rol !== 'super_admin') {
+      // 1️⃣ Estado de la empresa (suspendida / inactiva manualmente)
+      if (userData.empresas?.estado !== 'activo') {
+        return c.json({
+          error: 'Empresa suspendida o inactiva. Contacta al administrador.',
+          codigo: 'EMPRESA_SUSPENDIDA',
+        }, 403);
+      }
+
+      // 2️⃣ Verificar fecha de expiración de la suscripción
+      const suscripcion = estadoSuscripcion(userData.empresas?.fecha_expiracion ?? null);
+      if (suscripcion.estado === 'vencida') {
+        // Marcar empresa como suspendida en la DB (best-effort, no falla el request)
+        supabase.from('empresas')
+          .update({ estado: 'suspendido' })
+          .eq('id', userData.empresa_id)
+          .then(() => {})
+          .catch(() => {});
+        return c.json({
+          error: suscripcion.mensaje,
+          codigo: 'SUSCRIPCION_VENCIDA',
+          dias_restantes: 0,
+        }, 403);
+      }
+
+      // 3️⃣ Adjuntar info de suscripción al contexto (para que endpoints la usen)
+      userData.suscripcion = suscripcion;
     }
 
     // Guardar contexto de autenticación
@@ -98,7 +123,7 @@ async function authMiddleware(c: any, next: any) {
       userId: userData.id,
       empresaId: userData.empresa_id || 'super_admin',
       userRole: userData.rol,
-      user: userData
+      user: userData,
     } as AuthContext);
 
     await next();
@@ -363,7 +388,8 @@ app.post("/server/auth/login", async (c) => {
         bodega_nombre: bodegaNombre,
         empresa: usuario.empresas ? {
           ...usuario.empresas,
-          plan: usuario.empresas?.plan_tipo || usuario.empresas?.plan || 'basico'
+          plan: usuario.empresas?.plan_tipo || usuario.empresas?.plan || 'basico',
+          suscripcion: estadoSuscripcion(usuario.empresas?.fecha_expiracion ?? null),
         } : {
           id: null,
           nombre: 'Sistema MAR',
@@ -593,21 +619,53 @@ app.post("/server/pos/ventas", authMiddleware, async (c) => {
 // OTROS MÓDULOS Y CONFIGURACIONES
 // =====================================================
 
+// ── Middleware de acceso por módulo ───────────────────────────────────────
+// Genera un middleware que verifica que el plan de la empresa incluya `modulo`.
+// Super admins siempre pasan. Si el plan no incluye el módulo → 403 con info.
+function moduloMiddleware(modulo: string) {
+  return async (c: any, next: any) => {
+    const auth: AuthContext = c.get('auth');
+    if (auth.userRole === 'super_admin') return next();
+    const planTipo = auth.user?.empresas?.plan_tipo || 'basico';
+    if (!tieneAccesoModulo(planTipo, modulo)) {
+      const plan = obtenerPlan(planTipo);
+      return c.json({
+        error: `El módulo "${modulo}" no está incluido en tu plan actual (${plan?.nombre ?? planTipo}).`,
+        codigo: 'MODULO_NO_INCLUIDO',
+        modulo,
+        plan_actual: planTipo,
+        upgrade_sugerido: modulo === 'contabilidad' || modulo === 'rrhh' || modulo === 'bi' || modulo === 'auditoria'
+          ? 'profesional' : 'restaurante',
+      }, 403);
+    }
+    return next();
+  };
+}
+
 setupPOSRoutes(app, authMiddleware);
 setupInventarioRoutes(app, authMiddleware);
-setupCocinaRoutes(app, authMiddleware);
+setupCocinaRoutes(app, authMiddleware);          // cocina: incluido en todos los planes
+setupMesasRoutes(app, authMiddleware);           // mesas: incluido en todos los planes
 setupDashboardRoutes(app, authMiddleware);
+setupCajaRoutes(app, authMiddleware);
+setupUsuariosRoutes(app, authMiddleware);
+setupStockBodegaRoutes(app, authMiddleware);
+setupTransferenciasRoutes(app, authMiddleware);
+setupProduccionRoutes(app, authMiddleware);
+setupIngenieriaMenuRoutes(app, authMiddleware);
+
+// Módulos con restricción de plan.
+// app.use(path, auth, moduloCheck) corre ANTES de los route handlers → cuando
+// el route handler llama a su propio authMiddleware el contexto ya está seteado.
+app.use('/server/bi/*',            authMiddleware, moduloMiddleware('bi'));
+app.use('/server/rrhh/*',          authMiddleware, moduloMiddleware('rrhh'));
+app.use('/server/auditoria/*',     authMiddleware, moduloMiddleware('auditoria'));
+app.use('/server/contabilidad/*',  authMiddleware, moduloMiddleware('contabilidad'));
+
 setupBIRoutes(app, authMiddleware);
 setupRRHHRoutes(app, authMiddleware);
-setupIngenieriaMenuRoutes(app, authMiddleware);
-setupUsuariosRoutes(app, authMiddleware);
 setupAuditoriaRoutes(app, authMiddleware);
 setupContabilidadRoutes(app, authMiddleware);
-setupMesasRoutes(app, authMiddleware);
-setupCajaRoutes(app, authMiddleware);
-setupProduccionRoutes(app, authMiddleware);
-setupTransferenciasRoutes(app, authMiddleware);
-setupStockBodegaRoutes(app, authMiddleware);
 
 // Notificaciones reales
 app.use('/server/notificaciones/*', authMiddleware);
@@ -812,14 +870,9 @@ app.put("/server/admin/empresas/:id", authMiddleware, superAdminMiddleware, asyn
     if (estado) updates.estado = estado;
     if (plan_tipo) {
       updates.plan_tipo = plan_tipo;
-      // Actualizar módulos según el plan
-      const modulosPorPlan: Record<string, any> = {
-        basico:       { pos: true,  inventario: true,  contabilidad: false, rrhh: false, cocina: false, auditoria: false, bi: false },
-        profesional:  { pos: true,  inventario: true,  contabilidad: true,  rrhh: true,  cocina: true,  auditoria: true,  bi: true  },
-        restaurante:  { pos: true,  inventario: true,  contabilidad: false, rrhh: false, cocina: true,  auditoria: false, bi: false },
-        enterprise:   { pos: true,  inventario: true,  contabilidad: true,  rrhh: true,  cocina: true,  auditoria: true,  bi: true  },
-      };
-      updates.modulos_activos = modulos_activos || modulosPorPlan[plan_tipo] || modulosPorPlan.enterprise;
+      // Tomar módulos directamente de la definición canónica en planes.tsx
+      const planDef = obtenerPlan(plan_tipo);
+      updates.modulos_activos = modulos_activos || planDef?.modulos_incluidos || PLANES.enterprise.modulos_incluidos;
     }
     if (fecha_expiracion) updates.fecha_expiracion = fecha_expiracion;
 
@@ -834,6 +887,163 @@ app.put("/server/admin/empresas/:id", authMiddleware, superAdminMiddleware, asyn
     return c.json({ message: 'Empresa actualizada', empresa: data });
   } catch (error: any) {
     return c.json({ error: error.message }, 500);
+  }
+});
+
+// ── Planes públicos ────────────────────────────────────────────────────────
+app.get("/server/planes", async (c) => {
+  return c.json({ planes: listarPlanes() });
+});
+
+// ── Mi Plan — info de suscripción de la empresa actual ────────────────────
+app.get("/server/mi-plan", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const empresa = auth.user?.empresas;
+    const planTipo = empresa?.plan_tipo || 'basico';
+    const planDef  = obtenerPlan(planTipo);
+    const suscripcion = estadoSuscripcion(empresa?.fecha_expiracion ?? null);
+
+    // Uso actual
+    const [productos, usuarios] = await Promise.all([
+      supabase.from('productos').select('id', { count: 'exact', head: true }).eq('empresa_id', auth.empresaId).eq('activo', true),
+      supabase.from('usuarios').select('id',  { count: 'exact', head: true }).eq('empresa_id', auth.empresaId).eq('activo', true),
+    ]);
+
+    // Facturas del mes actual
+    const inicioMes = new Date(); inicioMes.setDate(1); inicioMes.setHours(0,0,0,0);
+    const { count: facturasMes } = await supabase.from('facturas')
+      .select('id', { count: 'exact', head: true })
+      .eq('empresa_id', auth.empresaId)
+      .gte('created_at', inicioMes.toISOString());
+
+    // Últimos 6 pagos
+    const { data: pagos } = await supabase.from('suscripciones')
+      .select('id, plan_codigo, periodo_inicio, periodo_fin, monto, estado, metodo_pago, pagado_en, notas')
+      .eq('empresa_id', auth.empresaId)
+      .order('periodo_fin', { ascending: false })
+      .limit(6);
+
+    return c.json({
+      plan: { codigo: planTipo, ...planDef },
+      suscripcion,
+      expiracion: empresa?.fecha_expiracion,
+      uso: {
+        productos:    { actual: productos.count ?? 0, limite: planDef?.limites.productos_max ?? -1 },
+        usuarios:     { actual: usuarios.count  ?? 0, limite: planDef?.limites.usuarios_max  ?? -1 },
+        facturas_mes: { actual: facturasMes     ?? 0, limite: planDef?.limites.facturas_mes  ?? -1 },
+      },
+      pagos: pagos ?? [],
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ── Admin: listar empresas con estado de suscripción ─────────────────────
+app.get("/server/admin/suscripciones", authMiddleware, superAdminMiddleware, async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const { data: empresas, error } = await supabase
+      .from('empresas')
+      .select('id, nombre, email, plan_tipo, estado, fecha_expiracion, created_at')
+      .neq('ruc_nit', '0000000000001')
+      .order('fecha_expiracion', { ascending: true });
+    if (error) throw error;
+
+    const resultado = (empresas || []).map((e: any) => ({
+      ...e,
+      plan: obtenerPlan(e.plan_tipo),
+      suscripcion: estadoSuscripcion(e.fecha_expiracion),
+    }));
+
+    return c.json({ empresas: resultado });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ── Admin: registrar pago y extender suscripción ──────────────────────────
+app.post("/server/admin/suscripciones/pago", authMiddleware, superAdminMiddleware, async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const auth: AuthContext = c.get('auth');
+  try {
+    const body = await c.req.json();
+    const { empresa_id, meses = 1, metodo_pago = 'transferencia', referencia_pago, notas, plan_tipo } = body;
+
+    if (!empresa_id) return c.json({ error: 'empresa_id requerido' }, 400);
+
+    // Obtener empresa actual
+    const { data: empresa, error: empErr } = await supabase
+      .from('empresas').select('*').eq('id', empresa_id).single();
+    if (empErr || !empresa) return c.json({ error: 'Empresa no encontrada' }, 404);
+
+    // Plan a aplicar (puede cambiar con el pago)
+    const nuevoPlan = plan_tipo || empresa.plan_tipo || 'basico';
+    const planDef   = obtenerPlan(nuevoPlan);
+    if (!planDef) return c.json({ error: `Plan '${nuevoPlan}' no válido` }, 400);
+
+    // Calcular nuevo período
+    const ahora = new Date();
+    const expiraActual = empresa.fecha_expiracion ? new Date(empresa.fecha_expiracion) : ahora;
+    // Si ya venció, el nuevo período parte de hoy; si aún está vigente, se suma
+    const inicio = expiraActual > ahora ? expiraActual : ahora;
+    const fin    = new Date(inicio);
+    fin.setMonth(fin.getMonth() + meses);
+
+    const monto = planDef.precio * meses;
+
+    // Registrar el pago en suscripciones
+    const { data: suscripcion, error: sErr } = await supabase.from('suscripciones').insert({
+      empresa_id,
+      plan_codigo:      nuevoPlan,
+      periodo_inicio:   inicio.toISOString().split('T')[0],
+      periodo_fin:      fin.toISOString().split('T')[0],
+      monto,
+      estado:           'pagado',
+      metodo_pago,
+      referencia_pago:  referencia_pago || null,
+      pagado_en:        ahora.toISOString(),
+      registrado_por:   auth.userId,
+      notas:            notas || null,
+    }).select().single();
+    if (sErr) throw sErr;
+
+    // Actualizar empresa: extender fecha_expiracion + plan + estado activo
+    const planDef2 = obtenerPlan(nuevoPlan);
+    await supabase.from('empresas').update({
+      plan_tipo:        nuevoPlan,
+      modulos_activos:  planDef2?.modulos_incluidos,
+      fecha_expiracion: fin.toISOString(),
+      estado:           'activo',
+      aviso_vencimiento_enviado: false,
+    }).eq('id', empresa_id);
+
+    return c.json({
+      ok: true,
+      mensaje: `Pago registrado — suscripción extendida hasta ${fin.toISOString().split('T')[0]}`,
+      suscripcion,
+      nueva_expiracion: fin.toISOString(),
+    }, 201);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ── Admin: historial de pagos de una empresa ──────────────────────────────
+app.get("/server/admin/suscripciones/:empresa_id", authMiddleware, superAdminMiddleware, async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  try {
+    const empresa_id = c.req.param('empresa_id');
+    const { data, error } = await supabase.from('suscripciones')
+      .select('*')
+      .eq('empresa_id', empresa_id)
+      .order('periodo_fin', { ascending: false });
+    if (error) throw error;
+    return c.json({ pagos: data ?? [] });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
   }
 });
 

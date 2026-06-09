@@ -12,6 +12,8 @@ interface User {
     id: string;
     nombre: string;
     plan: string;
+    plan_tipo: string;
+    fecha_expiracion?: string | null;
     modulos_activos: {
       pos: boolean;
       inventario: boolean;
@@ -20,6 +22,11 @@ interface User {
       cocina: boolean;
       auditoria: boolean;
       bi: boolean;
+    };
+    suscripcion?: {
+      estado: 'activa' | 'por_vencer' | 'en_gracia' | 'vencida';
+      dias_restantes: number;
+      mensaje: string;
     };
   };
 }

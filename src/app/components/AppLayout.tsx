@@ -1,9 +1,44 @@
 import { Outlet, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { useEffect, useState } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, AlertTriangle, AlertCircle } from 'lucide-react';
 import Sidebar from './layout/Sidebar';
 import OnboardingWizard from './onboarding/OnboardingWizard';
+
+/** Banner que avisa sobre el vencimiento próximo o período de gracia. */
+function BannerSuscripcion() {
+  const { user } = useAuth();
+  const navigate  = useNavigate();
+  const [cerrado, setCerrado] = useState(false);
+
+  const suscrip = user?.empresa?.suscripcion;
+  if (!suscrip || suscrip.estado === 'activa' || cerrado) return null;
+
+  const esGracia  = suscrip.estado === 'en_gracia';
+  const esPorVencer = suscrip.estado === 'por_vencer';
+
+  const bg    = esGracia  ? 'bg-red-600'    : 'bg-amber-500';
+  const texto = esGracia  ? 'text-white'    : 'text-amber-950';
+  const Icon  = esGracia  ? AlertCircle     : AlertTriangle;
+
+  return (
+    <div className={`${bg} ${texto} px-4 py-2 flex items-center gap-3 text-sm font-medium`}>
+      <Icon className="w-4 h-4 shrink-0" />
+      <span className="flex-1">{suscrip.mensaje}</span>
+      <button
+        onClick={() => navigate('/suscripcion')}
+        className="underline underline-offset-2 font-bold shrink-0 hover:opacity-80"
+      >
+        Renovar ahora
+      </button>
+      {esPorVencer && (
+        <button onClick={() => setCerrado(true)} className="ml-2 opacity-70 hover:opacity-100">
+          <X className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function AppLayout() {
   const { token, isLoading } = useAuth();
@@ -86,6 +121,7 @@ export default function AppLayout() {
 
       {/* ── Contenido Principal ──────────────────────────────────── */}
       <main className="flex-1 overflow-auto min-w-0 flex flex-col">
+        <BannerSuscripcion />
 
         {/* Topbar mobile — solo visible en pantallas pequeñas */}
         <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-black/10 sticky top-0 z-30 shadow-sm">
