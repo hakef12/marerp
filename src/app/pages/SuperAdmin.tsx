@@ -603,8 +603,13 @@ export default function SuperAdmin() {
       if (d.error) throw new Error(d.error);
       if (!d.resend_configurado) {
         toast.warning(`RESEND_API_KEY no configurada — emails no enviados. Procesadas: ${d.procesadas} empresas`);
+      } else if (d.errores > 0) {
+        const primerError = d.detalle?.find((x: any) => !x.enviado)?.error ?? 'error desconocido';
+        toast.error(`${d.enviados} enviados · ${d.errores} error(es): ${primerError}`);
+      } else if (d.enviados === 0) {
+        toast.success(`Ninguna empresa necesita aviso ahora (${d.procesadas} revisadas)`);
       } else {
-        toast.success(`Avisos: ${d.enviados} enviados · ${d.errores} errores · ${d.procesadas} empresas revisadas`);
+        toast.success(`Avisos enviados: ${d.enviados} emails · ${d.procesadas} empresas revisadas`);
       }
     } catch (err: any) {
       toast.error('Error: ' + err.message);
