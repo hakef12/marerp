@@ -8,9 +8,10 @@ interface Props {
 }
 
 const PLANES_UPGRADE = [
-  { codigo: 'restaurante', nombre: 'Restaurante', precio: 45,  color: 'from-orange-500 to-red-500',   icon: Utensils,   desc: 'Más mesas, usuarios y capacidad' },
-  { codigo: 'profesional', nombre: 'Profesional', precio: 100, color: 'from-purple-500 to-pink-500',  icon: TrendingUp, desc: 'Contabilidad, RRHH y BI incluidos' },
-  { codigo: 'enterprise',  nombre: 'Enterprise',  precio: 230, color: 'from-yellow-500 to-amber-500', icon: Crown,      desc: 'Todo ilimitado + soporte dedicado' },
+  { codigo: 'basico',      nombre: 'Básico',       precio: 20,  color: 'from-blue-500 to-cyan-500',    icon: Zap,        desc: 'Ideal para negocios pequeños' },
+  { codigo: 'restaurante', nombre: 'Restaurante',  precio: 45,  color: 'from-orange-500 to-red-500',   icon: Utensils,   desc: 'Más mesas, usuarios y capacidad' },
+  { codigo: 'profesional', nombre: 'Profesional',  precio: 100, color: 'from-purple-500 to-pink-500',  icon: TrendingUp, desc: 'Contabilidad, RRHH y BI incluidos' },
+  { codigo: 'enterprise',  nombre: 'Enterprise',   precio: 230, color: 'from-yellow-500 to-amber-500', icon: Crown,      desc: 'Todo ilimitado + soporte dedicado' },
 ];
 
 export function ModalLimiteAlcanzado({ mensaje, onClose }: Props) {
