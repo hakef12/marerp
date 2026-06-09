@@ -11,6 +11,7 @@ import {
   guardarMovimiento,
   registrarAsientoAutomatico,
 } from "./kv-helpers.tsx";
+import { validarLimite } from "./planes.tsx";
 
 const ROLES_ADMIN = ['gerente', 'admin', 'super_admin'];
 
@@ -96,6 +97,29 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
           error: 'La caja de esta sucursal está cerrada. Debe abrir la caja de esta sucursal antes de registrar ventas.',
           codigo: 'CAJA_CERRADA',
         }, 409);
+      }
+
+      // ── Verificar límite de facturas del mes según plan ───────────
+      const db = getDB();
+      const inicioMes = new Date();
+      inicioMes.setDate(1);
+      inicioMes.setHours(0, 0, 0, 0);
+
+      const [{ data: empresaData }, { count: ventasMes }] = await Promise.all([
+        db.from('empresas').select('plan_tipo').eq('id', auth.empresaId).single(),
+        db.from('ventas')
+          .select('id', { count: 'exact', head: true })
+          .eq('empresa_id', auth.empresaId)
+          .eq('anulada', false)
+          .gte('fecha', inicioMes.toISOString()),
+      ]);
+
+      const chkFacturas = validarLimite(empresaData?.plan_tipo || 'basico', 'facturas_mes', ventasMes ?? 0);
+      if (!chkFacturas.valido) {
+        return c.json({
+          error: chkFacturas.mensaje,
+          codigo: 'LIMITE_ALCANZADO',
+        }, 403);
       }
 
       const ventaData = {

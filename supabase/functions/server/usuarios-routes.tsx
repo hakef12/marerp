@@ -9,6 +9,7 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2.39.7';
+import { validarLimite } from './planes.tsx';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
@@ -60,11 +61,6 @@ const ROLES_VALIDOS = Object.keys(MODULOS_POR_ROL);
 const ROLES_ADMIN = ['gerente', 'admin', 'super_admin'];
 
 // ── Límites de usuarios por plan ─────────────────────────────
-function limiteUsuariosPlan(planTipo: string): number {
-  if (planTipo === 'enterprise') return 9999;
-  if (planTipo === 'profesional') return 10;
-  return 3; // básico / default
-}
 
 /** Normaliza un usuario de DB → respuesta API (mapea cargo→puesto, ultima_sesion→ultimo_acceso) */
 function normalizeUsuario(u: any, bodegaInfo?: any): any {
@@ -140,7 +136,6 @@ export function setupUsuariosRoutes(app: any, authMiddleware: any) {
         .single();
 
       const planTipo = empresa?.plan_tipo || 'basico';
-      const limite = limiteUsuariosPlan(planTipo);
 
       const { count } = await supabase
         .from('usuarios')
@@ -148,11 +143,13 @@ export function setupUsuariosRoutes(app: any, authMiddleware: any) {
         .eq('empresa_id', auth.empresaId)
         .eq('activo', true);
 
-      if ((count ?? 0) >= limite) {
+      const chkUsuarios = validarLimite(planTipo, 'usuarios_max', count ?? 0);
+      if (!chkUsuarios.valido) {
         return c.json({
-          error: `Tu plan ${planTipo} permite máximo ${limite} usuario${limite === 1 ? '' : 's'} activos. Actualiza tu plan para agregar más.`,
+          error: chkUsuarios.mensaje,
           limite_alcanzado: true,
-        }, 400);
+          codigo: 'LIMITE_ALCANZADO',
+        }, 403);
       }
 
       // Verificar que el email no esté ya registrado en esta empresa
@@ -373,19 +370,19 @@ export function setupUsuariosRoutes(app: any, authMiddleware: any) {
         .eq('id', auth.empresaId)
         .single();
 
-      const limite = limiteUsuariosPlan(empresa?.plan_tipo || 'basico');
-
       const { count } = await supabase
         .from('usuarios')
         .select('id', { count: 'exact', head: true })
         .eq('empresa_id', auth.empresaId)
         .eq('activo', true);
 
-      if ((count ?? 0) >= limite) {
+      const chkReact = validarLimite(empresa?.plan_tipo || 'basico', 'usuarios_max', count ?? 0);
+      if (!chkReact.valido) {
         return c.json({
-          error: 'Límite de usuarios activos alcanzado. Desactiva otro usuario o actualiza tu plan.',
+          error: chkReact.mensaje,
           limite_alcanzado: true,
-        }, 400);
+          codigo: 'LIMITE_ALCANZADO',
+        }, 403);
       }
 
       const { data: actualizado, error: updErr } = await supabase

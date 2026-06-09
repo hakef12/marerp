@@ -24,6 +24,7 @@ import {
   obtenerAsientos
 } from "./kv-helpers.tsx";
 import { registrarAuditoria, verificarPassword } from "./audit-helper.tsx";
+import { validarLimite } from "./planes.tsx";
 
 const getDB = () => createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -98,8 +99,18 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
     try {
       const body = await c.req.json();
 
+      // ── Verificar límite de productos del plan ────────────────────
+      const existentes = await obtenerProductos(auth.empresaId);
+
+      const { data: empresa } = await getDB()
+        .from('empresas').select('plan_tipo').eq('id', auth.empresaId).single();
+
+      const chkProductos = validarLimite(empresa?.plan_tipo || 'basico', 'productos_max', existentes.length);
+      if (!chkProductos.valido) {
+        return c.json({ error: chkProductos.mensaje, codigo: 'LIMITE_ALCANZADO' }, 403);
+      }
+
       if (body.codigo) {
-        const existentes = await obtenerProductos(auth.empresaId);
         const duplicado = existentes.find((p: any) => p.codigo === body.codigo);
         if (duplicado) {
           return c.json({ error: `El código "${body.codigo}" ya está en uso por "${duplicado.nombre}".` }, 400);
