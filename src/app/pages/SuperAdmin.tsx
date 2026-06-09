@@ -8,8 +8,9 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import {
   Settings, Building2, Users, Activity, RefreshCw,
-  Shield, ChevronDown, CheckCircle, XCircle, Zap,
-  TrendingUp, Utensils, Crown, Calendar, BarChart3
+  Shield, CheckCircle, XCircle, Zap,
+  TrendingUp, Utensils, Crown, Calendar, BarChart3,
+  CreditCard, AlertCircle, Clock, DollarSign,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -17,34 +18,34 @@ const PLANES = [
   {
     codigo: 'basico',
     nombre: 'Básico',
-    precio: 49,
+    precio: 20,
     color: 'from-blue-500 to-cyan-500',
     icon: Zap,
-    modulos: 'POS + Inventario',
+    modulos: 'POS + Inventario + KDS',
     badge: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  },
-  {
-    codigo: 'profesional',
-    nombre: 'Profesional',
-    precio: 129,
-    color: 'from-purple-500 to-pink-500',
-    icon: TrendingUp,
-    modulos: 'Todos los módulos',
-    badge: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
   },
   {
     codigo: 'restaurante',
     nombre: 'Restaurante',
-    precio: 99,
+    precio: 45,
     color: 'from-orange-500 to-red-500',
     icon: Utensils,
     modulos: 'POS + Cocina + Mesas',
     badge: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   },
   {
+    codigo: 'profesional',
+    nombre: 'Profesional',
+    precio: 100,
+    color: 'from-purple-500 to-pink-500',
+    icon: TrendingUp,
+    modulos: 'Todos los módulos',
+    badge: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  },
+  {
     codigo: 'enterprise',
     nombre: 'Enterprise',
-    precio: 299,
+    precio: 230,
     color: 'from-yellow-500 to-amber-500',
     icon: Crown,
     modulos: 'Todo ilimitado',
@@ -60,6 +61,20 @@ function getPlanBadge(planTipo: string) {
 function getPlanNombre(planTipo: string) {
   const plan = PLANES.find(p => p.codigo === planTipo);
   return plan ? plan.nombre : planTipo;
+}
+
+function getPlanPrecio(planTipo: string) {
+  return PLANES.find(p => p.codigo === planTipo)?.precio ?? 0;
+}
+
+/** Estado de suscripción calculado desde fecha_expiracion */
+function calcEstado(fecha: string | null): { estado: string; label: string; cls: string } {
+  if (!fecha) return { estado: 'sin_fecha', label: 'Sin fecha', cls: 'bg-gray-100 text-gray-500' };
+  const dias = Math.ceil((new Date(fecha).getTime() - Date.now()) / 86_400_000);
+  if (dias > 7)  return { estado: 'activa',     label: 'Activa',          cls: 'bg-green-100 text-green-700'  };
+  if (dias > 0)  return { estado: 'por_vencer', label: `Vence en ${dias}d`, cls: 'bg-amber-100 text-amber-700' };
+  if (dias > -5) return { estado: 'en_gracia',  label: 'En gracia',       cls: 'bg-red-100 text-red-700'      };
+  return          { estado: 'vencida',           label: 'Vencida',         cls: 'bg-gray-200 text-gray-600'    };
 }
 
 interface Empresa {
@@ -210,12 +225,257 @@ function GestionModal({ empresa, onClose, onSave, token, projectId }: GestionMod
   );
 }
 
+// ── Modal: registrar pago / extender suscripción ─────────────────────────────
+interface PagoModalProps {
+  empresa: Empresa;
+  onClose: () => void;
+  onSave: () => void;
+  token: string;
+  projectId: string;
+}
+
+function PagoModal({ empresa, onClose, onSave, token, projectId }: PagoModalProps) {
+  const BASE = `https://${projectId}.supabase.co/functions/v1/server`;
+
+  const [planSeleccionado, setPlanSeleccionado] = useState(empresa.plan_tipo);
+  const [meses, setMeses]                       = useState(1);
+  const [metodo, setMetodo]                     = useState('transferencia');
+  const [referencia, setReferencia]             = useState('');
+  const [notas, setNotas]                       = useState('');
+  const [loading, setLoading]                   = useState(false);
+  const [historial, setHistorial]               = useState<any[]>([]);
+  const [loadingH, setLoadingH]                 = useState(true);
+
+  const monto = getPlanPrecio(planSeleccionado) * meses;
+
+  // Cargar historial de pagos
+  useEffect(() => {
+    fetch(`${BASE}/admin/suscripciones/${empresa.id}`, {
+      headers: { 'Authorization': `Bearer ${token}`, 'X-User-Token': token },
+    })
+      .then(r => r.json())
+      .then(d => setHistorial(d.pagos ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingH(false));
+  }, []);
+
+  const registrar = async () => {
+    if (!referencia.trim()) {
+      toast.error('Ingresa el número de referencia del pago');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${BASE}/admin/suscripciones/pago`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-User-Token': token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          empresa_id:      empresa.id,
+          plan_tipo:       planSeleccionado,
+          meses,
+          metodo_pago:     metodo,
+          referencia_pago: referencia.trim(),
+          notas:           notas.trim() || undefined,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Error al registrar pago');
+      toast.success(d.mensaje || 'Pago registrado correctamente');
+      onSave();
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const expiracion = empresa.fecha_expiracion
+    ? new Date(empresa.fecha_expiracion).toLocaleDateString('es-EC', { dateStyle: 'medium' })
+    : '—';
+
+  // Nueva fecha estimada
+  const base = empresa.fecha_expiracion && new Date(empresa.fecha_expiracion) > new Date()
+    ? new Date(empresa.fecha_expiracion)
+    : new Date();
+  const nuevaExp = new Date(base);
+  nuevaExp.setMonth(nuevaExp.getMonth() + meses);
+  const nuevaExpStr = nuevaExp.toLocaleDateString('es-EC', { dateStyle: 'medium' });
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl my-4">
+        {/* Header */}
+        <div className="p-5 border-b border-gray-100 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
+            <CreditCard className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-gray-900 font-bold text-lg leading-none">{empresa.nombre}</h2>
+            <p className="text-gray-500 text-sm mt-0.5">
+              Vence: <span className={new Date(empresa.fecha_expiracion ?? '2000-01-01') < new Date() ? 'text-red-600 font-semibold' : 'text-gray-700'}>{expiracion}</span>
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {/* Plan */}
+          <div>
+            <Label className="text-gray-600 text-sm mb-2 block">Plan a activar</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {PLANES.map((p) => {
+                const Icon = p.icon;
+                const sel  = planSeleccionado === p.codigo;
+                return (
+                  <button
+                    key={p.codigo}
+                    onClick={() => setPlanSeleccionado(p.codigo)}
+                    className={`relative p-3 rounded-xl border-2 text-left transition-all ${
+                      sel ? 'border-[#F97316] bg-orange-50' : 'border-gray-100 hover:border-gray-200'
+                    }`}
+                  >
+                    {sel && <CheckCircle className="absolute top-2 right-2 w-3.5 h-3.5 text-[#F97316]" />}
+                    <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${p.color} flex items-center justify-center mb-1.5`}>
+                      <Icon className="w-3.5 h-3.5 text-white" />
+                    </div>
+                    <p className="text-gray-900 font-semibold text-xs">{p.nombre}</p>
+                    <p className="text-[#F97316] font-bold text-xs">${p.precio}/mes</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Meses + resumen */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-gray-600 text-sm mb-2 block">Meses a pagar</Label>
+              <select
+                value={meses}
+                onChange={e => setMeses(Number(e.target.value))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-[#F97316]/40"
+              >
+                {[1, 2, 3, 6, 12].map(m => (
+                  <option key={m} value={m}>{m} {m === 1 ? 'mes' : 'meses'}</option>
+                ))}
+              </select>
+            </div>
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex flex-col justify-center">
+              <p className="text-green-600 text-xs font-medium">Total a cobrar</p>
+              <p className="text-green-700 font-black text-2xl">${monto.toFixed(2)}</p>
+              <p className="text-green-600 text-xs mt-1 flex items-center gap-1">
+                <Clock className="w-3 h-3" /> Nuevo vence: {nuevaExpStr}
+              </p>
+            </div>
+          </div>
+
+          {/* Método de pago */}
+          <div>
+            <Label className="text-gray-600 text-sm mb-2 block">Método de pago</Label>
+            <div className="flex flex-wrap gap-2">
+              {['transferencia', 'efectivo', 'tarjeta', 'payphone', 'otro'].map(m => (
+                <button
+                  key={m}
+                  onClick={() => setMetodo(m)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border capitalize transition-all ${
+                    metodo === m
+                      ? 'bg-[#F97316] text-white border-[#F97316]'
+                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Referencia */}
+          <div>
+            <Label className="text-gray-600 text-sm mb-1.5 block">
+              Referencia / Comprobante <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              value={referencia}
+              onChange={e => setReferencia(e.target.value)}
+              placeholder="Ej: TRF-2024-001 o número de transacción"
+              className="border-gray-200 text-gray-900"
+            />
+          </div>
+
+          {/* Notas */}
+          <div>
+            <Label className="text-gray-600 text-sm mb-1.5 block">Notas (opcional)</Label>
+            <textarea
+              value={notas}
+              onChange={e => setNotas(e.target.value)}
+              placeholder="Observaciones adicionales..."
+              rows={2}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 resize-none focus:outline-none focus:ring-2 focus:ring-[#F97316]/40"
+            />
+          </div>
+
+          {/* Historial */}
+          <div>
+            <p className="text-gray-600 text-sm font-medium mb-2">Historial de pagos</p>
+            {loadingH ? (
+              <p className="text-gray-400 text-xs">Cargando...</p>
+            ) : historial.length === 0 ? (
+              <p className="text-gray-400 text-xs">Sin pagos registrados aún.</p>
+            ) : (
+              <div className="border border-gray-100 rounded-xl overflow-hidden">
+                {historial.slice(0, 5).map((p: any) => (
+                  <div key={p.id} className="flex items-center justify-between px-3 py-2 border-b border-gray-50 last:border-0">
+                    <div>
+                      <p className="text-xs font-medium text-gray-800 capitalize">{p.plan_codigo} · {p.metodo_pago}</p>
+                      <p className="text-xs text-gray-400">
+                        {new Date(p.periodo_inicio).toLocaleDateString('es-EC')} — {new Date(p.periodo_fin).toLocaleDateString('es-EC')}
+                      </p>
+                      {p.referencia_pago && <p className="text-xs text-gray-400">{p.referencia_pago}</p>}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-gray-900">${Number(p.monto).toFixed(2)}</p>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${p.estado === 'pagado' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {p.estado}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-5 border-t border-gray-100 flex gap-3">
+          <Button variant="outline" onClick={onClose} className="flex-1 border-gray-200 text-gray-600">
+            Cancelar
+          </Button>
+          <Button
+            onClick={registrar}
+            disabled={loading}
+            className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:opacity-90 gap-2"
+          >
+            <DollarSign className="w-4 h-4" />
+            {loading ? 'Registrando...' : `Registrar pago $${monto.toFixed(2)}`}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SuperAdmin() {
   const { token, user } = useAuth();
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [empresaSeleccionada, setEmpresaSeleccionada] = useState<Empresa | null>(null);
+  const [empresaPago, setEmpresaPago] = useState<Empresa | null>(null);
   const [projectId, setProjectId] = useState('');
   const [reparando, setReparando] = useState<string | null>(null);
   const [resultadoReparacion, setResultadoReparacion] = useState<any>(null);
@@ -482,63 +742,56 @@ export default function SuperAdmin() {
                 <TableHeader>
                   <TableRow className="border-[#F97316]/20 hover:bg-transparent">
                     <TableHead className="text-gray-600">Empresa</TableHead>
-                    <TableHead className="text-gray-600">RUC / NIT</TableHead>
                     <TableHead className="text-gray-600">Plan</TableHead>
-                    <TableHead className="text-gray-600">Estado</TableHead>
-                    <TableHead className="text-gray-600">Registro</TableHead>
+                    <TableHead className="text-gray-600">Suscripción</TableHead>
                     <TableHead className="text-gray-600">Expiración</TableHead>
                     <TableHead className="text-gray-600 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {empresas.map((empresa) => (
+                  {empresas.map((empresa) => {
+                    const suscrip = calcEstado(empresa.fecha_expiracion);
+                    return (
                     <TableRow key={empresa.id} className="border-[#F97316]/10 hover:bg-gray-50">
                       <TableCell>
                         <div>
                           <p className="text-gray-900 font-medium">{empresa.nombre}</p>
-                          <p className="text-gray-600 text-xs">{empresa.email}</p>
+                          <p className="text-gray-500 text-xs">{empresa.ruc_nit} · {empresa.email}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="text-gray-600 font-mono text-sm">{empresa.ruc_nit}</TableCell>
                       <TableCell>
                         <Badge className={`capitalize ${getPlanBadge(empresa.plan_tipo)}`}>
                           {getPlanNombre(empresa.plan_tipo)}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          className={
-                            empresa.estado === 'activo'
-                              ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                              : 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                          }
-                        >
-                          {empresa.estado === 'activo' ? '● Activa' : '● Suspendida'}
-                        </Badge>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${suscrip.cls}`}>
+                          {suscrip.estado === 'activa'     && <CheckCircle className="w-3 h-3 inline mr-1" />}
+                          {suscrip.estado === 'por_vencer' && <Clock className="w-3 h-3 inline mr-1" />}
+                          {(suscrip.estado === 'en_gracia' || suscrip.estado === 'vencida') && <AlertCircle className="w-3 h-3 inline mr-1" />}
+                          {suscrip.label}
+                        </span>
                       </TableCell>
-                      <TableCell className="text-gray-600 text-sm">
-                        {new Date(empresa.fecha_registro).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {empresa.fecha_expiracion ? (
-                          <span className={
-                            new Date(empresa.fecha_expiracion) < new Date()
-                              ? 'text-red-400'
-                              : 'text-gray-600'
-                          }>
-                            {new Date(empresa.fecha_expiracion).toLocaleDateString()}
-                          </span>
-                        ) : (
-                          <span className="text-gray-600">—</span>
-                        )}
+                      <TableCell className="text-sm text-gray-600">
+                        {empresa.fecha_expiracion
+                          ? new Date(empresa.fecha_expiracion).toLocaleDateString('es-EC')
+                          : '—'}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-2 justify-end">
-                          {/* Cambiar plan */}
+                        <div className="flex gap-1.5 justify-end flex-wrap">
+                          {/* Registrar pago */}
+                          <Button
+                            size="sm"
+                            onClick={() => setEmpresaPago(empresa)}
+                            className="bg-green-500/10 text-green-700 border border-green-500/30 hover:bg-green-500/20 text-xs gap-1"
+                          >
+                            <CreditCard className="w-3 h-3" /> Pago
+                          </Button>
+                          {/* Cambiar plan / fecha */}
                           <Button
                             size="sm"
                             onClick={() => setEmpresaSeleccionada(empresa)}
-                            className="bg-[#FB923C]/20 text-[#FB923C] border border-[#FB923C]/30 hover:bg-[#FB923C]/30 text-xs"
+                            className="bg-[#FB923C]/10 text-[#FB923C] border border-[#FB923C]/30 hover:bg-[#FB923C]/20 text-xs"
                           >
                             Gestionar
                           </Button>
@@ -548,7 +801,7 @@ export default function SuperAdmin() {
                               size="sm"
                               variant="outline"
                               onClick={() => cambiarEstado(empresa.id, 'suspendido')}
-                              className="border-orange-500/30 text-orange-400 hover:bg-orange-500/10 text-xs"
+                              className="border-red-200 text-red-500 hover:bg-red-50 text-xs"
                             >
                               Suspender
                             </Button>
@@ -557,7 +810,7 @@ export default function SuperAdmin() {
                               size="sm"
                               variant="outline"
                               onClick={() => cambiarEstado(empresa.id, 'activo')}
-                              className="border-green-500/30 text-green-400 hover:bg-green-500/10 text-xs"
+                              className="border-green-200 text-green-600 hover:bg-green-50 text-xs"
                             >
                               Activar
                             </Button>
@@ -565,7 +818,8 @@ export default function SuperAdmin() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -696,13 +950,24 @@ export default function SuperAdmin() {
         </CardContent>
       </Card>
 
-      {/* Modal gestión de empresa */}
+      {/* Modal gestión de empresa (plan + fecha) */}
       {empresaSeleccionada && projectId && (
         <GestionModal
           empresa={empresaSeleccionada}
           token={token!}
           projectId={projectId}
           onClose={() => setEmpresaSeleccionada(null)}
+          onSave={() => fetchEmpresas(projectId)}
+        />
+      )}
+
+      {/* Modal registrar pago */}
+      {empresaPago && projectId && (
+        <PagoModal
+          empresa={empresaPago}
+          token={token!}
+          projectId={projectId}
+          onClose={() => setEmpresaPago(null)}
           onSave={() => fetchEmpresas(projectId)}
         />
       )}
