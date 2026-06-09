@@ -477,6 +477,7 @@ export default function SuperAdmin() {
   const [empresaSeleccionada, setEmpresaSeleccionada] = useState<Empresa | null>(null);
   const [empresaPago, setEmpresaPago] = useState<Empresa | null>(null);
   const [projectId, setProjectId] = useState('');
+  const [enviandoAvisos, setEnviandoAvisos] = useState(false);
   const [reparando, setReparando] = useState<string | null>(null);
   const [resultadoReparacion, setResultadoReparacion] = useState<any>(null);
   const [empresaReparar, setEmpresaReparar] = useState('');
@@ -595,6 +596,27 @@ export default function SuperAdmin() {
     }
   };
 
+  const enviarAvisosManual = async () => {
+    setEnviandoAvisos(true);
+    try {
+      const { publicAnonKey } = await import('/utils/supabase/info');
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/avisos-vencimiento`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token! },
+        }
+      );
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Error al enviar avisos');
+      toast.success(`Avisos enviados: ${d.enviados} emails · ${d.errores} errores · ${d.procesadas} empresas revisadas`);
+    } catch (err: any) {
+      toast.error('Error: ' + err.message);
+    } finally {
+      setEnviandoAvisos(false);
+    }
+  };
+
   const cambiarEstado = async (empresaId: string, nuevoEstado: string) => {
     try {
       const res = await fetch(
@@ -643,13 +665,25 @@ export default function SuperAdmin() {
           </h1>
           <p className="text-gray-600">Gestión global de empresas y planes</p>
         </div>
-        <Button
-          onClick={() => fetchEmpresas(projectId)}
-          variant="outline"
-          className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10 gap-2"
-        >
-          <RefreshCw className="w-4 h-4" /> Actualizar
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={enviarAvisosManual}
+            disabled={enviandoAvisos || !projectId}
+            variant="outline"
+            className="border-amber-300 text-amber-600 hover:bg-amber-50 gap-2"
+          >
+            {enviandoAvisos
+              ? <><RefreshCw className="w-4 h-4 animate-spin" /> Enviando...</>
+              : <><AlertCircle className="w-4 h-4" /> Enviar avisos</>}
+          </Button>
+          <Button
+            onClick={() => fetchEmpresas(projectId)}
+            variant="outline"
+            className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10 gap-2"
+          >
+            <RefreshCw className="w-4 h-4" /> Actualizar
+          </Button>
+        </div>
       </div>
 
       {/* KPIs */}
