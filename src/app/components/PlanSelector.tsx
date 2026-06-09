@@ -1,4 +1,4 @@
-import { Check, Zap, TrendingUp, Utensils, Crown } from 'lucide-react';
+import { Check, Zap, TrendingUp, Utensils, Crown, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
@@ -79,6 +79,7 @@ interface PlanSelectorProps {
 export function PlanSelector({ selectedPlan, onSelectPlan }: PlanSelectorProps) {
   const [planes, setPlanes] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandidos, setExpandidos] = useState<Record<string, boolean>>({});
 
   // DEBUG: Ver qué plan está seleccionado
   useEffect(() => {
@@ -139,6 +140,8 @@ export function PlanSelector({ selectedPlan, onSelectPlan }: PlanSelectorProps) 
           const color = plan.color ? `from-[${plan.color}] to-[${plan.color}]` : PLAN_COLORS[plan.codigo] || 'from-blue-500 to-cyan-500';
           const isSelected = selectedPlan === plan.codigo;
           const caracteristicas = Array.isArray(plan.caracteristicas) ? plan.caracteristicas : [];
+          const expandido = expandidos[plan.codigo] ?? false;
+          const visibles = expandido ? caracteristicas : caracteristicas.slice(0, 3);
           
           return (
             <button
@@ -184,15 +187,27 @@ export function PlanSelector({ selectedPlan, onSelectPlan }: PlanSelectorProps) 
 
               {/* Características */}
               <ul className="space-y-1 mt-3">
-                {caracteristicas.slice(0, 3).map((caracteristica, index) => (
+                {visibles.map((caracteristica, index) => (
                   <li key={`${plan.codigo}-caracteristica-${index}`} className="flex items-start gap-2 text-xs text-gray-600">
                     <Check className="w-3 h-3 text-[#F97316] mt-0.5 flex-shrink-0" />
                     <span>{caracteristica}</span>
                   </li>
                 ))}
                 {caracteristicas.length > 3 && (
-                  <li key={`${plan.codigo}-mas-caracteristicas`} className="text-xs text-[#F97316] font-medium">
-                    +{caracteristicas.length - 3} más
+                  <li key={`${plan.codigo}-toggle`}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandidos(prev => ({ ...prev, [plan.codigo]: !prev[plan.codigo] }));
+                      }}
+                      className="flex items-center gap-1 text-xs text-[#F97316] font-medium hover:underline mt-1"
+                    >
+                      {expandido
+                        ? <><ChevronUp className="w-3 h-3" /> Ver menos</>
+                        : <><ChevronDown className="w-3 h-3" /> +{caracteristicas.length - 3} más</>
+                      }
+                    </button>
                   </li>
                 )}
               </ul>
