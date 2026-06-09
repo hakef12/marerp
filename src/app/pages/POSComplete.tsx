@@ -13,6 +13,7 @@ import { Separator } from '../components/ui/separator';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { RIDE } from '../components/facturacion/RIDE';
+import { ModalLimiteAlcanzado } from '../components/ModalLimiteAlcanzado';
 import { DatosClienteDialog, type DatosCliente } from '../components/facturacion/DatosClienteDialog';
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, DollarSign, CreditCard,
@@ -243,6 +244,7 @@ export default function POS() {
   const [metodoPago, setMetodoPago] = useState<'efectivo' | 'tarjeta' | 'transferencia'>('efectivo');
   const [montoRecibido, setMontoRecibido] = useState('');
   const [procesando, setProcesando] = useState(false);
+  const [limiteMsg, setLimiteMsg] = useState('');
 
   // Post-venta
   const [dialogComanda, setDialogComanda] = useState(false);
@@ -582,6 +584,8 @@ export default function POS() {
           toast.error(err.error || 'La caja de esta sucursal está cerrada. Vuelve a abrirla para continuar.');
         } else if (err.codigo === 'BODEGA_INDEFINIDA') {
           toast.error(err.error || 'Selecciona una sucursal antes de vender.');
+        } else if (err.codigo === 'LIMITE_ALCANZADO') {
+          setLimiteMsg(err.error);
         } else {
           toast.error(err.error || 'Error al procesar venta');
         }
@@ -1657,6 +1661,10 @@ export default function POS() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {limiteMsg && (
+        <ModalLimiteAlcanzado mensaje={limiteMsg} onClose={() => setLimiteMsg('')} />
+      )}
     </div>
   );
 }

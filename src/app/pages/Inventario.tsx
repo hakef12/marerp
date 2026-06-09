@@ -45,6 +45,7 @@ import { ExportButtons } from '../components/ExportButtons';
 import { exportToPDF, exportToExcel } from '../utils/exportUtils';
 import { Pagination, PaginationContent, PaginationItem, PaginationPrevious, PaginationNext, PaginationLink } from '../components/ui/pagination';
 import { ProductoModal } from '../components/inventario/ProductoModal';
+import { ModalLimiteAlcanzado } from '../components/ModalLimiteAlcanzado';
 import { ProveedorModal } from '../components/inventario/ProveedorModal';
 import { BodegaModal } from '../components/inventario/BodegaModal';
 import { MovimientoModal } from '../components/inventario/MovimientoModal';
@@ -83,6 +84,7 @@ export default function Inventario() {
   
   // Estados de modales
   const [showProductoModal, setShowProductoModal] = useState(false);
+  const [limiteMsg, setLimiteMsg] = useState('');
   const [showProveedorModal, setShowProveedorModal] = useState(false);
   const [showBodegaModal, setShowBodegaModal] = useState(false);
   const [showMovimientoModal, setShowMovimientoModal] = useState(false);
@@ -3620,7 +3622,12 @@ export default function Inventario() {
         producto={editingItem}
         categorias={categorias}
         token={token}
+        onLimiteAlcanzado={(msg) => setLimiteMsg(msg)}
       />
+
+      {limiteMsg && (
+        <ModalLimiteAlcanzado mensaje={limiteMsg} onClose={() => setLimiteMsg('')} />
+      )}
 
       <ProveedorModal
         open={showProveedorModal}

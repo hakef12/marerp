@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 import { ROLES_INFO, MODULOS_POR_ROL, ROLES_ADMIN, labelRol, badgeRol } from '../utils/permisos';
+import { ModalLimiteAlcanzado } from '../components/ModalLimiteAlcanzado';
 import { ExportButtons } from '../components/ExportButtons';
 import { exportToExcel, exportToPDF } from '../utils/exportUtils';
 import { useBodega } from '../context/BodegaContext';
@@ -79,6 +80,7 @@ export default function Usuarios() {
   const [busqueda, setBusqueda] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [limiteMsg, setLimiteMsg] = useState('');
 
   const [formData, setFormData] = useState({
     nombre_completo: '',
@@ -114,9 +116,7 @@ export default function Usuarios() {
 
   const abrirCrear = () => {
     if (limitesPlan?.limites_alcanzados?.usuarios) {
-      toast.error(`Límite de ${limitesPlan.plan.max_usuarios} usuarios alcanzado`, {
-        description: 'Actualiza tu plan para agregar más usuarios',
-      });
+      setLimiteMsg(`Has alcanzado el límite de ${limitesPlan.plan.max_usuarios} usuarios activos en tu plan. Actualiza tu plan para agregar más usuarios.`);
       return;
     }
     setEditingUser(null);
@@ -156,7 +156,12 @@ export default function Usuarios() {
       setShowModal(false);
       cargarDatos();
     } catch (err: any) {
-      toast.error(err.message || 'Error al guardar usuario');
+      if (err.codigo === 'LIMITE_ALCANZADO') {
+        setShowModal(false);
+        setLimiteMsg(err.message);
+      } else {
+        toast.error(err.message || 'Error al guardar usuario');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -176,7 +181,11 @@ export default function Usuarios() {
       }
       cargarDatos();
     } catch (err: any) {
-      toast.error(err.message || 'Error al cambiar estado del usuario');
+      if (err.codigo === 'LIMITE_ALCANZADO') {
+        setLimiteMsg(err.message);
+      } else {
+        toast.error(err.message || 'Error al cambiar estado del usuario');
+      }
     }
   };
 
@@ -374,6 +383,11 @@ export default function Usuarios() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Modal Límite Alcanzado ───────────────────────────── */}
+      {limiteMsg && (
+        <ModalLimiteAlcanzado mensaje={limiteMsg} onClose={() => setLimiteMsg('')} />
+      )}
 
       {/* ── Modal Crear / Editar ──────────────────────────────── */}
       {showModal && (

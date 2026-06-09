@@ -30,6 +30,7 @@ interface ProductoModalProps {
   producto?: any;
   categorias: any[];
   token: string;
+  onLimiteAlcanzado?: (mensaje: string) => void;
 }
 
 const EMPTY_FORM = {
@@ -78,7 +79,7 @@ function formFromProducto(p: any) {
   };
 }
 
-export function ProductoModal({ open, onClose, onSuccess, producto, categorias, token }: ProductoModalProps) {
+export function ProductoModal({ open, onClose, onSuccess, producto, categorias, token, onLimiteAlcanzado }: ProductoModalProps) {
   const { user } = useAuth();
 
   const [formData, setFormData] = useState(() => producto ? formFromProducto(producto) : { ...EMPTY_FORM });
@@ -176,7 +177,12 @@ export function ProductoModal({ open, onClose, onSuccess, producto, categorias, 
         onClose();
       } else {
         const error = await response.json();
-        toast.error(error.error || 'Error al guardar producto');
+        if (error.codigo === 'LIMITE_ALCANZADO') {
+          onClose();
+          onLimiteAlcanzado?.(error.error);
+        } else {
+          toast.error(error.error || 'Error al guardar producto');
+        }
       }
     } catch (error) {
       toast.error('Error de conexión al guardar producto');

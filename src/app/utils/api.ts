@@ -2,6 +2,16 @@
  * Utilidades para hacer requests al backend del ERP
  */
 
+/** Error extendido que preserva el `codigo` devuelto por el backend (ej: LIMITE_ALCANZADO) */
+export class ApiError extends Error {
+  codigo?: string;
+  constructor(message: string, codigo?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.codigo = codigo;
+  }
+}
+
 interface ApiRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: any;
@@ -80,7 +90,7 @@ export async function apiRequest(
         throw new Error('UNAUTHORIZED');
       }
       
-      throw new Error(data.error || data.message || 'Error en la solicitud');
+      throw new ApiError(data.error || data.message || 'Error en la solicitud', data.codigo);
     }
 
     console.log(`✅ [API] ${method} ${endpoint} - Exitoso`);
