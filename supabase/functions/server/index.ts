@@ -1047,6 +1047,123 @@ app.get("/server/admin/suscripciones/:empresa_id", authMiddleware, superAdminMid
   }
 });
 
+// ── Admin: trigger manual de avisos de vencimiento ───────────────────────────
+app.post("/server/admin/enviar-avisos", authMiddleware, superAdminMiddleware, async (c) => {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  const RESEND_API_KEY     = Deno.env.get('RESEND_API_KEY') ?? '';
+  const RESEND_FROM_DOMAIN = Deno.env.get('RESEND_FROM_DOMAIN') ?? 'onboarding@resend.dev';
+  const WHATSAPP_SOPORTE   = Deno.env.get('WHATSAPP_SOPORTE') ?? '593XXXXXXXXX';
+  const DIAS_GRACIA_AVS    = 5;
+  const DIAS_ADV_AVS       = 7;
+
+  async function enviarEmailAviso(to: string, subject: string, html: string) {
+    if (!RESEND_API_KEY) return { ok: false, error: 'RESEND_API_KEY no configurada' };
+    const from = RESEND_FROM_DOMAIN.includes('@')
+      ? `MAR ERP <${RESEND_FROM_DOMAIN}>`
+      : `MAR ERP <noreply@${RESEND_FROM_DOMAIN}>`;
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [to], subject, html }),
+    });
+    const d = await res.json();
+    return res.ok ? { ok: true, id: d.id } : { ok: false, error: d.message };
+  }
+
+  try {
+    const { data: empresas, error } = await supabase
+      .from('empresas')
+      .select('id, nombre, email, plan_tipo, fecha_expiracion, aviso_vencimiento_enviado, estado')
+      .neq('ruc_nit', '0000000000001')
+      .eq('estado', 'activo')
+      .not('fecha_expiracion', 'is', null);
+
+    if (error) throw error;
+
+    let enviados = 0, errores = 0;
+    const detalle: any[] = [];
+    const now = new Date();
+    const waBase = `https://wa.me/${WHATSAPP_SOPORTE}?text=`;
+
+    for (const emp of (empresas || [])) {
+      const dias = Math.ceil((new Date(emp.fecha_expiracion).getTime() - now.getTime()) / 86_400_000);
+
+      let tipo: string | null = null;
+      let subject = '';
+      let html    = '';
+
+      if (dias > 0 && dias <= DIAS_ADV_AVS && !emp.aviso_vencimiento_enviado) {
+        tipo    = 'por_vencer';
+        subject = `⚠️ Tu suscripción MAR ERP vence en ${dias} día${dias === 1 ? '' : 's'}`;
+        const wa = waBase + encodeURIComponent(`Hola, quiero renovar la suscripción de ${emp.nombre}`);
+        html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
+          <div style="background:linear-gradient(135deg,#FB923C,#F97316);padding:28px;border-radius:12px 12px 0 0;text-align:center">
+            <h1 style="color:#fff;margin:0;font-size:24px">🍳 MAR ERP</h1>
+          </div>
+          <div style="background:#fff;padding:28px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px">
+            <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:16px;margin-bottom:20px">
+              <strong style="color:#C2410C;font-size:16px">⚠️ Tu suscripción vence en ${dias} día${dias === 1 ? '' : 's'}</strong>
+            </div>
+            <p>Hola <strong>${emp.nombre}</strong>,</p>
+            <p style="color:#6B7280">Tu suscripción vencerá el <strong>${new Date(emp.fecha_expiracion).toLocaleDateString('es-EC', { dateStyle: 'long' })}</strong>.
+            Para renovar, envíanos el comprobante por WhatsApp.</p>
+            <div style="text-align:center;margin:24px 0">
+              <a href="${wa}" style="background:linear-gradient(135deg,#22C55E,#16A34A);color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700">
+                💬 Renovar por WhatsApp
+              </a>
+            </div>
+          </div>
+        </div>`;
+      } else if (dias <= 0 && dias > -DIAS_GRACIA_AVS && !emp.aviso_vencimiento_enviado) {
+        const diasGracia = DIAS_GRACIA_AVS + dias;
+        tipo    = 'en_gracia';
+        subject = `🚨 MAR ERP — Suscripción vencida, ${diasGracia} día${diasGracia === 1 ? '' : 's'} para suspensión`;
+        const wa = waBase + encodeURIComponent(`Hola, necesito renovar urgente la suscripción de ${emp.nombre}`);
+        html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto">
+          <div style="background:linear-gradient(135deg,#EF4444,#DC2626);padding:28px;border-radius:12px 12px 0 0;text-align:center">
+            <h1 style="color:#fff;margin:0;font-size:24px">🍳 MAR ERP</h1>
+          </div>
+          <div style="background:#fff;padding:28px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px">
+            <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:16px;margin-bottom:20px">
+              <strong style="color:#991B1B;font-size:16px">🚨 Suscripción vencida — ${diasGracia} día${diasGracia === 1 ? '' : 's'} de gracia restantes</strong>
+            </div>
+            <p>Hola <strong>${emp.nombre}</strong>,</p>
+            <p style="color:#6B7280">Tu cuenta se suspenderá automáticamente en <strong>${diasGracia} día${diasGracia === 1 ? '' : 's'}</strong>. Renueva ahora.</p>
+            <div style="text-align:center;margin:24px 0">
+              <a href="${wa}" style="background:linear-gradient(135deg,#EF4444,#DC2626);color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700">
+                🚨 Renovar ahora
+              </a>
+            </div>
+          </div>
+        </div>`;
+      }
+
+      if (tipo && subject && html) {
+        const result = await enviarEmailAviso(emp.email, subject, html);
+        detalle.push({ empresa: emp.nombre, email: emp.email, tipo, enviado: result.ok, error: result.error });
+        if (result.ok) {
+          enviados++;
+          await supabase.from('empresas').update({ aviso_vencimiento_enviado: true }).eq('id', emp.id);
+        } else {
+          errores++;
+        }
+      }
+    }
+
+    return c.json({
+      ok: true,
+      procesadas: empresas?.length ?? 0,
+      enviados,
+      errores,
+      detalle,
+      resend_configurado: RESEND_API_KEY.length > 0,
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 // Facturación: configuración
 app.get("/server/facturacion/configuracion", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');

@@ -599,17 +599,13 @@ export default function SuperAdmin() {
   const enviarAvisosManual = async () => {
     setEnviandoAvisos(true);
     try {
-      const { publicAnonKey } = await import('/utils/supabase/info');
-      const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/avisos-vencimiento`,
-        {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token! },
-        }
-      );
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Error al enviar avisos');
-      toast.success(`Avisos enviados: ${d.enviados} emails · ${d.errores} errores · ${d.procesadas} empresas revisadas`);
+      const d = await callAdmin(projectId, '/admin/enviar-avisos', 'POST');
+      if (d.error) throw new Error(d.error);
+      if (!d.resend_configurado) {
+        toast.warning(`RESEND_API_KEY no configurada — emails no enviados. Procesadas: ${d.procesadas} empresas`);
+      } else {
+        toast.success(`Avisos: ${d.enviados} enviados · ${d.errores} errores · ${d.procesadas} empresas revisadas`);
+      }
     } catch (err: any) {
       toast.error('Error: ' + err.message);
     } finally {
