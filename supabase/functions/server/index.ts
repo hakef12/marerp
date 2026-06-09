@@ -777,7 +777,7 @@ app.get("/server/admin/empresas", authMiddleware, superAdminMiddleware, async (c
   try {
     const { data: empresas, error } = await supabase
       .from('empresas')
-      .select('*, usuarios(count)')
+      .select('id, nombre, ruc_nit, email, plan_tipo, estado, fecha_registro, fecha_expiracion, modulos_activos')
       .neq('ruc_nit', '0000000000001')
       .order('fecha_registro', { ascending: false });
 

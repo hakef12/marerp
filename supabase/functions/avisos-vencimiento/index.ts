@@ -264,54 +264,64 @@ Deno.cron('avisos-vencimiento-diario', '0 8 * * *', async () => {
 });
 
 // ── HTTP handler — trigger manual ────────────────────────────────────────────
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Authorization, X-User-Token, Content-Type',
+};
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+  });
+}
+
 Deno.serve(async (req) => {
-  // Solo POST
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Método no permitido. Usa POST.' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  // Preflight CORS
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
-  // Verificar autorización (service role key o token de admin)
-  const authHeader = req.headers.get('Authorization') ?? '';
-  const token = authHeader.replace('Bearer ', '');
-  if (token !== SERVICE_ROLE_KEY) {
-    // Verificar si es un super_admin via X-User-Token
-    const userToken = req.headers.get('X-User-Token') ?? '';
-    if (!userToken) {
-      return new Response(JSON.stringify({ error: 'No autorizado' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    // Verificar rol en DB
+  // Solo POST
+  if (req.method !== 'POST') {
+    return jsonResponse({ error: 'Método no permitido. Usa POST.' }, 405);
+  }
+
+  // Verificar autorización: acepta service_role key O un X-User-Token de super_admin
+  const userToken = req.headers.get('X-User-Token') ?? '';
+
+  if (userToken) {
+    // Verificar rol del usuario en DB
     const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    const { data: authUser } = await db.auth.getUser(userToken);
+    if (!authUser?.user?.id) return jsonResponse({ error: 'Token inválido' }, 401);
+
     const { data: usuario } = await db
       .from('usuarios')
       .select('rol')
-      .eq('auth_id', (await db.auth.getUser(userToken))?.data?.user?.id ?? '')
+      .eq('auth_id', authUser.user.id)
       .maybeSingle();
+
     if (usuario?.rol !== 'super_admin') {
-      return new Response(JSON.stringify({ error: 'Solo super_admin puede ejecutar esta función' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'Solo super_admin puede ejecutar esta función' }, 403);
+    }
+  } else {
+    // Sin X-User-Token → exigir service_role key
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const token = authHeader.replace('Bearer ', '');
+    if (token !== SERVICE_ROLE_KEY) {
+      return jsonResponse({ error: 'No autorizado' }, 401);
     }
   }
 
   try {
     console.log('▶ Trigger manual avisos-vencimiento:', new Date().toISOString());
     const resultado = await procesarAvisos();
-    return new Response(JSON.stringify({ ok: true, ...resultado }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ ok: true, ...resultado });
   } catch (e: any) {
     console.error('❌ Error en avisos-vencimiento:', e.message);
-    return new Response(JSON.stringify({ ok: false, error: e.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ ok: false, error: e.message }, 500);
   }
 });
