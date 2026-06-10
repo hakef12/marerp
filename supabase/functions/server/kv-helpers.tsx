@@ -232,11 +232,22 @@ export async function eliminarCategoria(empresaId: string, categoriaId: string) 
 
 export async function obtenerRecetas(empresaId: string) {
   const db = getDB();
-  // Intentar SQL con columnas base (sin las opcionales de migraciones)
-  const colsBase = 'id,empresa_id,nombre,producto_id,rendimiento,costo_total,activo,ingredientes,metadata,created_at,updated_at';
   try {
-    const { data, error } = await db.from('recetas')
-      .select(colsBase).eq('empresa_id', empresaId).order('nombre');
+    // Pedir TODAS las columnas: select('*') trae las que existan en la tabla
+    // sin fallar si alguna migración (006/008/012: precio_sugerido, categoria,
+    // es_subreceta, costo_por_unidad, etc.) no fue aplicada.
+    let { data, error } = await db.from('recetas')
+      .select('*').eq('empresa_id', empresaId).order('nombre');
+
+    if (error) {
+      // Fallback: columnas base (por si '*' falla por algún motivo ajeno a columnas)
+      const colsBase = 'id,empresa_id,nombre,producto_id,rendimiento,costo_total,activo,ingredientes,metadata,created_at,updated_at';
+      const r2 = await db.from('recetas')
+        .select(colsBase).eq('empresa_id', empresaId).order('nombre');
+      data = r2.data;
+      error = r2.error;
+    }
+
     if (!error && data) {
       if (data.length > 0) return data;
       // SQL vacío → intentar KV
