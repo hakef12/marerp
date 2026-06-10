@@ -86,9 +86,20 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
   const [subrecetas,  setSubrecetas]  = useState<any[]>([]);
   const [formData,    setFormData]    = useState(() => buildFormData(receta));
   const [ingredientes, setIngredientes] = useState<Ingrediente[]>(() => buildIngredientes(receta));
-  const [metodoPrecio, setMetodoPrecio] = useState<'foodcost' | 'manual'>('foodcost');
+  // Si la receta ya trae un precio definido, respetarlo (modo manual) en vez
+  // de recalcularlo automáticamente al abrir el modal — de lo contrario el
+  // useEffect de food-cost lo sobrescribe con el 30% por defecto al instante.
+  const [metodoPrecio, setMetodoPrecio] = useState<'foodcost' | 'manual'>(
+    () => (receta?.precio_sugerido > 0 ? 'manual' : 'foodcost')
+  );
   const [foodCostPct,  setFoodCostPct]  = useState(30);
   const [cargando,    setCargando]    = useState(false);
+  // Se incrementa cuando termina de cargar la receta desde el backend, para
+  // forzar el recálculo del precio sugerido (ver useEffect de food-cost):
+  // sin esto, si costoPorUnidad no cambia de valor entre el primer render
+  // (con los datos del prop `receta`) y la recarga async, el efecto no se
+  // vuelve a disparar y el precio_sugerido queda en 0 (el que trae buildFormData).
+  const [dataVersion, setDataVersion] = useState(0);
 
   // ── Cargar datos al abrir ─────────────────────────────────────────────────
   useEffect(() => {
@@ -100,7 +111,11 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
         const headers = { Authorization: `Bearer ${publicAnonKey}`, 'X-User-Token': token };
 
         const [prodRes, subRes, recetaRes] = await Promise.all([
-          fetch(`https://${projectId}.supabase.co/functions/v1/server/pos/productos`, { headers }),
+          // OJO: usar /server/productos (catálogo completo de inventario), NO
+          // /server/pos/productos — ese endpoint filtra `disponible !== false`
+          // y excluye insumos/materia prima (no se venden directo), que son
+          // justo los que se usan como ingredientes de las recetas.
+          fetch(`https://${projectId}.supabase.co/functions/v1/server/productos`, { headers }),
           fetch(`https://${projectId}.supabase.co/functions/v1/server/cocina/subrecetas`, { headers }),
           receta?.id
             ? fetch(`https://${projectId}.supabase.co/functions/v1/server/cocina/recetas/${receta.id}`, { headers })
@@ -120,12 +135,14 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
           if (d.receta) {
             setFormData(buildFormData(d.receta));
             setIngredientes(buildIngredientes(d.receta));
+            setMetodoPrecio((parseFloat(d.receta.precio_sugerido) || 0) > 0 ? 'manual' : 'foodcost');
           }
         }
       } catch (e) {
         console.error('Error cargando datos:', e);
       } finally {
         setCargando(false);
+        setDataVersion(v => v + 1);
       }
     };
     load();
@@ -190,7 +207,7 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
         precio_sugerido: parseFloat((costoPorUnidad / (foodCostPct / 100)).toFixed(2)),
       }));
     }
-  }, [costoPorUnidad, foodCostPct, metodoPrecio, formData.es_subreceta]);
+  }, [costoPorUnidad, foodCostPct, metodoPrecio, formData.es_subreceta, dataVersion]);
 
   const foodCostReal = formData.precio_sugerido > 0 ? (costoPorUnidad / formData.precio_sugerido) * 100 : 0;
   const margen       = formData.precio_sugerido > 0 && costoPorUnidad > 0

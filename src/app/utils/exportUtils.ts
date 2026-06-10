@@ -340,11 +340,35 @@ export const exportRecetasToPDF = (recetas: any[], catalogoProductos: any[] = []
 
   // ── Cálculos agregados para la portada ──────────────────────────────────
   const totalRecetas = recetas.length;
-  const foodCostProm = recetas.length
-    ? recetas.reduce((s, r) => s + (r.food_cost || 0), 0) / recetas.length
+
+  // Helper: calcula margen y food cost de una receta con los mismos
+  // fallbacks que se usan en la ficha individual (el backend expone
+  // `margen_bruto`, no `margen_ganancia`, y no expone `food_cost`).
+  const calcMetricas = (r: any) => {
+    const costo  = r.costo_por_porcion || r.costo_total || 0;
+    const precio = r.precio_sugerido   || r.precio_venta || 0;
+    const margen = (r.margen_bruto ?? r.margen_ganancia ?? null) !== null
+      ? (r.margen_bruto ?? r.margen_ganancia)
+      : (precio > 0 ? ((precio - costo) / precio * 100) : 0);
+    const foodCost = r.food_cost ?? (precio > 0 ? (costo / precio * 100) : 0);
+    return { margen, foodCost };
+  };
+
+  // Las sub-recetas no tienen precio de venta propio, y las recetas finales
+  // que aún no tienen "precio_sugerido/precio_venta" definido tampoco aportan
+  // un margen real (saldría 0%, sesgando el promedio a la baja). Se excluyen
+  // ambos casos del promedio de food cost / margen.
+  const recetasConPrecio = recetas.filter((r) => {
+    if (r.es_subreceta) return false;
+    const precio = r.precio_sugerido || r.precio_venta || 0;
+    return precio > 0;
+  });
+
+  const foodCostProm = recetasConPrecio.length
+    ? recetasConPrecio.reduce((s, r) => s + calcMetricas(r).foodCost, 0) / recetasConPrecio.length
     : 0;
-  const margenProm = recetas.length
-    ? recetas.reduce((s, r) => s + (r.margen_ganancia || 0), 0) / recetas.length
+  const margenProm = recetasConPrecio.length
+    ? recetasConPrecio.reduce((s, r) => s + calcMetricas(r).margen, 0) / recetasConPrecio.length
     : 0;
   const costoTotalPortfolio = recetas.reduce((s, r) => s + (r.costo_total || 0), 0);
 
@@ -388,8 +412,10 @@ export const exportRecetasToPDF = (recetas: any[], catalogoProductos: any[] = []
     // ── KPIs de la receta ──────────────────────────────────────────────────
     const costo    = receta.costo_por_porcion || receta.costo_total || 0;
     const precio   = receta.precio_sugerido   || receta.precio_venta || 0;
-    const margen   = receta.margen_ganancia   || (precio > 0 ? ((precio - costo) / precio * 100) : 0);
-    const foodCost = receta.food_cost         || (precio > 0 ? (costo / precio * 100) : 0);
+    const margen   = (receta.margen_bruto ?? receta.margen_ganancia ?? null) !== null
+      ? (receta.margen_bruto ?? receta.margen_ganancia)
+      : (precio > 0 ? ((precio - costo) / precio * 100) : 0);
+    const foodCost = receta.food_cost ?? (precio > 0 ? (costo / precio * 100) : 0);
     const ganancia = precio - costo;
     const porciones = receta.porciones || 1;
 
@@ -571,6 +597,12 @@ export const exportRecetasToExcel = (recetas: any[], catalogoProductos: any[] = 
     const porciones = receta.porciones || 1;
     const costo = receta.costo_por_porcion || 0;
     const precio = receta.precio_sugerido || 0;
+    // El backend expone `margen_bruto` (no `margen_ganancia`) y no expone
+    // `food_cost`, así que se recalculan con el mismo fallback del PDF.
+    const margen   = (receta.margen_bruto ?? receta.margen_ganancia ?? null) !== null
+      ? (receta.margen_bruto ?? receta.margen_ganancia)
+      : (precio > 0 ? ((precio - costo) / precio * 100) : 0);
+    const foodCost = receta.food_cost ?? (precio > 0 ? (costo / precio * 100) : 0);
     return {
       'Código':                      `REC-${String(recetas.indexOf(receta) + 1).padStart(4, '0')}`,
       'Nombre de la Receta':         receta.nombre,
@@ -585,8 +617,8 @@ export const exportRecetasToExcel = (recetas: any[], catalogoProductos: any[] = 
       'Ganancia por Porción':        precio - costo,
       'Ingreso Potencial / Lote':    precio * porciones,
       'Utilidad Bruta / Lote':       (precio - costo) * porciones,
-      'Margen de Ganancia %':        receta.margen_ganancia || 0,
-      'Food Cost %':                 receta.food_cost || 0,
+      'Margen de Ganancia %':        margen,
+      'Food Cost %':                 foodCost,
       'N° Ingredientes':             listaIngredientes.length,
       'Instrucciones':               receta.instrucciones || '',
     };
@@ -620,6 +652,10 @@ export const exportRecetasToExcel = (recetas: any[], catalogoProductos: any[] = 
     const precio   = receta.precio_sugerido || 0;
     const porciones = receta.porciones || 1;
     const ganancia = precio - costo;
+    const margen   = (receta.margen_bruto ?? receta.margen_ganancia ?? null) !== null
+      ? (receta.margen_bruto ?? receta.margen_ganancia)
+      : (precio > 0 ? ((precio - costo) / precio * 100) : 0);
+    const foodCost = receta.food_cost ?? (precio > 0 ? (costo / precio * 100) : 0);
     return {
       'Receta':                  receta.nombre,
       'Categoría':               receta.categoria || 'N/A',
@@ -630,8 +666,8 @@ export const exportRecetasToExcel = (recetas: any[], catalogoProductos: any[] = 
       'Ganancia por Porción':    ganancia,
       'Ingreso Potencial Lote':  precio * porciones,
       'Utilidad Bruta Lote':     ganancia * porciones,
-      'Margen Bruto %':          receta.margen_ganancia || 0,
-      'Food Cost %':             receta.food_cost || 0,
+      'Margen Bruto %':          margen,
+      'Food Cost %':             foodCost,
       'Break-even (porciones)':  precio > 0 ? Math.ceil((receta.costo_total || 0) / precio) : 0,
     };
   });
