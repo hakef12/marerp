@@ -100,6 +100,8 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
   // (con los datos del prop `receta`) y la recarga async, el efecto no se
   // vuelve a disparar y el precio_sugerido queda en 0 (el que trae buildFormData).
   const [dataVersion, setDataVersion] = useState(0);
+  const [guardando, setGuardando] = useState(false);
+  const [formError, setFormError] = useState('');
 
   // ── Cargar datos al abrir ─────────────────────────────────────────────────
   useEffect(() => {
@@ -216,16 +218,48 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
   // ── Guardar ───────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.nombre) return toast.error('El nombre es requerido');
-    const validos = ingredientes.filter(ing => ing.insumo_id && parseFloat(String(ing.cantidad)) > 0);
-    if (validos.length === 0) return toast.error('Agrega al menos un ingrediente con cantidad válida');
-    if (!formData.es_subreceta && !formData.producto_id)
-      return toast.error('Selecciona el producto final de la receta');
+    setFormError('');
 
+    if (!formData.nombre) {
+      const msg = 'El nombre es requerido';
+      setFormError(msg);
+      return toast.error(msg);
+    }
+    const validos = ingredientes.filter(ing => ing.insumo_id && parseFloat(String(ing.cantidad)) > 0);
+    if (validos.length === 0) {
+      const msg = 'Agrega al menos un ingrediente con cantidad válida';
+      setFormError(msg);
+      return toast.error(msg);
+    }
+
+    let productoIdFinal = formData.producto_id;
+    if (!formData.es_subreceta && !productoIdFinal) {
+      // Intento de auto-vinculación: buscar un producto del catálogo cuyo
+      // nombre coincida (exacto o parcial, sin distinguir mayúsculas/acentos)
+      // con el de la receta — cubre casos donde la receta nunca quedó
+      // enlazada a su producto de venta (ej. "ALBONDIGAS" ↔ "Albóndigas").
+      const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+      const nombreReceta = norm(formData.nombre);
+      const match = productos.find(p => norm(p.nombre) === nombreReceta)
+                 || productos.find(p => norm(p.nombre).includes(nombreReceta) || nombreReceta.includes(norm(p.nombre)));
+      if (match) {
+        productoIdFinal = String(match.id);
+        setFormData(prev => ({ ...prev, producto_id: productoIdFinal }));
+        toast.message(`Vinculado automáticamente al producto "${match.nombre}"`);
+      } else {
+        const msg = 'Selecciona el producto final de la receta (no se encontró un producto con ese nombre en el catálogo)';
+        setFormError(msg);
+        toast.error(msg);
+        return;
+      }
+    }
+
+    setGuardando(true);
     try {
       const { projectId, publicAnonKey } = await import('/utils/supabase/info');
       const body = {
         ...formData,
+        producto_id:    productoIdFinal,
         porciones:      parseInt(String(formData.porciones)) || 1,
         precio_sugerido: formData.es_subreceta ? 0 : (parseFloat(String(formData.precio_sugerido)) || 0),
         ingredientes: validos.map(ing => {
@@ -262,10 +296,17 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
         onClose();
       } else {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.error || err.details || 'Error al guardar');
+        const msg = err.error || err.details || `Error al guardar (HTTP ${res.status})`;
+        setFormError(msg);
+        toast.error(msg);
       }
-    } catch {
-      toast.error('Error de conexión');
+    } catch (e: any) {
+      const msg = `Error de conexión: ${e?.message || 'desconocido'}`;
+      setFormError(msg);
+      console.error('[RecetaModal] Error guardando receta:', e);
+      toast.error(msg);
+    } finally {
+      setGuardando(false);
     }
   };
 
@@ -297,6 +338,13 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
         )}
 
         <form onSubmit={handleSubmit} className={`p-6 space-y-6 ${cargando ? 'hidden' : ''}`}>
+
+          {/* ── Error de validación / guardado ───────────────────────────── */}
+          {formError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">
+              ⚠️ {formError}
+            </div>
+          )}
 
           {/* ── Toggle Sub-receta / Receta final ─────────────────────────── */}
           <div className="bg-gradient-to-r from-purple-50 to-orange-50 border border-purple-200/50 rounded-xl p-4">
@@ -751,17 +799,18 @@ export default function RecetaModal({ isOpen, onClose, onSuccess, receta }: Rece
 
           {/* Botones */}
           <div className="flex gap-3 justify-end pt-4 border-t border-gray-100">
-            <Button type="button" onClick={onClose} variant="outline" className="border-gray-300 text-gray-600">
+            <Button type="button" onClick={onClose} variant="outline" className="border-gray-300 text-gray-600" disabled={guardando}>
               Cancelar
             </Button>
             <Button
               type="submit"
+              disabled={guardando}
               className={esSub
                 ? 'bg-purple-600 hover:bg-purple-700 text-white font-bold'
                 : 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white font-bold'
               }
             >
-              {esSub ? '💾 Guardar Sub-receta' : '💾 Guardar Receta'}
+              {guardando ? '⏳ Guardando...' : (esSub ? '💾 Guardar Sub-receta' : '💾 Guardar Receta')}
             </Button>
           </div>
         </form>
