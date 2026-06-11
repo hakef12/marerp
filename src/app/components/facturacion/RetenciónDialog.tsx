@@ -15,9 +15,9 @@ const BASE = `https://${projectId}.supabase.co/functions/v1/server`;
 // ── Catálogo de tipos de retención ──────────────────────────────────────────
 const TIPOS_IR = [
   { label: 'Ninguna',                        codigo: '',    porcentaje: 0 },
-  { label: 'Bienes (1%)',                    codigo: '312', porcentaje: 1 },
-  { label: 'Servicios (2%)',                 codigo: '341', porcentaje: 2 },
-  { label: 'Honorarios profesionales (8%)',  codigo: '342', porcentaje: 8 },
+  { label: 'Bienes (1.75%)',                 codigo: '312', porcentaje: 1.75 },
+  { label: 'Servicios (2%)',                 codigo: '344', porcentaje: 2 },
+  { label: 'Honorarios profesionales (8%)',  codigo: '345', porcentaje: 8 },
   { label: 'Honorarios profesionales (10%)', codigo: '303', porcentaje: 10 },
   { label: 'Manual',                         codigo: 'manual', porcentaje: 0 },
 ];
