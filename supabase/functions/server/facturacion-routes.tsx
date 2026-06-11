@@ -1559,7 +1559,7 @@ export async function handleGetConfiguracionFacturacion(req: Request, empresaId:
           razon_social: '', nombre_comercial: '', ruc: '',
           direccion_matriz: '', direccion_establecimiento: '', telefono: '', email: '',
           obligado_contabilidad: false, contribuyente_especial: '', agente_retencion: '',
-          regimen_rimpe: false, codigo_establecimiento: '001', punto_emision: '001',
+          regimen_rimpe: false, tipo_contribuyente: 'sociedad', codigo_establecimiento: '001', punto_emision: '001',
           secuencial_actual: 1, firma_electronica_activa: false,
           firma_electronica_nombre: '', firma_electronica_validez: '', ambiente: 'pruebas',
         }

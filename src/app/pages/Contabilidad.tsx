@@ -213,13 +213,14 @@ export default function Contabilidad() {
   });
   const [activoForm, setActivoForm]             = useState<any>(emptyActivo());
 
-  // ── Formularios 104 / 103 ────────────────────────────────────────────────
-  const [formTipo, setFormTipo]                 = useState<'104'|'103'|'125'|'102'>('104');
+  // ── Formularios 104 / 103 / 125 / 101 / 102 ─────────────────────────────
+  const [formTipo, setFormTipo]                 = useState<'104'|'103'|'125'|'101'|'102'>('104');
   const [formSemestre, setFormSemestre]         = useState(1);
   const [formMes, setFormMes]                   = useState(hoy.getMonth() + 1);
   const [formAnio, setFormAnio]                 = useState(hoy.getFullYear());
   const [formData, setFormData]                 = useState<any>(null);
   const [formLoading, setFormLoading]           = useState(false);
+  const [tipoContribuyente, setTipoContribuyente] = useState<'sociedad'|'persona_natural'>('sociedad');
 
   // ── Cuentas por Cobrar ───────────────────────────────────────────────────
   const [cxcData, setCxcData]               = useState<any>(null);
@@ -336,8 +337,8 @@ export default function Contabilidad() {
     try {
       const url = formTipo === '125'
         ? `${BASE}/contabilidad/formulario-125?semestre=${formSemestre}&anio=${formAnio}`
-        : formTipo === '102'
-        ? `${BASE}/contabilidad/formulario-102?anio=${formAnio}`
+        : (formTipo === '102' || formTipo === '101')
+        ? `${BASE}/contabilidad/formulario-${formTipo}?anio=${formAnio}`
         : `${BASE}/contabilidad/formulario-${formTipo}?mes=${formMes}&anio=${formAnio}`;
       const d = await apiFetch(url, headers);
       setFormData(d);
@@ -525,6 +526,12 @@ export default function Contabilidad() {
     if (!token) return;
     loadCuentas();
     loadDashboard();
+    apiFetch(`${BASE}/facturacion/configuracion`, headers)
+      .then(d => {
+        const tc = d?.configuracion?.tipo_contribuyente;
+        setTipoContribuyente(tc === 'persona_natural' ? 'persona_natural' : 'sociedad');
+      })
+      .catch(() => {});
   }, [token]);
 
   useEffect(() => {
@@ -2373,7 +2380,9 @@ export default function Contabilidad() {
                 {id:'104', label:'F-104 IVA Mensual', color:'blue'},
                 {id:'103', label:'F-103 Retenciones', color:'purple'},
                 {id:'125', label:'F-125 Renta Microempresas', color:'green'},
-                {id:'102', label:'F-102 Renta Sociedades', color:'red'},
+                ...(tipoContribuyente === 'persona_natural'
+                  ? [{id:'102', label:'F-102 Renta Personas Naturales', color:'red'}]
+                  : [{id:'101', label:'F-101 Renta Sociedades', color:'red'}]),
               ].map(f=>(
                 <button key={f.id} onClick={()=>{setFormTipo(f.id as any); setFormData(null);}}
                   className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
@@ -2393,7 +2402,7 @@ export default function Contabilidad() {
                   <option value={2}>2do Semestre (Jul–Dic)</option>
                 </select>
               </>
-            ) : formTipo === '102' ? (
+            ) : (formTipo === '102' || formTipo === '101') ? (
               <span className="text-xs text-gray-500 italic px-2">Declaración anual — solo requiere el año</span>
             ) : (
               <select value={formMes} onChange={e=>setFormMes(Number(e.target.value))}
@@ -2416,8 +2425,6 @@ export default function Contabilidad() {
                   ? Object.entries(formData.casillas||{}).map(([cas,val])=>({'Casilla':cas,'Valor':val}))
                   : formTipo==='103'
                     ? (formData.detalle_por_codigo||[]).map((r:any)=>({'Casilla Base':r.casilla_base,'Casilla Ret.':r.casilla_retenido,'Descripción':r.descripcion,'%':r.porcentaje,'Base Imponible':r.base_imponible,'Valor Retenido':r.valor_retenido}))
-                    : formTipo==='102'
-                      ? Object.entries(formData.casillas||{}).map(([cas,val])=>({'Casilla':cas,'Valor':val}))
                     : Object.entries(formData.casillas||{}).map(([cas,val])=>({'Casilla':cas,'Valor':val})),
                 `formulario_${formTipo}_${formAnio}`,
                 `Formulario ${formTipo} — ${formAnio}`
@@ -2677,10 +2684,10 @@ export default function Contabilidad() {
           )}
 
           {/* FORMULARIO 102 — RENTA SOCIEDADES */}
-          {formData && formTipo==='102' && (
+          {formData && formTipo==='101' && (
             <div className="space-y-4">
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <div className="font-bold text-red-800 mb-1">Formulario 102 — {formData.periodo?.label}</div>
+                <div className="font-bold text-red-800 mb-1">Formulario 101 — {formData.periodo?.label}</div>
                 <div className="text-xs text-red-600 mb-3">Declaración Impuesto a la Renta Sociedades · Tarifa aplicada: {formData.resumen?.tarifa_aplicada}</div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {([
@@ -2737,11 +2744,112 @@ export default function Contabilidad() {
             </div>
           )}
 
+          {formData && formTipo==='102' && (
+            <div className="space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <div className="font-bold text-red-800 mb-1">Formulario 102 — {formData.periodo?.label}</div>
+                <div className="text-xs text-red-600 mb-3">Declaración Impuesto a la Renta Personas Naturales y Sucesiones Indivisas Obligadas a Llevar Contabilidad</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {([
+                    ['399','Total ingresos','text-gray-700'],
+                    ['859','Base imponible (utilidad gravable)','text-gray-900 font-bold'],
+                    ['861','IR causado (tabla progresiva)','text-orange-700 font-bold'],
+                    ['902','IR A PAGAR','text-red-700 font-black text-xl'],
+                  ] as [string,string,string][]).map(([cas,lbl,cls])=>(
+                    <div key={cas} className="text-center bg-white rounded-xl p-3 border border-red-200">
+                      <div className={`font-mono ${cls}`}>${Number(formData.casillas?.[cas]||0).toFixed(2)}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        <span className="font-mono text-xs bg-red-100 text-red-700 px-1 rounded mr-1">{cas}</span>
+                        {lbl}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-red-100 overflow-hidden">
+                <div className="bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-700">Estado de Situación Financiera (Balance General)</div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {([
+                      ['319','Total activo corriente'],
+                      ['333','Total activo no corriente'],
+                      ['349','TOTAL DEL ACTIVO'],
+                      ['369','Total pasivo corriente'],
+                      ['379','Total pasivo no corriente (largo plazo)'],
+                      ['387','TOTAL DEL PASIVO'],
+                      ['388','Total patrimonio neto'],
+                      ['389','TOTAL PASIVO Y PATRIMONIO'],
+                    ] as [string,string][]).map(([cas,lbl],i)=>(
+                      <tr key={cas} className={i%2===0?'':'bg-red-50/30'}>
+                        <td className="px-3 py-2 font-mono font-bold text-red-700 w-20">{cas}</td>
+                        <td className="px-3 py-2 text-gray-700 text-xs">{lbl}</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold">${Number(formData.casillas?.[cas]||0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="rounded-xl border border-red-100 overflow-hidden">
+                <div className="bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-700">Estado de Resultados</div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {([
+                      ['399','Total de ingresos'],
+                      ['459','Total costos y gastos'],
+                      ['460','Utilidad del ejercicio'],
+                      ['461','Pérdida del ejercicio'],
+                      ['469','Utilidad gravable (renta líquida)'],
+                      ['470','Pérdida del ejercicio (traslada)'],
+                    ] as [string,string][]).map(([cas,lbl],i)=>(
+                      <tr key={cas} className={i%2===0?'':'bg-red-50/30'}>
+                        <td className="px-3 py-2 font-mono font-bold text-red-700 w-20">{cas}</td>
+                        <td className="px-3 py-2 text-gray-700 text-xs">{lbl}</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold">${Number(formData.casillas?.[cas]||0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="rounded-xl border border-red-100 overflow-hidden">
+                <div className="bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-700">Liquidación del Impuesto a la Renta</div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {([
+                      ['829','Total de ingresos'],
+                      ['839','Total costos y gastos'],
+                      ['849','Utilidad (pérdida) del ejercicio'],
+                      ['850','(-) 15% participación trabajadores'],
+                      ['859','BASE IMPONIBLE GRAVABLE'],
+                      ['861','Impuesto a la renta causado (tabla progresiva)'],
+                      ['871','(-) Anticipo determinado para el próximo ejercicio'],
+                      ['872','(-) Retenciones en la fuente que le han sido efectuadas'],
+                      ['902','IMPUESTO A LA RENTA A PAGAR'],
+                      ['903','Saldo a favor del contribuyente'],
+                    ] as [string,string][]).map(([cas,lbl],i)=>(
+                      <tr key={cas} className={i%2===0?'':'bg-red-50/30'}>
+                        <td className="px-3 py-2 font-mono font-bold text-red-700 w-20">{cas}</td>
+                        <td className="px-3 py-2 text-gray-700 text-xs">{lbl}</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold">${Number(formData.casillas?.[cas]||0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                <strong>⚠️ Nota:</strong> {formData.nota}
+              </div>
+            </div>
+          )}
+
           {!formData && !formLoading && (
             <div className="text-center py-16 text-gray-400">
               <CreditCard className="w-16 h-16 mx-auto mb-4 opacity-20"/>
               <p>Selecciona el formulario, período y año, luego haz clic en Calcular</p>
-              <p className="text-xs mt-2">F-104: Declaración IVA mensual · F-103: Retenciones en la Fuente · F-125: Renta Microempresas RIMPE · F-102: Renta Sociedades (anual)</p>
+              <p className="text-xs mt-2">F-104: Declaración IVA mensual · F-103: Retenciones en la Fuente · F-125: Renta Microempresas RIMPE · {tipoContribuyente==='persona_natural' ? 'F-102: Renta Personas Naturales (anual)' : 'F-101: Renta Sociedades (anual)'}</p>
             </div>
           )}
         </div>

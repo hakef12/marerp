@@ -1465,9 +1465,9 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
   });
 
   // ══════════════════════════════════════════════════════════════════════
-  // FORMULARIO 102 — Declaración del Impuesto a la Renta de Sociedades
+  // FORMULARIO 101 — Declaración del Impuesto a la Renta de Sociedades
   // ══════════════════════════════════════════════════════════════════════
-  app.get("/server/contabilidad/formulario-102", authMiddleware, async (c: any) => {
+  app.get("/server/contabilidad/formulario-101", authMiddleware, async (c: any) => {
     const auth = c.get('auth'); const db = getDB();
     try {
       const { anio } = c.req.query() as any;
@@ -1537,7 +1537,7 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       const saldoAFavor = Math.max(0, r2((anticipoIR + retencionesRecibidas) - impuestoCausado));
 
       return c.json({
-        formulario: '102',
+        formulario: '101',
         anio: Number(anio),
         periodo: { fi, ff, label: `Ejercicio fiscal ${anio}` },
         casillas: {
@@ -1564,10 +1564,167 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
           retenciones_recibidas: retencionesRecibidas,
           impuesto_a_pagar: impuestoAPagar,
         },
-        nota: 'Formulario 102 — Declaración Impuesto a la Renta Sociedades. Cálculo simplificado basado en ' +
+        nota: 'Formulario 101 — Declaración Impuesto a la Renta Sociedades. Cálculo simplificado basado en ' +
               'asientos contables (ingresos por ventas, costos/gastos de cuentas 5xxxx/6xxxx). ' +
               'Verifique la conciliación tributaria completa (gastos no deducibles, ingresos exentos, ' +
               'amortizaciones, etc.) y la tarifa vigente con su contador antes de declarar ante el SRI.',
+      });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // FORMULARIO 102 — Impuesto a la Renta Personas Naturales y Sucesiones
+  // Indivisas Obligadas a Llevar Contabilidad
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // Tabla de Impuesto a la Renta para Personas Naturales (vigente referencial
+  // 2024, valores anuales en USD). El SRI ajusta estos rangos cada año por
+  // inflación — VERIFICAR la tabla del año declarado (anio) en la resolución
+  // vigente del SRI antes de presentar la declaración.
+  const TABLA_IR_PERSONAS_NATURALES = [
+    { hasta: 11902,        fija: 0,      excedente: 0.00 },
+    { hasta: 15159,        fija: 0,      excedente: 0.05 },
+    { hasta: 19682,        fija: 163,    excedente: 0.10 },
+    { hasta: 26031,        fija: 615,    excedente: 0.12 },
+    { hasta: 35210,        fija: 1377,   excedente: 0.15 },
+    { hasta: 46316,        fija: 2754,   excedente: 0.20 },
+    { hasta: 61735,        fija: 4975,   excedente: 0.25 },
+    { hasta: 83873,        fija: 8830,   excedente: 0.30 },
+    { hasta: 110190,       fija: 15471,  excedente: 0.35 },
+    { hasta: Infinity,     fija: 24682,  excedente: 0.37 },
+  ];
+
+  function calcularImpuestoRentaPN(baseImponible: number) {
+    const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+    if (baseImponible <= 0) return 0;
+    let anterior = 0;
+    for (const tramo of TABLA_IR_PERSONAS_NATURALES) {
+      if (baseImponible <= tramo.hasta) {
+        return r2(tramo.fija + (baseImponible - anterior) * tramo.excedente);
+      }
+      anterior = tramo.hasta;
+    }
+    return 0;
+  }
+
+  app.get("/server/contabilidad/formulario-102", authMiddleware, async (c: any) => {
+    const auth = c.get('auth'); const db = getDB();
+    try {
+      const { anio } = c.req.query() as any;
+      if (!anio) return c.json({ error: 'anio requerido' }, 400);
+      const fi = `${anio}-01-01`;
+      const ff = `${anio}-12-31`;
+      const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+      const cuentas = await obtenerCuentas(auth.empresaId);
+      const asientos = await obtenerAsientos(auth.empresaId);
+
+      // ── Estado de Situación Financiera (Balance) al cierre del ejercicio ──
+      const saldosBalance = calcularSaldosCuentas(cuentas, asientos, undefined, ff);
+      const sumaTipo = (saldos: Record<string, number>, filtro: (ct: any) => boolean) =>
+        r2(cuentas.filter((ct: any) => !ct.es_grupo && filtro(ct))
+          .reduce((s: number, ct: any) => s + (saldos[ct.id] || 0), 0));
+
+      const activoCorriente   = sumaTipo(saldosBalance, (ct) => ct.tipo === 'activo' && String(ct.codigo).startsWith('101'));
+      const activoNoCorriente = sumaTipo(saldosBalance, (ct) => ct.tipo === 'activo' && String(ct.codigo).startsWith('102'));
+      const totalActivo = r2(activoCorriente + activoNoCorriente);
+
+      const pasivoCorriente   = sumaTipo(saldosBalance, (ct) => ct.tipo === 'pasivo' && String(ct.codigo).startsWith('201'));
+      const pasivoNoCorriente = sumaTipo(saldosBalance, (ct) => ct.tipo === 'pasivo' && String(ct.codigo).startsWith('202'));
+      const totalPasivo = r2(pasivoCorriente + pasivoNoCorriente);
+
+      const totalPatrimonio = sumaTipo(saldosBalance, (ct) => ct.tipo === 'patrimonio');
+      const totalPasivoPatrimonio = r2(totalPasivo + totalPatrimonio);
+
+      // ── Estado de Resultados del ejercicio ────────────────────────────────
+      const saldosResultado = calcularSaldosCuentas(cuentas, asientos, fi, ff);
+      const totalIngresos = sumaTipo(saldosResultado, (ct) => ct.tipo === 'ingreso');
+      const totalCostos   = sumaTipo(saldosResultado, (ct) => ct.tipo === 'costo');
+      const totalGastos   = sumaTipo(saldosResultado, (ct) => ct.tipo === 'gasto');
+      const totalCostosGastos = r2(totalCostos + totalGastos);
+
+      const resultadoEjercicio = r2(totalIngresos - totalCostosGastos);
+      const utilidadEjercicio = Math.max(0, resultadoEjercicio);
+      const perdidaEjercicio = Math.max(0, -resultadoEjercicio);
+
+      const participacionTrabajadores = utilidadEjercicio > 0 ? r2(utilidadEjercicio * 0.15) : 0;
+      const utilidadGravable = Math.max(0, r2(utilidadEjercicio - participacionTrabajadores));
+
+      // ── Liquidación del Impuesto a la Renta (tabla progresiva PN) ─────────
+      const baseImponible = utilidadGravable;
+      const impuestoCausado = calcularImpuestoRentaPN(baseImponible);
+      const anticipoIR = 0; // (-) anticipo determinado para el próximo ejercicio: ingreso manual
+
+      const { data: rets } = await db.from('retenciones')
+        .select('impuestos').eq('empresa_id', auth.empresaId)
+        .gte('fecha_emision', fi).lte('fecha_emision', ff).not('estado', 'eq', 'ANULADO');
+      let retencionesRecibidas = 0;
+      for (const ret of (rets || [])) {
+        for (const imp of (ret.impuestos || [])) {
+          if (imp.tipo !== 'iva') retencionesRecibidas += Number(imp.valor_retenido || 0);
+        }
+      }
+      retencionesRecibidas = r2(retencionesRecibidas);
+
+      const impuestoAPagar = Math.max(0, r2(impuestoCausado - anticipoIR - retencionesRecibidas));
+      const saldoAFavor = Math.max(0, r2((anticipoIR + retencionesRecibidas) - impuestoCausado));
+
+      return c.json({
+        formulario: '102',
+        anio: Number(anio),
+        periodo: { fi, ff, label: `Ejercicio fiscal ${anio}` },
+        casillas: {
+          // ── 300 — Estado de Situación Financiera (Balance General) ──
+          '319': activoCorriente,           // Total activo corriente
+          '333': activoNoCorriente,         // Total activo no corriente (fijo)
+          '349': totalActivo,               // Total del activo
+          '369': pasivoCorriente,           // Total pasivo corriente
+          '379': pasivoNoCorriente,         // Total pasivo no corriente (largo plazo)
+          '387': totalPasivo,               // Total del pasivo
+          '388': totalPatrimonio,           // Total patrimonio neto
+          '389': totalPasivoPatrimonio,     // Total pasivo + patrimonio
+          // ── 390 — Estado de Resultados ──
+          '399': totalIngresos,             // Total de ingresos
+          '459': totalCostosGastos,         // Total costos y gastos
+          '460': utilidadEjercicio,         // Utilidad del ejercicio
+          '461': perdidaEjercicio,          // Pérdida del ejercicio
+          '469': utilidadGravable,          // Utilidad gravable (renta líquida)
+          '470': perdidaEjercicio,          // Pérdida del ejercicio (traslada)
+          // ── 800/900 — Liquidación del Impuesto a la Renta ──
+          '829': totalIngresos,             // Total de ingresos
+          '839': totalCostosGastos,         // Total costos y gastos
+          '849': resultadoEjercicio,        // Utilidad (pérdida) del ejercicio
+          '850': participacionTrabajadores, // 15% participación trabajadores
+          '859': baseImponible,             // Base imponible gravable
+          '861': impuestoCausado,           // Impuesto a la renta causado (tabla progresiva)
+          '871': anticipoIR,                // (-) Anticipo determinado para el próximo ejercicio
+          '872': retencionesRecibidas,      // (-) Retenciones en la fuente que le han sido efectuadas
+          '902': impuestoAPagar,            // Impuesto a la renta a pagar
+          '903': saldoAFavor,               // Saldo a favor del contribuyente
+        },
+        resumen: {
+          total_activo: totalActivo,
+          total_pasivo: totalPasivo,
+          total_patrimonio: totalPatrimonio,
+          total_ingresos: totalIngresos,
+          total_costos_gastos: totalCostosGastos,
+          resultado_ejercicio: resultadoEjercicio,
+          participacion_trabajadores_15: participacionTrabajadores,
+          base_imponible: baseImponible,
+          impuesto_causado: impuestoCausado,
+          retenciones_recibidas: retencionesRecibidas,
+          impuesto_a_pagar: impuestoAPagar,
+          saldo_a_favor: saldoAFavor,
+        },
+        nota: 'Formulario 102 — Declaración Impuesto a la Renta Personas Naturales y Sucesiones Indivisas ' +
+              'Obligadas a Llevar Contabilidad. El balance general se calcula a partir de los saldos contables ' +
+              'al 31/12 (cuentas 101/102 = activo corriente/no corriente, 201/202 = pasivo corriente/largo plazo, ' +
+              'grupo 3 = patrimonio) y el estado de resultados con los movimientos del ejercicio (ingresos, ' +
+              'costos y gastos). El impuesto causado (859/861) se calcula con la tabla progresiva de Impuesto ' +
+              'a la Renta para personas naturales — VERIFIQUE que la tabla usada corresponda al año ' + anio + '. ' +
+              'No incluye gastos personales deducibles, rebajas por discapacidad/tercera edad, ingresos exentos ' +
+              'ni otras rentas (relación de dependencia, arriendos, etc.) fuera de la actividad empresarial. ' +
+              'Revise la conciliación tributaria completa con su contador antes de declarar ante el SRI.',
       });
     } catch (e: any) { return c.json({ error: e.message }, 500); }
   });

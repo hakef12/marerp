@@ -50,6 +50,7 @@ export default function ConfiguracionFacturacion() {
     contribuyente_especial: '',
     agente_retencion: '',
     regimen_rimpe: false,
+    tipo_contribuyente: 'sociedad',
     codigo_establecimiento: '001',
     punto_emision: '001',
     secuencial_actual: 1,
@@ -279,6 +280,16 @@ export default function ConfiguracionFacturacion() {
                   className="w-4 h-4 rounded border-[#F97316]/20 accent-[#F97316]" />
                 <span className="text-gray-600">Contribuyente Régimen RIMPE</span>
               </label>
+              <div>
+                <Label className="text-gray-600">Tipo de contribuyente</Label>
+                <select value={config.tipo_contribuyente}
+                  onChange={e => setConfig({ ...config, tipo_contribuyente: e.target.value })}
+                  className="w-full h-10 rounded-md border border-[#F97316]/20 bg-white text-gray-900 px-3 text-sm">
+                  <option value="sociedad">Sociedad (Formulario 101)</option>
+                  <option value="persona_natural">Persona Natural / Sucesión Indivisa (Formulario 102)</option>
+                </select>
+                <p className="text-xs text-gray-400 mt-1">Determina qué declaración de Impuesto a la Renta se muestra en Contabilidad → Formularios SRI.</p>
+              </div>
               <div>
                 <Label className="text-gray-600">Contribuyente Especial N°</Label>
                 <Input value={config.contribuyente_especial} onChange={e => setConfig({ ...config, contribuyente_especial: e.target.value })}
