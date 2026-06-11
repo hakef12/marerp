@@ -1067,7 +1067,7 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
   // FORMULARIOS SRI — 104 (IVA) y 103 (Retenciones)
   // ══════════════════════════════════════════════════════════════════════
 
-  // ── FORMULARIO 104 — IVA MENSUAL (casillas reales SRI) ──────────────────────
+  // ── FORMULARIO 104 — IVA MENSUAL (casillas oficiales SRI 301-919) ───────────
   app.get("/server/contabilidad/formulario-104", authMiddleware, async (c: any) => {
     const auth = c.get('auth'); const db = getDB();
     try {
@@ -1077,9 +1077,11 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       const ff = new Date(Number(anio), Number(mes), 0).toISOString().split('T')[0];
       const r2 = (n: number) => Math.round(n * 100) / 100;
 
-      // ── VENTAS: Facturas del período ────────────────────────────────────
-      const { data: facturas, error: factErr } = await db.from('facturas')
-        .select('total,subtotal_iva,iva,subtotal_0,total_descuento,estado_autorizacion')
+      // ══════════════════════════════════════════════════════════════════
+      // 500 — RESUMEN DE VENTAS: facturas del período (regulares vs NC)
+      // ══════════════════════════════════════════════════════════════════
+      const { data: facturasRaw, error: factErr } = await db.from('facturas')
+        .select('total,subtotal_iva,iva,subtotal_0,total_descuento,estado_autorizacion,datos_completos')
         .eq('empresa_id', auth.empresaId)
         .gte('fecha_emision', fi).lte('fecha_emision', ff)
         .neq('estado_autorizacion', 'ANULADO')
@@ -1087,146 +1089,205 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
 
       if (factErr) console.error('[F-104] Error facturas:', factErr.message);
 
-      // 401: Valor Bruto ventas locales gravadas tarifa≠0% (excluye activos fijos)
-      // 411: Valor Neto (sin IVA) = subtotal_iva
-      // 421: IVA generado = iva
-      const c401 = (facturas||[]).reduce((s:number,f:any)=>s+Number(f.subtotal_iva||0)+Number(f.iva||0),0);
-      const c411 = (facturas||[]).reduce((s:number,f:any)=>s+Number(f.subtotal_iva||0),0);
-      const c421 = (facturas||[]).reduce((s:number,f:any)=>s+Number(f.iva||0),0);
-      // 403/413: Ventas tarifa 0% sin derecho a CT
-      const c403 = 0; // Depende de configuración empresa
-      const c413 = (facturas||[]).reduce((s:number,f:any)=>s+Number(f.subtotal_0||0),0);
-      // 405/415: Ventas tarifa 0% con derecho a CT (exportaciones locales)
-      const c405 = 0; const c415 = 0;
-      // 407/417: Exportaciones de bienes
-      const c407 = 0; const c417 = 0;
-      // 409/419: TOTAL VENTAS Y OTRAS OPERACIONES (bruto / neto)
-      const c409 = c401 + c403 + c405 + c407;
-      const c419 = c411 + c413 + c415 + c417;
-      const c429 = c421; // IVA total generado en ventas
-      // 499: Total impuesto a liquidar en este mes (si ventas a crédito diferido)
-      const c499 = c429;
-      // Comprobantes
-      const c111 = (facturas||[]).length;
+      const parseDC = (f: any) => {
+        try { return typeof f.datos_completos === 'string' ? JSON.parse(f.datos_completos || '{}') : (f.datos_completos || {}); }
+        catch { return {}; }
+      };
+      const esNC = (f: any) => parseDC(f)?.tipo_comprobante === 'nota_credito';
 
-      // ── ADQUISICIONES Y PAGOS: Compras del período ──────────────────────
+      const facturasReg = (facturasRaw||[]).filter((f:any)=>!esNC(f));
+      const notasCredito = (facturasRaw||[]).filter((f:any)=>esNC(f));
+
+      // 531/551: ventas locales netas gravadas (base/IVA), descontando NC emitidas
+      const ventasGravBase = facturasReg.reduce((s:number,f:any)=>s+Number(f.subtotal_iva||0),0);
+      const ventasGravIva  = facturasReg.reduce((s:number,f:any)=>s+Number(f.iva||0),0);
+      const ncBase = notasCredito.reduce((s:number,f:any)=>s+Number(f.subtotal_iva||0),0);
+      const ncIva  = notasCredito.reduce((s:number,f:any)=>s+Number(f.iva||0),0);
+      const c531 = r2(ventasGravBase - ncBase);
+      const c551 = r2(ventasGravIva - ncIva);
+      // 501: ventas locales netas tarifa 0% (limitación: NC no se desglosan por tarifa, no se restan aquí)
+      const c501 = r2(facturasReg.reduce((s:number,f:any)=>s+Number(f.subtotal_0||0),0));
+      // 503/505/507/509/511/513: exportaciones, activos fijos, otros, reembolsos (no trackeados aún)
+      const c503 = 0, c505 = 0, c507 = 0, c509 = 0, c511 = 0, c513 = 0;
+      // 549: TOTAL VENTAS Y EXPORTACIONES (neto)
+      const c549 = r2(c501 + c531 + c503 + c505 + c507 + c509 + c511 + c513);
+      // 599: TOTAL IMPUESTO GENERADO EN VENTAS
+      const c599 = r2(c551);
+      // Conteos de comprobantes
+      const c105 = facturasReg.length;          // facturas emitidas
+      const c106 = 0, c107 = 0, c108 = 0;        // notas de venta / otros / doc. aduaneros export.
+      const c109 = notasCredito.length;          // notas de crédito emitidas
+      const c110 = 0;                            // notas de débito emitidas
+
+      // ══════════════════════════════════════════════════════════════════
+      // 600 — RESUMEN DE COMPRAS: items de cada compra agrupados por
+      //        tipo_contable (bienes/servicios/activos fijos) y codigo_iva
+      // ══════════════════════════════════════════════════════════════════
       const { data: compras } = await db.from('compras')
-        .select('subtotal,iva,total,estado_pago').eq('empresa_id', auth.empresaId)
+        .select('subtotal,iva,total,items')
+        .eq('empresa_id', auth.empresaId)
         .gte('fecha', fi).lte('fecha', ff);
 
-      // 500/510/520: Adquisiciones y pagos tarifa≠0% con CT (bruto/neto/impuesto)
-      const c510 = (compras||[]).reduce((s:number,c:any)=>s+Number(c.subtotal||0),0);
-      const c500 = c510 + (compras||[]).reduce((s:number,c:any)=>s+Number(c.iva||0),0);
-      const c520 = (compras||[]).reduce((s:number,c:any)=>s+Number(c.iva||0),0);
-      // 507/517: Adquisiciones tarifa 0%
-      const c507 = 0; const c517 = 0;
-      // 508/518: Adquisiciones a RISE (informativo)
-      const c508 = 0; const c518 = 0;
-      // 509/519/529: TOTAL ADQUISICIONES Y PAGOS
-      const c509 = c500 + c507 + c508;
-      const c519 = c510 + c517 + c518;
-      const c529 = c520;
-      const c115 = (compras||[]).length;
+      let c601 = 0, c631 = 0, c651 = 0; // bienes: base 0% | base gravada | IVA
+      let c603 = 0, c633 = 0, c653 = 0; // servicios
+      let c605 = 0, c635 = 0, c655 = 0; // activos fijos
 
-      // ── RETENCIONES DE IVA ───────────────────────────────────────────────
-      // Retenciones de IVA recibidas (las que nos hacen a nosotros): casilla 609
-      const { data: retsRecib } = await db.from('retenciones')
+      for (const compra of (compras||[])) {
+        let items: any = compra.items;
+        if (typeof items === 'string') { try { items = JSON.parse(items); } catch { items = []; } }
+        if (!Array.isArray(items) || items.length === 0) {
+          // Sin desglose de items: clasificar íntegro como bien gravado (comportamiento previo)
+          const sub = Number(compra.subtotal||0), iva = Number(compra.iva||0);
+          if (iva > 0) { c631 += sub; c651 += iva; } else { c601 += sub; }
+          continue;
+        }
+        for (const item of items) {
+          const sub = Number(item.subtotal||0);
+          const iva = Number(item.iva||0);
+          const tipo = item.tipo_contable || 'inventario';
+          const gravado = Number(item.porcentaje_iva||0) > 0 || iva > 0;
+          if (tipo === 'activo_fijo') {
+            if (gravado) { c635 += sub; c655 += iva; } else { c605 += sub; }
+          } else if (tipo === 'gasto_operativo') {
+            if (gravado) { c633 += sub; c653 += iva; } else { c603 += sub; }
+          } else {
+            if (gravado) { c631 += sub; c651 += iva; } else { c601 += sub; }
+          }
+        }
+      }
+      c601 = r2(c601); c631 = r2(c631); c651 = r2(c651);
+      c603 = r2(c603); c633 = r2(c633); c653 = r2(c653);
+      c605 = r2(c605); c635 = r2(c635); c655 = r2(c655);
+      // Reembolsos / importaciones / leasing / depreciación / no sustentan CT (no trackeados aún)
+      const c607 = 0, c609 = 0, c611 = 0, c613 = 0, c619 = 0;
+      const c637 = 0, c639 = 0, c641 = 0, c643 = 0, c645 = 0, c647 = 0, c649 = 0;
+      const c657 = 0, c659 = 0, c661 = 0, c663 = 0, c665 = 0, c667 = 0;
+      // 650: TOTAL COMPRAS E IMPORTACIONES (neto)
+      const c650 = r2(c601+c603+c605+c607+c609+c611+c613+c619 + c631+c633+c635+c637+c639+c641+c643+c645+c647+c649);
+      // 698: CT de acuerdo a contabilidad (atribución directa por ítem)
+      const c698 = r2(c651+c653+c655+c657+c659+c661+c663+c665+c667);
+      // 699: CT de acuerdo a factor de proporcionalidad — no aplica (CT ya atribuido en 698)
+      const c699 = 0;
+      // Conteos de comprobantes recibidos
+      const c111 = (compras||[]).length; // facturas recibidas
+      const c112 = 0, c113 = 0, c114 = 0, c115 = 0, c116 = 0, c117 = 0;
+
+      // ══════════════════════════════════════════════════════════════════
+      // 300 — PROPORCIÓN DE CRÉDITO TRIBUTARIO (informativo)
+      // ══════════════════════════════════════════════════════════════════
+      const numerador301 = c531 + c503 + c511 + c513;
+      const c301 = c549 > 0 ? r2((numerador301 / c549) * 100) : 100;
+      // 303/305/307: saldo CT mes anterior y devoluciones (no automatizable sin histórico)
+      const c303 = 0, c305 = 0, c307 = 0;
+      const c399 = r2(c303 - c305 + c307);
+
+      // ══════════════════════════════════════════════════════════════════
+      // 800 — AGENTE DE RETENCIÓN IVA (retenciones emitidas a proveedores)
+      // ══════════════════════════════════════════════════════════════════
+      const { data: retsEmitidas } = await db.from('retenciones')
         .select('impuestos').eq('empresa_id', auth.empresaId)
         .gte('fecha_emision', fi).lte('fecha_emision', ff)
         .not('estado', 'eq', 'ANULADO');
-      let c609 = 0;
-      for (const ret of (retsRecib||[])) {
+
+      let c801 = 0, c851 = 0; // honorarios profesionales (100%) — código 725
+      let c813 = 0, c863 = 0; // prestación otros servicios (70%) — código 723
+      let c819 = 0, c869 = 0; // compra de bienes (30%) — código 721
+      let c118 = 0;
+      for (const ret of (retsEmitidas||[])) {
+        let tieneIva = false;
         for (const imp of (ret.impuestos||[])) {
-          if (imp.tipo === 'iva' || imp.codigo === '2' || String(imp.codigo_retencion||'').startsWith('7'))
-            c609 += Number(imp.valor_retenido||0);
+          if (imp.tipo !== 'iva') continue;
+          tieneIva = true;
+          const base = Number(imp.base_imponible||0);
+          const retenido = Number(imp.valor_retenido||0);
+          const cod = String(imp.codigo_retencion||'');
+          if (cod === '725') { c801 += base; c851 += retenido; }
+          else if (cod === '723') { c813 += base; c863 += retenido; }
+          else { c819 += base; c869 += retenido; } // '721' u otros -> bienes 30% por defecto
         }
+        if (tieneIva) c118++;
       }
+      c801 = r2(c801); c851 = r2(c851);
+      c813 = r2(c813); c863 = r2(c863);
+      c819 = r2(c819); c869 = r2(c869);
+      // Conceptos de la sección 800 sin código de retención mapeado aún
+      const c803 = 0, c853 = 0, c805 = 0, c855 = 0, c807 = 0, c857 = 0;
+      const c809 = 0, c859 = 0, c811 = 0, c861 = 0, c815 = 0, c865 = 0;
+      const c817 = 0, c867 = 0, c821 = 0, c871 = 0;
+      const c898 = r2(c851+c853+c855+c857+c859+c861+c863+c865+c867+c869+c871);
 
-      // ── FACTOR DE PROPORCIONALIDAD Y CT ─────────────────────────────────
-      // 563: factor proporcionalidad (simplificado: 100% si solo ventas gravadas)
-      const c563 = c409 > 0 ? r2(((c401 + c405) / c409) * 100) : 100;
-      // 564: Crédito tributario aplicable en este período
-      const c564 = r2(c520 * (c563 / 100));
+      // ══════════════════════════════════════════════════════════════════
+      // 700 — RESUMEN IMPOSITIVO
+      // ══════════════════════════════════════════════════════════════════
+      const diff700 = r2(c599 - c698 - c699);
+      const c701 = Math.max(0, diff700);
+      const c702 = Math.max(0, -diff700);
+      const c703 = c399; // saldo CT a aplicarse este mes (de la sección 300)
+      const c705 = 0;     // retenciones de IVA que le efectuaron a la empresa (no trackeado)
+      const resultado700 = r2(c701 - c702 - c703 - c705);
+      const c798 = resultado700 < 0 ? r2(-resultado700) : 0;
+      const c799 = resultado700 >= 0 ? resultado700 : 0;
+      // 899: TOTAL IVA A PAGAR (subtotal 700 + retenciones efectuadas sección 800)
+      const c899 = r2(c799 + c898);
 
-      // ── RESUMEN IMPOSITIVO: AGENTE DE PERCEPCIÓN ─────────────────────────
-      // 601: Impuesto causado (IVA ventas - CT adquisiciones - CT retenciones)
-      const diferencia = r2(c421 - c564 - c609);
-      const c601 = Math.max(0, diferencia);    // IVA a pagar
-      const c602 = Math.max(0, -diferencia);   // CT si negativo
-      // 605: Saldo CT mes anterior por adquisiciones (no automatizable sin histórico)
-      const c605 = 0;
-      // 606: Saldo CT mes anterior por retenciones
-      const c606 = 0;
-      // 615: Saldo CT próximo mes por adquisiciones
-      const c615 = c602 > 0 ? c602 : 0;
-      // 617: Saldo CT próximo mes por retenciones
-      const c617 = 0;
-      // 620: Subtotal a pagar
-      const c620 = c601;
-      // 699: TOTAL IMPUESTO A PAGAR POR PERCEPCIÓN
-      const c699 = c620;
-      // 859: TOTAL CONSOLIDADO IVA (sin retenciones realizadas por simplificación)
-      const c859 = c699;
-      // 902/999
-      const c902 = c859;
+      // ══════════════════════════════════════════════════════════════════
+      // 900 — VALORES A PAGAR Y FORMA DE PAGO
+      // ══════════════════════════════════════════════════════════════════
+      const c901 = 0, c903 = 0, c904 = 0; // pago previo / intereses / multas (manual)
+      const c902 = r2(c899 - c901);
+      const c999 = r2(c902 + c903 + c904);
+      const c905 = 0, c906 = 0, c907 = 0;
+      const c908 = 0, c909 = 0, c910 = 0, c911 = 0, c912 = 0;
+      const c913 = 0, c914 = 0, c915 = 0, c916 = 0, c917 = 0, c918 = 0, c919 = 0;
+
+      // Devoluciones de IVA — sección informativa 351-363 (no trackeado)
+      const c351 = 0, c353 = 0, c355 = 0, c357 = 0, c359 = 0, c361 = 0, c363 = 0;
 
       return c.json({
         formulario: '104',
         periodo: { mes: Number(mes), anio: Number(anio), fi, ff,
           nombre: new Date(Number(anio), Number(mes)-1).toLocaleString('es-EC', {month:'long', year:'numeric'}) },
-        // VENTAS Y OTRAS OPERACIONES
-        ventas: {
-          c401: r2(c401), c411: r2(c411), c421: r2(c421),
-          c403: r2(c403), c413: r2(c413),
-          c405: r2(c405), c415: r2(c415),
-          c407: r2(c407), c417: r2(c417),
-          c409_total_bruto: r2(c409),
-          c419_total_neto: r2(c419),
-          c429_iva_generado: r2(c429),
-          c499_iva_liquidar: r2(c499),
-          c111_comprobantes: (facturas||[]).length,
+        // Bloques auxiliares para renderizado agrupado en el frontend
+        proporcion300: { c301, c303, c305: r2(c305), c307: r2(c307), c399: r2(c399) },
+        devoluciones350: { c351,c353,c355,c357,c359,c361,c363 },
+        ventas500: {
+          base0: c501, gravada: c531, impuesto: c551,
+          total_neto: c549, total_impuesto: c599,
+          c105, c106, c107, c108, c109, c110,
         },
-        // ADQUISICIONES Y PAGOS
-        adquisiciones: {
-          c500: r2(c500), c510: r2(c510), c520: r2(c520),
-          c507: r2(c507), c517: r2(c517),
-          c509_total_bruto: r2(c509),
-          c519_total_neto: r2(c519),
-          c529_iva_pagado: r2(c529),
-          c563_factor_proporcionalidad: c563,
-          c564_ct_aplicable: r2(c564),
-          c115_comprobantes: c115,
+        compras600: {
+          bienes:       { base0: c601, gravada: c631, impuesto: c651 },
+          servicios:    { base0: c603, gravada: c633, impuesto: c653 },
+          activos_fijos:{ base0: c605, gravada: c635, impuesto: c655 },
+          total_neto: c650, ct_contabilidad: c698, ct_proporcionalidad: c699,
+          c111, c112, c113, c114, c115, c116, c117,
         },
-        // RESUMEN LIQUIDACIÓN
-        liquidacion: {
-          c601_impuesto_causado: r2(c601),
-          c602_credito_tributario: r2(c602),
-          c605_saldo_ct_anterior_adq: r2(c605),
-          c606_saldo_ct_anterior_ret: r2(c606),
-          c609_retenciones_iva_recibidas: r2(c609),
-          c615_saldo_ct_proximo_adq: r2(c615),
-          c617_saldo_ct_proximo_ret: r2(c617),
-          c620_subtotal_pagar: r2(c620),
-          c699_total_percepcion: r2(c699),
-          c859_total_consolidado: r2(c859),
-          c902_total_pagar: r2(c902),
-        },
-        // Estructura oficial de casillas para visualización
+        resumen700: { c701: r2(c701), c702: r2(c702), c703: r2(c703), c705: r2(c705), c798, c799 },
+        retencion800: { c801,c851, c813,c863, c819,c869, c898, c118, c899 },
+        pago900: { c901,c902,c903,c904,c999 },
+        // Estructura oficial de casillas (planas) para tabla / Excel
         casillas: {
-          // VENTAS
-          '401': r2(c401), '411': r2(c411), '421': r2(c421),
-          '403': r2(c403), '413': r2(c413),
-          '409': r2(c409), '419': r2(c419), '429': r2(c429), '499': r2(c499),
-          // ADQUISICIONES
-          '500': r2(c500), '510': r2(c510), '520': r2(c520),
-          '509': r2(c509), '519': r2(c519), '529': r2(c529),
-          '563': c563, '564': r2(c564),
-          // LIQUIDACIÓN
-          '601': r2(c601), '602': r2(c602),
-          '605': r2(c605), '606': r2(c606), '609': r2(c609),
-          '615': r2(c615), '617': r2(c617),
-          '620': r2(c620), '699': r2(c699),
-          '859': r2(c859), '902': r2(c902),
+          '301': c301, '303': r2(c303), '305': r2(c305), '307': r2(c307), '399': r2(c399),
+          '351': c351, '353': c353, '355': c355, '357': c357, '359': c359, '361': c361, '363': c363,
+          '501': c501, '531': c531, '551': c551, '549': c549, '599': c599,
+          '105': c105, '106': c106, '107': c107, '108': c108, '109': c109, '110': c110,
+          '601': c601, '631': c631, '651': c651,
+          '603': c603, '633': c633, '653': c653,
+          '605': c605, '635': c635, '655': c655,
+          '607': c607, '609': c609, '611': c611, '613': c613, '619': c619,
+          '637': c637, '639': c639, '641': c641, '643': c643, '645': c645, '647': c647, '649': c649,
+          '657': c657, '659': c659, '661': c661, '663': c663, '665': c665, '667': c667,
+          '650': c650, '698': c698, '699': c699,
+          '111': c111, '112': c112, '113': c113, '114': c114, '115': c115, '116': c116, '117': c117,
+          '701': r2(c701), '702': r2(c702), '703': r2(c703), '705': r2(c705), '798': c798, '799': c799,
+          '801': c801, '851': c851, '803': c803, '853': c853, '805': c805, '855': c855,
+          '807': c807, '857': c857, '809': c809, '859': c859, '811': c811, '861': c861,
+          '813': c813, '863': c863, '815': c815, '865': c865, '817': c817, '867': c867,
+          '819': c819, '869': c869, '821': c821, '871': c871, '898': c898, '118': c118, '899': c899,
+          '901': c901, '902': c902, '903': c903, '904': c904, '999': c999,
+          '905': c905, '906': c906, '907': c907,
+          '908': c908, '909': c909, '910': c910, '911': c911, '912': c912,
+          '913': c913, '914': c914, '915': c915, '916': c916, '917': c917, '918': c918, '919': c919,
         },
       });
     } catch (e: any) { return c.json({ error: e.message }, 500); }

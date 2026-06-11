@@ -2427,72 +2427,127 @@ export default function Contabilidad() {
             )}
           </div>
 
-          {/* FORMULARIO 104 — IVA */}
+          {/* FORMULARIO 104 — IVA (casillas oficiales SRI 301-919) */}
           {formData && formTipo==='104' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* VENTAS */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 500 — RESUMEN DE VENTAS */}
                 <Card className="bg-white border-blue-200">
-                  <CardHeader className="pb-2"><CardTitle className="text-blue-700 text-sm font-bold">VENTAS Y OTRAS OPERACIONES</CardTitle></CardHeader>
+                  <CardHeader className="pb-2"><CardTitle className="text-blue-700 text-sm font-bold">500 — RESUMEN DE VENTAS</CardTitle></CardHeader>
                   <CardContent className="space-y-1.5 text-sm">
+                    <div className="grid grid-cols-4 gap-1 text-[10px] font-bold text-gray-500 pb-1 border-b border-gray-200">
+                      <span className="col-span-2">Concepto</span><span className="text-right">Base</span><span className="text-right">IVA</span>
+                    </div>
                     {([
-                      ['401','411','421','Ventas locales gravadas ≠0%'],
-                      ['403','413','','Ventas locales tarifa 0% sin CT'],
-                      ['405','415','','Ventas locales tarifa 0% con CT'],
-                      ['407','417','','Exportaciones bienes'],
-                      ['409','419','429','TOTAL VENTAS'],
-                    ] as [string,string,string,string][]).map(([br,ne,iv,lbl])=>(
-                      <div key={br} className={`flex justify-between items-start py-1 border-b border-gray-100 ${br==='409'?'font-bold':'text-xs'}`}>
-                        <div>
-                          <span className="font-mono text-xs bg-blue-100 text-blue-700 px-1 rounded mr-1">{br}</span>
-                          {ne && <span className="font-mono text-xs bg-blue-50 text-blue-500 px-1 rounded mr-1">{ne}</span>}
-                          {iv && <span className="font-mono text-xs bg-blue-50 text-blue-500 px-1 rounded mr-1">{iv}</span>}
+                      ['501','531','551','Ventas locales netas (0% / gravada / IVA)'],
+                      ['','549','599','TOTAL VENTAS Y EXPORTACIONES'],
+                    ] as [string,string,string,string][]).map(([b0,gr,iv,lbl])=>(
+                      <div key={gr} className={`grid grid-cols-4 gap-1 items-center py-1 border-b border-gray-100 ${gr==='549'?'font-bold':'text-xs'}`}>
+                        <div className="col-span-2">
+                          {b0 && <span className="font-mono text-xs bg-blue-100 text-blue-700 px-1 rounded mr-1">{b0}</span>}
+                          <span className="font-mono text-xs bg-blue-50 text-blue-500 px-1 rounded mr-1">{gr}</span>
+                          <span className="font-mono text-xs bg-blue-50 text-blue-500 px-1 rounded mr-1">{iv}</span>
                           <span className="text-gray-600 text-xs">{lbl}</span>
                         </div>
-                        <span className="font-mono text-gray-900 ml-2">${Number(formData.casillas?.[br]||0).toFixed(2)}</span>
+                        <span className="font-mono text-gray-900 text-right">${Number(b0?formData.casillas?.[b0]:formData.casillas?.[gr]||0).toFixed(2)}</span>
+                        <span className="font-mono text-gray-900 text-right">${Number(formData.casillas?.[iv]||0).toFixed(2)}</span>
                       </div>
                     ))}
-                    <div className="pt-1 text-xs text-gray-500">IVA generado (421): <strong>${Number(formData.casillas?.['421']||0).toFixed(2)}</strong></div>
+                    <div className="pt-1 text-xs text-gray-500 flex justify-between">
+                      <span><span className="font-mono bg-gray-100 px-1 rounded mr-1">105</span>Facturas emitidas: <strong>{formData.ventas500?.c105 ?? 0}</strong></span>
+                      <span><span className="font-mono bg-gray-100 px-1 rounded mr-1">109</span>Notas de crédito emitidas: <strong>{formData.ventas500?.c109 ?? 0}</strong></span>
+                    </div>
                   </CardContent>
                 </Card>
-                {/* ADQUISICIONES */}
+                {/* 600 — RESUMEN DE COMPRAS */}
                 <Card className="bg-white border-orange-200">
-                  <CardHeader className="pb-2"><CardTitle className="text-orange-700 text-sm font-bold">ADQUISICIONES Y PAGOS</CardTitle></CardHeader>
+                  <CardHeader className="pb-2"><CardTitle className="text-orange-700 text-sm font-bold">600 — RESUMEN DE COMPRAS</CardTitle></CardHeader>
                   <CardContent className="space-y-1.5 text-sm">
+                    <div className="grid grid-cols-4 gap-1 text-[10px] font-bold text-gray-500 pb-1 border-b border-gray-200">
+                      <span className="col-span-2">Concepto</span><span className="text-right">Base</span><span className="text-right">IVA</span>
+                    </div>
                     {([
-                      ['500','510','520','Adquisiciones gravadas ≠0% (con CT)'],
-                      ['507','517','','Adquisiciones tarifa 0%'],
-                      ['509','519','529','TOTAL ADQUISICIONES'],
-                      ['563','','','Factor de proporcionalidad (%)'],
-                      ['564','','','CT aplicable en este período'],
-                    ] as [string,string,string,string][]).map(([br,ne,iv,lbl])=>(
-                      <div key={br} className={`flex justify-between items-start py-1 border-b border-gray-100 ${br==='509'||br==='564'?'font-bold':''}`}>
-                        <div>
-                          <span className="font-mono text-xs bg-orange-100 text-orange-700 px-1 rounded mr-1">{br}</span>
+                      ['601','631','651','Compras locales de bienes'],
+                      ['603','633','653','Compras locales de servicios'],
+                      ['605','635','655','Compras locales de activos fijos'],
+                      ['','650','698','TOTAL COMPRAS / CT s/ contabilidad'],
+                    ] as [string,string,string,string][]).map(([b0,gr,iv,lbl])=>(
+                      <div key={gr} className={`grid grid-cols-4 gap-1 items-center py-1 border-b border-gray-100 ${gr==='650'?'font-bold':'text-xs'}`}>
+                        <div className="col-span-2">
+                          {b0 && <span className="font-mono text-xs bg-orange-100 text-orange-700 px-1 rounded mr-1">{b0}</span>}
+                          <span className="font-mono text-xs bg-orange-50 text-orange-500 px-1 rounded mr-1">{gr}</span>
+                          <span className="font-mono text-xs bg-orange-50 text-orange-500 px-1 rounded mr-1">{iv}</span>
                           <span className="text-gray-600 text-xs">{lbl}</span>
                         </div>
-                        <span className="font-mono text-gray-900 ml-2">
-                          {br==='563' ? `${Number(formData.casillas?.[br]||0).toFixed(1)}%` : `$${Number(formData.casillas?.[br]||0).toFixed(2)}`}
-                        </span>
+                        <span className="font-mono text-gray-900 text-right">${Number(b0?formData.casillas?.[b0]:formData.casillas?.[gr]||0).toFixed(2)}</span>
+                        <span className="font-mono text-gray-900 text-right">${Number(formData.casillas?.[iv]||0).toFixed(2)}</span>
                       </div>
                     ))}
-                    <div className="pt-1 text-xs text-gray-500">IVA pagado (520): <strong>${Number(formData.casillas?.['520']||0).toFixed(2)}</strong></div>
+                    <div className="pt-1 text-xs text-gray-500 flex justify-between">
+                      <span><span className="font-mono bg-gray-100 px-1 rounded mr-1">111</span>Compras recibidas: <strong>{formData.compras600?.c111 ?? 0}</strong></span>
+                      <span><span className="font-mono bg-gray-100 px-1 rounded mr-1">699</span>CT proporcionalidad: <strong>${Number(formData.casillas?.['699']||0).toFixed(2)}</strong></span>
+                    </div>
                   </CardContent>
                 </Card>
-                {/* LIQUIDACIÓN */}
-                <Card className={`border-2 ${Number(formData.casillas?.['699']||0)>0?'border-red-400 bg-red-50':'border-green-400 bg-green-50'}`}>
-                  <CardHeader className="pb-2"><CardTitle className={`text-sm font-bold ${Number(formData.casillas?.['699']||0)>0?'text-red-700':'text-green-700'}`}>RESUMEN IMPOSITIVO</CardTitle></CardHeader>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* 300 — PROPORCIÓN CT */}
+                <Card className="bg-white border-purple-200">
+                  <CardHeader className="pb-2"><CardTitle className="text-purple-700 text-sm font-bold">300 — PROPORCIÓN CT</CardTitle></CardHeader>
                   <CardContent className="space-y-1.5 text-sm">
                     {([
-                      ['601','Impuesto causado','text-gray-700'],
-                      ['602','Crédito tributario','text-green-700'],
-                      ['605','(-) Saldo CT anterior adq.','text-gray-600'],
-                      ['606','(-) Saldo CT anterior ret.','text-gray-600'],
-                      ['609','(-) Ret. IVA recibidas','text-gray-600'],
-                      ['615','Saldo CT próx. mes adq.','text-blue-600'],
-                      ['620','SUBTOTAL A PAGAR','text-gray-800 font-bold'],
-                      ['699','TOTAL PERCEPCIÓN','text-red-700 font-black text-base'],
-                      ['859','TOTAL CONSOLIDADO IVA','text-red-800 font-black'],
+                      ['301','% ventas con derecho a CT','%'],
+                      ['303','(+) Saldo CT mes anterior','$'],
+                      ['399','(=) Saldo CT a aplicarse','$'],
+                    ] as [string,string,string][]).map(([cas,lbl,unit])=>(
+                      <div key={cas} className="flex justify-between items-center py-1 border-b border-gray-100 text-xs">
+                        <span><span className="font-mono bg-purple-100 text-purple-700 px-1 rounded mr-1">{cas}</span>{lbl}</span>
+                        <span className="font-mono text-gray-900">{unit==='%' ? `${Number(formData.casillas?.[cas]||0).toFixed(1)}%` : `$${Number(formData.casillas?.[cas]||0).toFixed(2)}`}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+                {/* 700 — RESUMEN IMPOSITIVO */}
+                <Card className="bg-white border-gray-300">
+                  <CardHeader className="pb-2"><CardTitle className="text-gray-700 text-sm font-bold">700 — RESUMEN IMPOSITIVO</CardTitle></CardHeader>
+                  <CardContent className="space-y-1.5 text-sm">
+                    {([
+                      ['701','Impuesto causado','text-gray-700'],
+                      ['702','(-) CT del mes','text-green-700'],
+                      ['703','(-) Saldo CT a aplicarse','text-gray-600'],
+                      ['705','(-) Retenciones IVA recibidas','text-gray-600'],
+                      ['798','(=) Saldo CT próximo mes','text-blue-600'],
+                      ['799','(=) Subtotal a pagar','text-gray-900 font-bold'],
+                    ] as [string,string,string][]).map(([cas,lbl,cls])=>(
+                      <div key={cas} className="flex justify-between items-center py-1 border-b border-gray-100 text-xs">
+                        <span><span className="font-mono bg-gray-100 px-1 rounded mr-1">{cas}</span><span className={cls.split(' ').filter(c=>!c.includes('text-')).join(' ')}>{lbl}</span></span>
+                        <span className={`font-mono ${cls}`}>${Number(formData.casillas?.[cas]||0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+                {/* 800/900 — RETENCIÓN IVA Y TOTAL A PAGAR */}
+                <Card className={`border-2 ${Number(formData.casillas?.['899']||0)>0?'border-red-400 bg-red-50':'border-green-400 bg-green-50'}`}>
+                  <CardHeader className="pb-2"><CardTitle className={`text-sm font-bold ${Number(formData.casillas?.['899']||0)>0?'text-red-700':'text-green-700'}`}>800/900 — RETENCIÓN Y PAGO</CardTitle></CardHeader>
+                  <CardContent className="space-y-1.5 text-sm">
+                    {([
+                      ['801','IVA honorarios profesionales (100%)'],
+                      ['813','IVA otros servicios (70%)'],
+                      ['819','IVA compra de bienes (30%)'],
+                      ['898','TOTAL IVA RETENIDO'],
+                    ] as [string,string][]).map(([cas,lbl])=>(
+                      <div key={cas} className={`flex justify-between items-center py-1 border-b border-gray-200/50 text-xs ${cas==='898'?'font-bold':''}`}>
+                        <span><span className="font-mono bg-gray-100 px-1 rounded mr-1">{cas}</span>{lbl}</span>
+                        <span className="font-mono text-gray-900">${Number(formData.casillas?.[cas]||0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center py-1 border-b border-gray-200/50 text-xs">
+                      <span><span className="font-mono bg-gray-100 px-1 rounded mr-1">118</span>Comprobantes de retención emitidos</span>
+                      <span className="font-mono text-gray-900">{formData.retencion800?.c118 ?? 0}</span>
+                    </div>
+                    {([
+                      ['899','TOTAL IVA A PAGAR','text-red-700 font-black text-base'],
                       ['902','TOTAL A PAGAR','text-red-900 font-black text-lg'],
                     ] as [string,string,string][]).map(([cas,lbl,cls])=>(
                       <div key={cas} className="flex justify-between items-center py-1 border-b border-gray-200/50">
@@ -2506,11 +2561,14 @@ export default function Contabilidad() {
                   </CardContent>
                 </Card>
               </div>
+
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
                 <strong>ℹ️ Período:</strong> {formData.periodo?.nombre} ·
-                <strong> Facturas:</strong> {formData.ventas?.c111_comprobantes} emitidas ·
-                <strong> Compras:</strong> {formData.adquisiciones?.c115_comprobantes} recibidas ·
-                Los saldos de CT del mes anterior (605/606) deben ingresarse manualmente si los tienes.
+                <strong> Facturas:</strong> {formData.ventas500?.c105 ?? 0} emitidas ·
+                <strong> Compras:</strong> {formData.compras600?.c111 ?? 0} recibidas ·
+                Las casillas 303/305/307 (saldos CT mes anterior y devoluciones IVA), 705
+                (retenciones IVA recibidas), 901/903/904 (pago previo, intereses, multas) y la
+                sección 351-363/905-919 deben revisarse e ingresarse manualmente si aplican.
               </div>
             </div>
           )}
