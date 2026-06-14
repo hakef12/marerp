@@ -1607,6 +1607,143 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
     return 0;
   }
 
+  // Mapeo de cuentas del plan de cuentas (PLAN_DE_CUENTAS, códigos hoja) a las
+  // casillas oficiales del Formulario 102 (Resolución NAC-DGERCGC SRI 2005-0637).
+  // El detalle 401-458 del formulario es mucho más granular que el plan de
+  // cuentas del sistema; se agrupan en las casillas más afines y los totales
+  // (319,333,349,369,379,387,388,389,399,459) se recalculan de forma
+  // independiente por tipo de cuenta para garantizar consistencia.
+  const CUENTA_A_CASILLA_102: Record<string, string> = {
+    // Activo corriente
+    '10101': '301',     // Caja Bancos
+    '1010205': '303',   // CxC Clientes No Relacionados
+    '1010209': '304',   // (-) Provisión Cuentas Incobrables
+    '1010301': '310',   // Inventario Materia Prima
+    '1010306': '313',   // Inventario Prod. Terminados/Mercaderías
+    '1010312': '316',   // Otros inventarios -> Otros activos corrientes
+    '1010313': '316',   // (-) Provisión VNR -> Otros activos corrientes
+    '1010401': '316',   // Seguros pagados por anticipado
+    '1010402': '316',   // Arriendos pagados por anticipado
+    '1010403': '306',   // Anticipos a proveedores -> Otras cuentas por cobrar
+    '1010404': '306',   // Otros anticipos entregados
+    '1010501': '307',   // Crédito Tributario IVA
+    '1010502': '309',   // Crédito Tributario IR
+    '1010503': '309',   // Anticipo IR
+    // Activo fijo
+    '1020104': '323',   // Instalaciones
+    '1020105': '323',   // Muebles y Enseres
+    '1020106': '323',   // Maquinaria y Equipo
+    '1020108': '324',   // Equipo de Computación
+    '1020109': '325',   // Vehículos
+    '1020110': '326',   // Otros PPE
+    '1020112': '327',   // (-) Depreciación Acumulada PPE
+    '1020113': '327',   // (-) Deterioro Acumulado PPE
+    // Pasivo
+    '2010301': '351',   // CxP Proveedores Locales
+    '2010302': '352',   // CxP Proveedores del Exterior
+    '2010401': '353',   // Obligaciones Financieras Locales CP
+    '2010701': '355',   // Con la Administración Tributaria
+    '2010702': '356',   // IR por Pagar del Ejercicio
+    '2010703': '357',   // Con el IESS
+    '2010704': '358',   // Por Beneficios de Ley a Empleados
+    '2010705': '359',   // Participación Trabajadores por Pagar
+    '20110': '360',     // Anticipos de Clientes -> Provisiones
+    '20203': '372',     // Obligaciones Financieras Largo Plazo
+    '2020701': '376',   // Jubilación Patronal -> Provisiones Jubilación Patronal
+    // Ingresos
+    '4101': '391',      // Venta de Bienes (gravada 12%)
+    '4102': '391',      // Prestación de Servicios (gravada 12%)
+    '4109': '391',       // Otros ingresos de actividades ordinarias
+    '4110': '391',      // (-) Descuento en Ventas
+    '4111': '391',      // (-) Devoluciones en Ventas
+    '4302': '394',      // Intereses Financieros -> Otras rentas
+    '4305': '394',      // Otras Rentas
+    // Costo de ventas y producción
+    '510102': '402',    // Compras Netas Locales de Bienes (Mercad.)
+    '510106': '406',    // Compras Netas Locales de Materia Prima
+    '510201': '414',    // Sueldos y Beneficios Sociales (Cocina) -> Sueldos
+    '510401': '438',    // Depreciación PPE (Producción)
+    '510404': '450',    // Efecto VNR Inventarios -> Otros gastos
+    '510406': '422',    // Mantenimiento (Producción)
+    '510407': '432',    // Suministros y Materiales
+    '510408': '450',    // Otros Costos de Producción -> Otros gastos
+    // Gastos de administración y ventas
+    '520101': '414',    // Sueldos, Salarios y Demás Remuneraciones
+    '520102': '416',    // Aportes a la Seguridad Social (IESS)
+    '520103': '417',    // Beneficios Sociales e Indemnizaciones
+    '520104': '417',    // Gasto Planes de Beneficios a Empleados
+    '520105': '419',    // Honorarios, Comisiones y Dietas
+    '520108': '422',    // Mantenimiento y Reparaciones
+    '520109': '423',    // Arrendamiento Operativo
+    '520111': '426',    // Promoción y Publicidad
+    '520112': '427',    // Combustibles
+    '520114': '431',    // Seguros y Reaseguros
+    '520115': '450',    // Transporte -> Otros gastos
+    '520116': '433',    // Gastos de Gestión (agasajos)
+    '520118': '435',    // Agua, Energía, Luz y Telecomunicaciones
+    '520119': '436',    // Notarios y Registradores
+    '52012101': '438',  // Depreciaciones — PPE
+    '520122': '440',    // Amortizaciones
+    '520128': '450',    // Otros Gastos -> Otros gastos
+    // Gastos otros operativos
+    '520208': '422',    // Mantenimiento y Reparaciones (Adm.)
+    '520209': '423',    // Arrendamiento Operativo (Adm.)
+    '520218': '435',    // Agua, Energía, Luz y Telecom. (Adm.)
+    '520220': '437',    // Impuestos, Contribuciones y Otros
+    '520227': '450',    // Gasto Impuesto a la Renta (Diferido) -> Otros gastos
+    '520228': '450',    // Otros Gastos Generales -> Otros gastos
+    // Gastos financieros
+    '520301': '443',    // Intereses Bancarios -> Intereses y comisiones bancarias
+    '520302': '443',    // Comisiones Bancarias
+    '520305': '450',    // Otros Gastos Financieros -> Otros gastos
+    // Otros gastos
+    '520402': '450',    // Otros Gastos No Operacionales -> Otros gastos
+  };
+
+  // Etiquetas de las casillas del Formulario 102 mostradas en el detalle
+  const ETIQUETAS_CASILLA_102: Record<string, string> = {
+    '301': 'Caja Bancos', '302': 'Inversiones Financieras Temporales',
+    '303': 'Ctas. y Docs. por Cobrar Clientes No Relacionados', '304': '(-) Provisión Cuentas Incobrables',
+    '305': 'Ctas. y Doc. por Cobrar Clientes Relacionados', '306': 'Otras Cuentas por Cobrar',
+    '307': 'Crédito Tributario a Favor (IVA)', '308': 'Crédito Tributario IR Años Anteriores',
+    '309': 'Crédito Tributario IR Año Corriente', '310': 'Inventario de Materia Prima',
+    '313': 'Inventario de Prod. Terminados y Mercaderías', '316': 'Otros Activos Corrientes',
+    '319': 'TOTAL ACTIVO CORRIENTE',
+    '322': 'Inmuebles, Naves, Aeronaves y Similares', '323': 'Instalaciones, Maquinaria, Equipos y Muebles',
+    '324': 'Equipo de Computación y Software', '325': 'Vehículos, Equipos de Transporte',
+    '326': 'Otros Activos Fijos Tangibles', '327': '(-) Depreciación Acumulada Activo Fijo',
+    '333': 'TOTAL ACTIVO FIJO', '349': 'TOTAL DEL ACTIVO',
+    '351': 'CxP Proveedores Locales', '352': 'CxP Proveedores del Exterior',
+    '353': 'Obligaciones Inst. Financieras Locales', '355': 'Con la Administración Tributaria',
+    '356': 'IR por Pagar del Ejercicio', '357': 'Con el IESS', '358': 'Con Empleados',
+    '359': 'Participación Trabajadores por Pagar', '360': 'Provisiones',
+    '369': 'TOTAL PASIVO CORRIENTE', '372': 'Obligaciones Financieras Largo Plazo',
+    '376': 'Provisiones para Jubilación Patronal', '379': 'TOTAL PASIVO A LARGO PLAZO',
+    '387': 'TOTAL DEL PASIVO', '388': 'TOTAL PATRIMONIO NETO', '389': 'TOTAL PASIVO Y PATRIMONIO',
+    '391': 'Ventas Netas Locales Gravadas con Tarifa 12%', '392': 'Ventas Netas Locales Gravadas con Tarifa Cero',
+    '393': 'Exportaciones Netas', '394': 'Otras Rentas', '395': 'Utilidad en Venta de Activos Fijos',
+    '396': 'Ingresos por Reembolso', '399': 'TOTAL INGRESOS',
+    '402': 'Compras Netas Locales de Bienes', '406': 'Compras Netas Locales de Materia Prima',
+    '414': 'Sueldos, Salarios y Demás Remuneraciones', '416': 'Aportes a la Seguridad Social',
+    '417': 'Beneficios Sociales e Indemnizaciones', '419': 'Honorarios, Comisiones y Dietas',
+    '422': 'Mantenimiento y Reparaciones', '423': 'Arrendamiento de Bienes Inmuebles',
+    '426': 'Promoción y Publicidad', '427': 'Combustibles', '431': 'Seguros y Reaseguros',
+    '432': 'Suministros y Materiales', '433': 'Gastos de Gestión', '435': 'Agua, Energía, Luz y Telecomunicaciones',
+    '436': 'Notarios y Registradores', '437': 'Impuestos, Contribuciones y Otros',
+    '438': 'Depreciación de Activos Fijos', '440': 'Amortizaciones', '443': 'Intereses y Comisiones Bancarias',
+    '450': 'Otros Gastos', '459': 'TOTAL COSTOS Y GASTOS',
+    '460': 'Utilidad del Ejercicio (399-459 > 0)', '461': 'Pérdida del Ejercicio (399-459 < 0)',
+    '462': '(-) 15% Participación Trabajadores',
+    '469': '= UTILIDAD GRAVABLE', '470': '= PÉRDIDA',
+    '803': 'BASE IMPONIBLE', '804': 'IMPUESTO A LA RENTA CAUSADO',
+    '805': '(-) Anticipo Pagado', '806': '(-) Retenciones en la Fuente del Ejercicio Fiscal',
+    '807': '(-) Retenciones por Ingresos del Exterior', '808': '(-) Exoneraciones por Leyes Especiales',
+    '801': 'Anticipo Próximo Año', '898': 'SALDO A FAVOR DEL CONTRIBUYENTE',
+    '899': 'IMPUESTO A LA RENTA A PAGAR (causado)',
+    '901': 'Pago Previo', '902': 'IMPUESTO A LA RENTA A PAGAR', '903': 'Intereses por Mora',
+    '904': 'Multas', '999': 'TOTAL PAGADO',
+  };
+
   app.get("/server/contabilidad/formulario-102", authMiddleware, async (c: any) => {
     const auth = c.get('auth'); const db = getDB();
     try {
@@ -1619,11 +1756,21 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       const cuentas = await obtenerCuentas(auth.empresaId);
       const asientos = await obtenerAsientos(auth.empresaId);
 
-      // ── Estado de Situación Financiera (Balance) al cierre del ejercicio ──
-      const saldosBalance = calcularSaldosCuentas(cuentas, asientos, undefined, ff);
       const sumaTipo = (saldos: Record<string, number>, filtro: (ct: any) => boolean) =>
         r2(cuentas.filter((ct: any) => !ct.es_grupo && filtro(ct))
           .reduce((s: number, ct: any) => s + (saldos[ct.id] || 0), 0));
+
+      const casillas: Record<string, number> = {};
+      const acc = (cas: string, val: number) => { casillas[cas] = r2((casillas[cas] || 0) + (val || 0)); };
+
+      // ── Estado de Situación Financiera (Balance) al cierre del ejercicio ──
+      const saldosBalance = calcularSaldosCuentas(cuentas, asientos, undefined, ff);
+      for (const ct of cuentas) {
+        if (ct.es_grupo) continue;
+        if (ct.tipo !== 'activo' && ct.tipo !== 'pasivo') continue;
+        const cas = CUENTA_A_CASILLA_102[ct.codigo];
+        if (cas) acc(cas, saldosBalance[ct.id] || 0);
+      }
 
       const activoCorriente   = sumaTipo(saldosBalance, (ct) => ct.tipo === 'activo' && String(ct.codigo).startsWith('101'));
       const activoNoCorriente = sumaTipo(saldosBalance, (ct) => ct.tipo === 'activo' && String(ct.codigo).startsWith('102'));
@@ -1636,24 +1783,51 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       const totalPatrimonio = sumaTipo(saldosBalance, (ct) => ct.tipo === 'patrimonio');
       const totalPasivoPatrimonio = r2(totalPasivo + totalPatrimonio);
 
+      casillas['319'] = activoCorriente;
+      casillas['333'] = activoNoCorriente;
+      casillas['349'] = totalActivo;
+      casillas['369'] = pasivoCorriente;
+      casillas['379'] = pasivoNoCorriente;
+      casillas['387'] = totalPasivo;
+      casillas['388'] = totalPatrimonio;
+      casillas['389'] = totalPasivoPatrimonio;
+
       // ── Estado de Resultados del ejercicio ────────────────────────────────
       const saldosResultado = calcularSaldosCuentas(cuentas, asientos, fi, ff);
+      for (const ct of cuentas) {
+        if (ct.es_grupo) continue;
+        if (ct.tipo !== 'ingreso' && ct.tipo !== 'costo' && ct.tipo !== 'gasto') continue;
+        const cas = CUENTA_A_CASILLA_102[ct.codigo];
+        if (cas) acc(cas, saldosResultado[ct.id] || 0);
+      }
+
       const totalIngresos = sumaTipo(saldosResultado, (ct) => ct.tipo === 'ingreso');
       const totalCostos   = sumaTipo(saldosResultado, (ct) => ct.tipo === 'costo');
       const totalGastos   = sumaTipo(saldosResultado, (ct) => ct.tipo === 'gasto');
       const totalCostosGastos = r2(totalCostos + totalGastos);
+      casillas['399'] = totalIngresos;
+      casillas['459'] = totalCostosGastos;
 
+      // ── Conciliación tributaria (460-470) ─────────────────────────────────
       const resultadoEjercicio = r2(totalIngresos - totalCostosGastos);
       const utilidadEjercicio = Math.max(0, resultadoEjercicio);
       const perdidaEjercicio = Math.max(0, -resultadoEjercicio);
-
       const participacionTrabajadores = utilidadEjercicio > 0 ? r2(utilidadEjercicio * 0.15) : 0;
       const utilidadGravable = Math.max(0, r2(utilidadEjercicio - participacionTrabajadores));
 
-      // ── Liquidación del Impuesto a la Renta (tabla progresiva PN) ─────────
+      casillas['460'] = utilidadEjercicio;
+      casillas['461'] = perdidaEjercicio;
+      casillas['462'] = participacionTrabajadores;
+      casillas['469'] = utilidadGravable;
+      casillas['470'] = perdidaEjercicio;
+
+      // ── Cálculo del Impuesto a la Renta (tabla progresiva PN) ─────────────
+      // v1: la base imponible (803) considera únicamente la utilidad gravable
+      // de la actividad empresarial (469). Otras rentas de la persona natural
+      // (bienes raíces, trabajo personal, etc. — casillas 501-799) no son
+      // registradas por este sistema y deben añadirse manualmente si aplica.
       const baseImponible = utilidadGravable;
       const impuestoCausado = calcularImpuestoRentaPN(baseImponible);
-      const anticipoIR = 0; // (-) anticipo determinado para el próximo ejercicio: ingreso manual
 
       const { data: rets } = await db.from('retenciones')
         .select('impuestos').eq('empresa_id', auth.empresaId)
@@ -1666,42 +1840,33 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       }
       retencionesRecibidas = r2(retencionesRecibidas);
 
-      const impuestoAPagar = Math.max(0, r2(impuestoCausado - anticipoIR - retencionesRecibidas));
-      const saldoAFavor = Math.max(0, r2((anticipoIR + retencionesRecibidas) - impuestoCausado));
+      const impuestoAPagar = Math.max(0, r2(impuestoCausado - retencionesRecibidas));
+      const saldoAFavor = Math.max(0, r2(retencionesRecibidas - impuestoCausado));
+      const anticipoProximoAnio = Math.max(0, r2(impuestoCausado * 0.5 - retencionesRecibidas));
+
+      casillas['801'] = anticipoProximoAnio;
+      casillas['803'] = baseImponible;
+      casillas['804'] = impuestoCausado;
+      casillas['805'] = 0;
+      casillas['806'] = retencionesRecibidas;
+      casillas['807'] = 0;
+      casillas['808'] = 0;
+      casillas['898'] = saldoAFavor;
+      casillas['899'] = impuestoAPagar;
+
+      // ── Valores a pagar (900) ──────────────────────────────────────────────
+      casillas['901'] = 0;
+      casillas['902'] = impuestoAPagar; // 899 - 901
+      casillas['903'] = 0;
+      casillas['904'] = 0;
+      casillas['999'] = impuestoAPagar; // 902 + 903 + 904
 
       return c.json({
         formulario: '102',
         anio: Number(anio),
         periodo: { fi, ff, label: `Ejercicio fiscal ${anio}` },
-        casillas: {
-          // ── 300 — Estado de Situación Financiera (Balance General) ──
-          '319': activoCorriente,           // Total activo corriente
-          '333': activoNoCorriente,         // Total activo no corriente (fijo)
-          '349': totalActivo,               // Total del activo
-          '369': pasivoCorriente,           // Total pasivo corriente
-          '379': pasivoNoCorriente,         // Total pasivo no corriente (largo plazo)
-          '387': totalPasivo,               // Total del pasivo
-          '388': totalPatrimonio,           // Total patrimonio neto
-          '389': totalPasivoPatrimonio,     // Total pasivo + patrimonio
-          // ── 390 — Estado de Resultados ──
-          '399': totalIngresos,             // Total de ingresos
-          '459': totalCostosGastos,         // Total costos y gastos
-          '460': utilidadEjercicio,         // Utilidad del ejercicio
-          '461': perdidaEjercicio,          // Pérdida del ejercicio
-          '469': utilidadGravable,          // Utilidad gravable (renta líquida)
-          '470': perdidaEjercicio,          // Pérdida del ejercicio (traslada)
-          // ── 800/900 — Liquidación del Impuesto a la Renta ──
-          '829': totalIngresos,             // Total de ingresos
-          '839': totalCostosGastos,         // Total costos y gastos
-          '849': resultadoEjercicio,        // Utilidad (pérdida) del ejercicio
-          '850': participacionTrabajadores, // 15% participación trabajadores
-          '859': baseImponible,             // Base imponible gravable
-          '861': impuestoCausado,           // Impuesto a la renta causado (tabla progresiva)
-          '871': anticipoIR,                // (-) Anticipo determinado para el próximo ejercicio
-          '872': retencionesRecibidas,      // (-) Retenciones en la fuente que le han sido efectuadas
-          '902': impuestoAPagar,            // Impuesto a la renta a pagar
-          '903': saldoAFavor,               // Saldo a favor del contribuyente
-        },
+        casillas,
+        etiquetas: ETIQUETAS_CASILLA_102,
         resumen: {
           total_activo: totalActivo,
           total_pasivo: totalPasivo,
@@ -1716,14 +1881,18 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
           impuesto_a_pagar: impuestoAPagar,
           saldo_a_favor: saldoAFavor,
         },
-        nota: 'Formulario 102 — Declaración Impuesto a la Renta Personas Naturales y Sucesiones Indivisas ' +
-              'Obligadas a Llevar Contabilidad. El balance general se calcula a partir de los saldos contables ' +
-              'al 31/12 (cuentas 101/102 = activo corriente/no corriente, 201/202 = pasivo corriente/largo plazo, ' +
-              'grupo 3 = patrimonio) y el estado de resultados con los movimientos del ejercicio (ingresos, ' +
-              'costos y gastos). El impuesto causado (859/861) se calcula con la tabla progresiva de Impuesto ' +
-              'a la Renta para personas naturales — VERIFIQUE que la tabla usada corresponda al año ' + anio + '. ' +
-              'No incluye gastos personales deducibles, rebajas por discapacidad/tercera edad, ingresos exentos ' +
-              'ni otras rentas (relación de dependencia, arriendos, etc.) fuera de la actividad empresarial. ' +
+        nota: 'Formulario 102 — Declaración del Impuesto a la Renta Personas Naturales y Sucesiones Indivisas ' +
+              'Obligadas a Llevar Contabilidad (Resolución NAC-DGERCGC SRI 2005-0637). El Estado de Situación ' +
+              '(301-389) y el Estado de Resultados (391-459) se calculan a partir de los saldos contables del ' +
+              'plan de cuentas, agrupados en las casillas oficiales más afines (el detalle 401-458 es más ' +
+              'granular que el plan de cuentas del sistema, así que varias cuentas se agrupan en una sola ' +
+              'casilla — revise y redistribuya el detalle con su contador). La sección 460-470 calcula la ' +
+              'utilidad/pérdida y la utilidad gravable del ejercicio. La base imponible (803) usa únicamente ' +
+              'la utilidad gravable de la actividad empresarial (469); NO incluye otras rentas personales ' +
+              '(bienes raíces, trabajo en relación de dependencia, libre ejercicio profesional fuera del ' +
+              'negocio, rebajas por discapacidad/tercera edad, etc. — casillas 501-808), que debe agregar ' +
+              'manualmente si aplican. El impuesto causado (804) usa la tabla progresiva de Impuesto a la ' +
+              'Renta para personas naturales — VERIFIQUE que la tabla usada corresponda al año ' + anio + '. ' +
               'Revise la conciliación tributaria completa con su contador antes de declarar ante el SRI.',
       });
     } catch (e: any) { return c.json({ error: e.message }, 500); }

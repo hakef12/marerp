@@ -2752,8 +2752,8 @@ export default function Contabilidad() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {([
                     ['399','Total ingresos','text-gray-700'],
-                    ['859','Base imponible (utilidad gravable)','text-gray-900 font-bold'],
-                    ['861','IR causado (tabla progresiva)','text-orange-700 font-bold'],
+                    ['803','Base imponible','text-gray-900 font-bold'],
+                    ['804','IR causado (tabla progresiva)','text-orange-700 font-bold'],
                     ['902','IR A PAGAR','text-red-700 font-black text-xl'],
                   ] as [string,string,string][]).map(([cas,lbl,cls])=>(
                     <div key={cas} className="text-center bg-white rounded-xl p-3 border border-red-200">
@@ -2768,15 +2768,15 @@ export default function Contabilidad() {
               </div>
 
               <div className="rounded-xl border border-red-100 overflow-hidden">
-                <div className="bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-700">Estado de Situación Financiera (Balance General)</div>
+                <div className="bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-700">Estado de Situación Financiera (Balance General) — Casillas 301-389</div>
                 <table className="w-full text-sm">
                   <tbody>
                     {([
                       ['319','Total activo corriente'],
-                      ['333','Total activo no corriente'],
+                      ['333','Total activo fijo'],
                       ['349','TOTAL DEL ACTIVO'],
                       ['369','Total pasivo corriente'],
-                      ['379','Total pasivo no corriente (largo plazo)'],
+                      ['379','Total pasivo a largo plazo'],
                       ['387','TOTAL DEL PASIVO'],
                       ['388','Total patrimonio neto'],
                       ['389','TOTAL PASIVO Y PATRIMONIO'],
@@ -2792,16 +2792,12 @@ export default function Contabilidad() {
               </div>
 
               <div className="rounded-xl border border-red-100 overflow-hidden">
-                <div className="bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-700">Estado de Resultados</div>
+                <div className="bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-700">Estado de Resultados — Casillas 391-459</div>
                 <table className="w-full text-sm">
                   <tbody>
                     {([
-                      ['399','Total de ingresos'],
-                      ['459','Total costos y gastos'],
-                      ['460','Utilidad del ejercicio'],
-                      ['461','Pérdida del ejercicio'],
-                      ['469','Utilidad gravable (renta líquida)'],
-                      ['470','Pérdida del ejercicio (traslada)'],
+                      ['399','TOTAL INGRESOS'],
+                      ['459','TOTAL COSTOS Y GASTOS'],
                     ] as [string,string][]).map(([cas,lbl],i)=>(
                       <tr key={cas} className={i%2===0?'':'bg-red-50/30'}>
                         <td className="px-3 py-2 font-mono font-bold text-red-700 w-20">{cas}</td>
@@ -2814,20 +2810,45 @@ export default function Contabilidad() {
               </div>
 
               <div className="rounded-xl border border-red-100 overflow-hidden">
-                <div className="bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-700">Liquidación del Impuesto a la Renta</div>
+                <div className="bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-700">Conciliación Tributaria — Casillas 460-470</div>
                 <table className="w-full text-sm">
                   <tbody>
                     {([
-                      ['829','Total de ingresos'],
-                      ['839','Total costos y gastos'],
-                      ['849','Utilidad (pérdida) del ejercicio'],
-                      ['850','(-) 15% participación trabajadores'],
-                      ['859','BASE IMPONIBLE GRAVABLE'],
-                      ['861','Impuesto a la renta causado (tabla progresiva)'],
-                      ['871','(-) Anticipo determinado para el próximo ejercicio'],
-                      ['872','(-) Retenciones en la fuente que le han sido efectuadas'],
+                      ['460','Utilidad del ejercicio'],
+                      ['461','Pérdida del ejercicio'],
+                      ['462','(-) 15% participación trabajadores'],
+                      ['469','= UTILIDAD GRAVABLE'],
+                      ['470','= PÉRDIDA'],
+                    ] as [string,string][]).map(([cas,lbl],i)=>(
+                      <tr key={cas} className={i%2===0?'':'bg-red-50/30'}>
+                        <td className="px-3 py-2 font-mono font-bold text-red-700 w-20">{cas}</td>
+                        <td className="px-3 py-2 text-gray-700 text-xs">{lbl}</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold">${Number(formData.casillas?.[cas]||0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="rounded-xl border border-red-100 overflow-hidden">
+                <div className="bg-red-50 px-3 py-2 text-xs font-bold uppercase text-red-700">Cálculo del Impuesto a la Renta — Casillas 801-999</div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {([
+                      ['803','BASE IMPONIBLE'],
+                      ['804','IMPUESTO A LA RENTA CAUSADO'],
+                      ['805','(-) Anticipo pagado'],
+                      ['806','(-) Retenciones en la fuente del ejercicio'],
+                      ['807','(-) Retenciones por ingresos del exterior'],
+                      ['808','(-) Exoneraciones por leyes especiales'],
+                      ['898','SALDO A FAVOR DEL CONTRIBUYENTE'],
+                      ['899','IMPUESTO A LA RENTA A PAGAR (causado)'],
+                      ['801','Anticipo para el próximo ejercicio'],
+                      ['901','(-) Pago previo'],
                       ['902','IMPUESTO A LA RENTA A PAGAR'],
-                      ['903','Saldo a favor del contribuyente'],
+                      ['903','Intereses por mora'],
+                      ['904','Multas'],
+                      ['999','TOTAL PAGADO'],
                     ] as [string,string][]).map(([cas,lbl],i)=>(
                       <tr key={cas} className={i%2===0?'':'bg-red-50/30'}>
                         <td className="px-3 py-2 font-mono font-bold text-red-700 w-20">{cas}</td>
