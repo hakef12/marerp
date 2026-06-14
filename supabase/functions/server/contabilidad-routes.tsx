@@ -778,10 +778,33 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       const cxp = cuentas.filter((ct: any) => ct.codigo === '2010301')
         .reduce((s: number, ct: any) => s + (saldosTotal[ct.id] || 0), 0);
 
+      // Ratios de liquidez segun formulas contables estandar:
+      //   Razon Corriente = Activo Corriente / Pasivo Corriente
+      //   Prueba Acida    = (Activo Corriente - Inventarios) / Pasivo Corriente
+      const activoCorriente = cuentas
+        .filter((ct: any) => ct.tipo === 'activo' && !ct.es_grupo && String(ct.codigo).startsWith('101'))
+        .reduce((s: number, ct: any) => s + (saldosTotal[ct.id] || 0), 0);
+      const pasivoCorriente = cuentas
+        .filter((ct: any) => ct.tipo === 'pasivo' && !ct.es_grupo && String(ct.codigo).startsWith('201'))
+        .reduce((s: number, ct: any) => s + (saldosTotal[ct.id] || 0), 0);
+      const inventarios = cuentas
+        .filter((ct: any) => ['1010301','1010306','1010312'].includes(ct.codigo))
+        .reduce((s: number, ct: any) => s + (saldosTotal[ct.id] || 0), 0);
+      const razonCorriente = pasivoCorriente > 0 ? activoCorriente / pasivoCorriente : 0;
+      const pruebaAcida = pasivoCorriente > 0 ? (activoCorriente - inventarios) / pasivoCorriente : 0;
+
       return c.json({
         mes: { ingreso: ingresoMes, gasto: gastoMes, utilidad: ingresoMes - gastoMes },
         anio: { ingreso: ingresoAnio },
-        liquidez: { caja, cxc, cxp, ratio_corriente: cxp > 0 ? (caja + cxc) / cxp : 0 },
+        liquidez: {
+          caja, cxc, cxp,
+          activo_corriente: activoCorriente,
+          pasivo_corriente: pasivoCorriente,
+          inventarios,
+          razon_corriente: razonCorriente,
+          prueba_acida: pruebaAcida,
+          ratio_corriente: razonCorriente, // alias retro-compatible
+        },
         total_asientos: asientos.filter((a: any) => a.estado !== 'anulado').length,
         total_cuentas: cuentas.filter((ct: any) => !ct.es_grupo).length,
       });
