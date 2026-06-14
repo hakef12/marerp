@@ -805,13 +805,19 @@ export async function obtenerCuentas(empresaId: string) {
     },
     `empresa_${empresaId}_cuentas_contables`
   );
-  // Agrega naturaleza derivada del tipo (no existe como columna en DB)
+  // Agrega naturaleza derivada del tipo (no existe como columna en DB).
+  // Las contra-cuentas (provisiones, depreciaciones, descuentos y devoluciones,
+  // pérdidas acumuladas) conservan la naturaleza derivada del tipo: cuando se
+  // contabilizan en la dirección correcta (crédito para activos regulatorios,
+  // débito para ingresos/patrimonio regulatorios), su saldo queda negativo y
+  // se resta automáticamente al agregarse al total del grupo — no requiere
+  // tratamiento especial en la agregación.
   return cuentas.map((c: any) => ({
     ...c,
     naturaleza: (
-      c.tipo === 'pasivo' || c.tipo === 'ingreso' ? 'acreedora' :
-      c.tipo === 'patrimonio' && c.codigo?.startsWith('3.2') ? 'deudora' :
-      c.tipo === 'patrimonio' ? 'acreedora' : 'deudora'
+      c.tipo === 'pasivo' || c.tipo === 'ingreso' || c.tipo === 'patrimonio'
+        ? 'acreedora'
+        : 'deudora'
     ),
     nivel: c.nivel ?? (c.codigo ? c.codigo.split('.').length : 3),
   }));

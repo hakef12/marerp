@@ -873,49 +873,140 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
   });
 
   // POST /contabilidad/cierre-anual — genera asientos de cierre del ejercicio
+  //
+  // Body: { anio: number, tarifa_ir?: number (default 25), usar_tabla_pn?: boolean }
+  //
+  // Genera un único asiento balanceado que:
+  //  1. Cierra todas las cuentas de ingreso (DB) y de costo/gasto (CR)
+  //  2. Si hay utilidad bruta:
+  //     - Acredita 2010705 con el 15% de participación trabajadores
+  //     - Acredita 2010702 con el IR del ejercicio (25% sociedades o tabla
+  //       progresiva personas naturales)
+  //     - Acredita 30601 (Ganancias Acumuladas) con la utilidad neta restante
+  //  3. Si hay pérdida: debita 30602 (Pérdidas Acumuladas) por el monto absoluto
+  //
+  // Reemplaza el comportamiento anterior que dejaba el resultado del ejercicio
+  // colgado en 30701/30702 sin transferir a Ganancias/Pérdidas Acumuladas ni
+  // registrar pasivos por 15% y 25%.
   app.post("/server/contabilidad/cierre-anual", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     const db = getDB();
     try {
-      const { anio } = await c.req.json();
+      const body = await c.req.json();
+      const { anio, tarifa_ir, usar_tabla_pn } = body || {};
       if (!anio) return c.json({ error: 'anio requerido' }, 400);
+      const tarifaIR = Number(tarifa_ir ?? 25);
+      const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 
       const cuentas = await obtenerCuentas(auth.empresaId);
       const asientos = await obtenerAsientos(auth.empresaId);
       const fi = `${anio}-01-01`; const ff = `${anio}-12-31`;
       const saldos = calcularSaldosCuentas(cuentas, asientos, fi, ff);
 
-      // Separar ingresos y gastos con saldo
+      // Saldos signados: ingreso acreedora => positivo si CR > DB.
+      // Para cerrar, usamos el signo real (no Math.abs) para detectar saldos
+      // invertidos (p.ej. devoluciones en ventas que netearon a negativo).
       const cuentasIngreso = cuentas.filter((c: any) => c.tipo === 'ingreso' && !c.es_grupo && (saldos[c.id] || 0) !== 0);
       const cuentasGasto   = cuentas.filter((c: any) => ['gasto','costo'].includes(c.tipo) && !c.es_grupo && (saldos[c.id] || 0) !== 0);
 
-      const totalIngresos = cuentasIngreso.reduce((s: number, c: any) => s + Math.abs(saldos[c.id] || 0), 0);
-      const totalGastos   = cuentasGasto.reduce((s: number, c: any) => s + Math.abs(saldos[c.id] || 0), 0);
-      const utilidad      = totalIngresos - totalGastos;
+      const totalIngresos = r2(cuentasIngreso.reduce((s: number, c: any) => s + (saldos[c.id] || 0), 0));
+      const totalGastos   = r2(cuentasGasto.reduce((s: number, c: any) => s + (saldos[c.id] || 0), 0));
+      const utilidadBruta = r2(totalIngresos - totalGastos);
 
-      // Cuenta 3.3.01 Resultado del ejercicio
-      const ctaResultado  = cuentas.find((c: any) => c.codigo === '30701' || c.codigo === '307');
-      if (!ctaResultado) return c.json({ error: 'Cuenta 30701 (Ganancia Neta del Periodo) no encontrada en el plan contable' }, 422);
+      // Encontrar cuentas clave del cierre
+      const reqCuentas = {
+        ganancia:        cuentas.find((c: any) => c.codigo === '30601'),
+        perdida:         cuentas.find((c: any) => c.codigo === '30602'),
+        partTrabajadores:cuentas.find((c: any) => c.codigo === '2010705'),
+        irPorPagar:      cuentas.find((c: any) => c.codigo === '2010702'),
+      };
+      const faltantes = Object.entries(reqCuentas).filter(([_, v]) => !v).map(([k]) => k);
+      if (faltantes.length > 0) {
+        return c.json({ error: `Cuentas requeridas no encontradas en el plan: ${faltantes.join(', ')}. ` +
+          'Códigos esperados: 30601 (Ganancias Acumuladas), 30602 (Pérdidas Acumuladas), ' +
+          '2010705 (Participación Trabajadores por Pagar), 2010702 (IR por Pagar).' }, 422);
+      }
 
-      // Construir asiento de cierre: cerrar ingresos y gastos
+      // Construir items del asiento de cierre
       const items: any[] = [];
+
+      // 1. Cerrar ingresos: cada uno por su saldo real (positivo o negativo)
       for (const ct of cuentasIngreso) {
-        const s = saldos[ct.id] || 0;
-        items.push({ cuenta_id: ct.id, cuenta_codigo: ct.codigo, cuenta_nombre: ct.nombre,
-          debito: Math.abs(s), credito: 0, descripcion: 'Cierre ingreso' });
+        const s = r2(saldos[ct.id] || 0);
+        items.push({
+          cuenta_id: ct.id, cuenta_codigo: ct.codigo, cuenta_nombre: ct.nombre,
+          debito:  s >= 0 ? s : 0,
+          credito: s <  0 ? -s : 0,
+          descripcion: 'Cierre de ingreso',
+        });
       }
+      // 2. Cerrar costos y gastos
       for (const ct of cuentasGasto) {
-        const s = saldos[ct.id] || 0;
-        items.push({ cuenta_id: ct.id, cuenta_codigo: ct.codigo, cuenta_nombre: ct.nombre,
-          debito: 0, credito: Math.abs(s), descripcion: 'Cierre gasto/costo' });
+        const s = r2(saldos[ct.id] || 0);
+        items.push({
+          cuenta_id: ct.id, cuenta_codigo: ct.codigo, cuenta_nombre: ct.nombre,
+          debito:  s <  0 ? -s : 0,
+          credito: s >= 0 ? s : 0,
+          descripcion: 'Cierre de costo/gasto',
+        });
       }
-      // Contrapartida: resultado del ejercicio
-      items.push({
-        cuenta_id: ctaResultado.id, cuenta_codigo: ctaResultado.codigo, cuenta_nombre: ctaResultado.nombre,
-        debito: utilidad < 0 ? Math.abs(utilidad) : 0,
-        credito: utilidad >= 0 ? utilidad : 0,
-        descripcion: `Resultado del ejercicio ${anio}`,
-      });
+
+      let participacion = 0, impuestoRenta = 0, utilidadNeta = 0, perdida = 0;
+
+      if (utilidadBruta > 0) {
+        // 3a. 15% participación trabajadores (Código del Trabajo, Art. 97)
+        participacion = r2(utilidadBruta * 0.15);
+        const baseImponible = r2(utilidadBruta - participacion);
+
+        // 3b. Impuesto a la Renta del ejercicio
+        if (usar_tabla_pn) {
+          impuestoRenta = calcularImpuestoRentaPN(baseImponible);
+        } else {
+          impuestoRenta = r2(baseImponible * (tarifaIR / 100));
+        }
+
+        utilidadNeta = r2(baseImponible - impuestoRenta);
+
+        items.push({
+          cuenta_id: reqCuentas.partTrabajadores!.id,
+          cuenta_codigo: reqCuentas.partTrabajadores!.codigo,
+          cuenta_nombre: reqCuentas.partTrabajadores!.nombre,
+          debito: 0, credito: participacion,
+          descripcion: '15% Participación Trabajadores por Pagar',
+        });
+        items.push({
+          cuenta_id: reqCuentas.irPorPagar!.id,
+          cuenta_codigo: reqCuentas.irPorPagar!.codigo,
+          cuenta_nombre: reqCuentas.irPorPagar!.nombre,
+          debito: 0, credito: impuestoRenta,
+          descripcion: `Impuesto a la Renta ${anio} (${usar_tabla_pn ? 'tabla PN' : tarifaIR + '%'})`,
+        });
+        items.push({
+          cuenta_id: reqCuentas.ganancia!.id,
+          cuenta_codigo: reqCuentas.ganancia!.codigo,
+          cuenta_nombre: reqCuentas.ganancia!.nombre,
+          debito: 0, credito: utilidadNeta,
+          descripcion: `Utilidad neta del ejercicio ${anio} transferida a Ganancias Acumuladas`,
+        });
+      } else if (utilidadBruta < 0) {
+        // Pérdida del ejercicio → cargar a 30602 (Pérdidas Acumuladas)
+        perdida = r2(-utilidadBruta);
+        items.push({
+          cuenta_id: reqCuentas.perdida!.id,
+          cuenta_codigo: reqCuentas.perdida!.codigo,
+          cuenta_nombre: reqCuentas.perdida!.nombre,
+          debito: perdida, credito: 0,
+          descripcion: `Pérdida del ejercicio ${anio} transferida a Pérdidas Acumuladas`,
+        });
+      }
+      // utilidadBruta === 0 → solo se cierran ingresos y gastos contra sí mismos
+
+      // Verificar partida doble
+      const totDeb = r2(items.reduce((s, it) => s + (it.debito || 0), 0));
+      const totCred = r2(items.reduce((s, it) => s + (it.credito || 0), 0));
+      if (Math.abs(totDeb - totCred) > 0.01) {
+        return c.json({ error: `Asiento de cierre desbalanceado: DB ${totDeb} vs CR ${totCred}` }, 500);
+      }
 
       const year = new Date().getFullYear();
       const { count: cnt } = await db.from('asientos_contables')
@@ -927,11 +1018,20 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
         tipo: 'cierre', descripcion: `Asiento de cierre ejercicio ${anio}`,
         referencia: `CIERRE-${anio}`, fecha: `${anio}-12-31`,
         estado: 'activo', numero, origen_automatico: true, items,
-        total_debito: totalIngresos, total_credito: totalIngresos,
+        total_debito: totDeb, total_credito: totCred,
       });
 
       return c.json({ ok: true, asiento_cierre: asientoCierre,
-        resumen: { total_ingresos: totalIngresos, total_gastos: totalGastos, utilidad } });
+        resumen: {
+          total_ingresos: totalIngresos,
+          total_costos_gastos: totalGastos,
+          utilidad_bruta: utilidadBruta,
+          participacion_trabajadores_15: participacion,
+          impuesto_renta: impuestoRenta,
+          tarifa_ir_aplicada: usar_tabla_pn ? 'tabla progresiva personas naturales' : `${tarifaIR}%`,
+          utilidad_neta: utilidadNeta,
+          perdida: perdida,
+        } });
     } catch (e: any) { return c.json({ error: e.message }, 500); }
   });
 
