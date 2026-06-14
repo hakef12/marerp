@@ -221,6 +221,9 @@ export default function Contabilidad() {
   const [formData, setFormData]                 = useState<any>(null);
   const [formLoading, setFormLoading]           = useState(false);
   const [tipoContribuyente, setTipoContribuyente] = useState<'sociedad'|'persona_natural'>('sociedad');
+  // Conciliación tributaria manual para F101 y F102 (anual)
+  const [formGastosNoDeducibles, setFormGastosNoDeducibles] = useState<number>(0);
+  const [formIngresosExentos,    setFormIngresosExentos]    = useState<number>(0);
 
   // ── Cuentas por Cobrar ───────────────────────────────────────────────────
   const [cxcData, setCxcData]               = useState<any>(null);
@@ -335,10 +338,11 @@ export default function Contabilidad() {
   const loadFormulario = async () => {
     setFormLoading(true);
     try {
+      const concParams = `&gastos_no_deducibles=${formGastosNoDeducibles}&ingresos_exentos=${formIngresosExentos}`;
       const url = formTipo === '125'
         ? `${BASE}/contabilidad/formulario-125?semestre=${formSemestre}&anio=${formAnio}`
         : (formTipo === '102' || formTipo === '101')
-        ? `${BASE}/contabilidad/formulario-${formTipo}?anio=${formAnio}`
+        ? `${BASE}/contabilidad/formulario-${formTipo}?anio=${formAnio}${concParams}`
         : `${BASE}/contabilidad/formulario-${formTipo}?mes=${formMes}&anio=${formAnio}`;
       const d = await apiFetch(url, headers);
       setFormData(d);
@@ -2403,7 +2407,19 @@ export default function Contabilidad() {
                 </select>
               </>
             ) : (formTipo === '102' || formTipo === '101') ? (
-              <span className="text-xs text-gray-500 italic px-2">Declaración anual — solo requiere el año</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-500 italic">Declaración anual</span>
+                <label className="text-xs text-gray-600 ml-2">Gastos no deducibles</label>
+                <input type="number" step="0.01" min="0" value={formGastosNoDeducibles}
+                  onChange={e=>setFormGastosNoDeducibles(Number(e.target.value)||0)}
+                  className="border border-orange-200 rounded px-2 py-1 text-sm bg-white text-gray-900 w-24"
+                  title="Casilla 807 (F101) / 467 (F102) — gastos contables no aceptados por el SRI"/>
+                <label className="text-xs text-gray-600">Ingresos exentos</label>
+                <input type="number" step="0.01" min="0" value={formIngresosExentos}
+                  onChange={e=>setFormIngresosExentos(Number(e.target.value)||0)}
+                  className="border border-orange-200 rounded px-2 py-1 text-sm bg-white text-gray-900 w-24"
+                  title="Casilla 804 (F101) / 468 (F102) — ingresos no gravados con IR"/>
+              </div>
             ) : (
               <select value={formMes} onChange={e=>setFormMes(Number(e.target.value))}
                 className="border border-orange-200 rounded px-3 py-2 text-sm bg-white text-gray-900">
@@ -2721,6 +2737,8 @@ export default function Contabilidad() {
                             '839':'Total costos y gastos',
                             '849':'Utilidad (pérdida) del ejercicio',
                             '850':'(-) 15% participación trabajadores',
+                            '807':'(+) Gastos no deducibles',
+                            '804':'(-) Ingresos exentos',
                             '859':'BASE IMPONIBLE GRAVABLE',
                             '860':'Tarifa aplicada (%)',
                             '861':'Impuesto a la renta causado',
@@ -2817,6 +2835,8 @@ export default function Contabilidad() {
                       ['460','Utilidad del ejercicio'],
                       ['461','Pérdida del ejercicio'],
                       ['462','(-) 15% participación trabajadores'],
+                      ['467','(+) Gastos no deducibles locales'],
+                      ['468','(-) Ingresos exentos'],
                       ['469','= UTILIDAD GRAVABLE'],
                       ['470','= PÉRDIDA'],
                     ] as [string,string][]).map(([cas,lbl],i)=>(

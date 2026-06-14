@@ -1593,11 +1593,15 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
   app.get("/server/contabilidad/formulario-101", authMiddleware, async (c: any) => {
     const auth = c.get('auth'); const db = getDB();
     try {
-      const { anio } = c.req.query() as any;
+      const q = c.req.query() as any;
+      const { anio } = q;
       if (!anio) return c.json({ error: 'anio requerido' }, 400);
       const fi = `${anio}-01-01`;
       const ff = `${anio}-12-31`;
       const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+      // Conciliación tributaria manual (ingresada por el contador al declarar)
+      const gastosNoDeducibles = Math.max(0, r2(Number(q.gastos_no_deducibles || 0)));
+      const ingresosExentos    = Math.max(0, r2(Number(q.ingresos_exentos    || 0)));
 
       const kvHelpers = await import('./kv-helpers.tsx');
 
@@ -1631,10 +1635,14 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       }
       totalCostosGastos = r2(totalCostosGastos);
 
-      // ── Utilidad contable y base imponible (conciliación simplificada) ────
+      // ── Utilidad contable y base imponible (conciliación tributaria) ──────
+      // Fórmula SRI: Base Imponible = Utilidad Contable - 15% Participación
+      //              + Gastos No Deducibles - Ingresos Exentos
       const utilidadContable = r2(totalIngresos - totalCostosGastos);
-      const participacionTrabajadores = utilidadContable > 0 ? r2(utilidadContable * 0.15) : 0; // 15% trabajadores
-      const baseImponible = Math.max(0, r2(utilidadContable - participacionTrabajadores));
+      const participacionTrabajadores = utilidadContable > 0 ? r2(utilidadContable * 0.15) : 0;
+      const baseImponible = Math.max(0, r2(
+        utilidadContable - participacionTrabajadores + gastosNoDeducibles - ingresosExentos
+      ));
 
       // Tarifa general sociedades Ecuador 2024/2025: 25% (verificar vigente en SRI;
       // 22% si reinvierte utilidades en activos productivos — no contemplado aquí)
@@ -1668,6 +1676,8 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
           '839': totalCostosGastos,             // Total costos y gastos
           '849': utilidadContable,              // Utilidad (pérdida) del ejercicio
           '850': participacionTrabajadores,     // 15% participación trabajadores
+          '807': gastosNoDeducibles,            // (+) Gastos no deducibles
+          '804': ingresosExentos,               // (-) Ingresos exentos
           '859': baseImponible,                 // Base imponible gravable
           '860': r2(tarifa * 100),              // Tarifa aplicada (%)
           '861': impuestoCausado,               // Impuesto a la renta causado
@@ -1681,6 +1691,8 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
           total_costos_gastos: totalCostosGastos,
           utilidad_contable: utilidadContable,
           participacion_trabajadores_15: participacionTrabajadores,
+          gastos_no_deducibles: gastosNoDeducibles,
+          ingresos_exentos: ingresosExentos,
           base_imponible: baseImponible,
           tarifa_aplicada: `${(tarifa * 100).toFixed(0)}%`,
           impuesto_causado: impuestoCausado,
@@ -1857,6 +1869,8 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
     '450': 'Otros Gastos', '459': 'TOTAL COSTOS Y GASTOS',
     '460': 'Utilidad del Ejercicio (399-459 > 0)', '461': 'Pérdida del Ejercicio (399-459 < 0)',
     '462': '(-) 15% Participación Trabajadores',
+    '467': '(+) Gastos No Deducibles Locales',
+    '468': '(-) Ingresos Exentos',
     '469': '= UTILIDAD GRAVABLE', '470': '= PÉRDIDA',
     '803': 'BASE IMPONIBLE', '804': 'IMPUESTO A LA RENTA CAUSADO',
     '805': '(-) Anticipo Pagado', '806': '(-) Retenciones en la Fuente del Ejercicio Fiscal',
@@ -1870,11 +1884,15 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
   app.get("/server/contabilidad/formulario-102", authMiddleware, async (c: any) => {
     const auth = c.get('auth'); const db = getDB();
     try {
-      const { anio } = c.req.query() as any;
+      const q = c.req.query() as any;
+      const { anio } = q;
       if (!anio) return c.json({ error: 'anio requerido' }, 400);
       const fi = `${anio}-01-01`;
       const ff = `${anio}-12-31`;
       const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+      // Conciliación tributaria manual (ingresada por el contador al declarar)
+      const gastosNoDeducibles = Math.max(0, r2(Number(q.gastos_no_deducibles || 0)));
+      const ingresosExentos    = Math.max(0, r2(Number(q.ingresos_exentos    || 0)));
 
       const cuentas = await obtenerCuentas(auth.empresaId);
       const asientos = await obtenerAsientos(auth.empresaId);
@@ -1936,11 +1954,16 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       const utilidadEjercicio = Math.max(0, resultadoEjercicio);
       const perdidaEjercicio = Math.max(0, -resultadoEjercicio);
       const participacionTrabajadores = utilidadEjercicio > 0 ? r2(utilidadEjercicio * 0.15) : 0;
-      const utilidadGravable = Math.max(0, r2(utilidadEjercicio - participacionTrabajadores));
+      // Utilidad gravable = utilidad − 15% trabajadores + gastos no deducibles − ingresos exentos
+      const utilidadGravable = Math.max(0, r2(
+        utilidadEjercicio - participacionTrabajadores + gastosNoDeducibles - ingresosExentos
+      ));
 
       casillas['460'] = utilidadEjercicio;
       casillas['461'] = perdidaEjercicio;
       casillas['462'] = participacionTrabajadores;
+      casillas['467'] = gastosNoDeducibles; // (+) Gastos no deducibles locales
+      casillas['468'] = ingresosExentos;    // (-) Ingresos exentos
       casillas['469'] = utilidadGravable;
       casillas['470'] = perdidaEjercicio;
 
@@ -1998,6 +2021,8 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
           total_costos_gastos: totalCostosGastos,
           resultado_ejercicio: resultadoEjercicio,
           participacion_trabajadores_15: participacionTrabajadores,
+          gastos_no_deducibles: gastosNoDeducibles,
+          ingresos_exentos: ingresosExentos,
           base_imponible: baseImponible,
           impuesto_causado: impuestoCausado,
           retenciones_recibidas: retencionesRecibidas,
