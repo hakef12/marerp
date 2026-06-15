@@ -1286,8 +1286,21 @@ export async function enviarXMLAlSRI(xml: string, ambiente: string, timeoutMs = 
       },
       body: soap,
       signal: controller.signal,
+      // Bloqueamos redirecciones automaticas: el SRI ocasionalmente responde
+      // con 30x hacia su IP interna (181.113.x.x) cuyo certificado TLS no es
+      // valido para esa IP, causando 'NotValidForName'. Tratamos un redirect
+      // como fallo controlado en lugar de seguirlo a un destino con cert roto.
+      redirect: 'manual',
     });
     clearTimeout(timer);
+    if (resp.status >= 300 && resp.status < 400) {
+      return { recibida: false, devuelta: false, errores: [
+        'El servidor del SRI esta redirigiendo a una IP con certificado TLS invalido. ' +
+        'Esto es una falla temporal del servicio del SRI (no del ERP). ' +
+        'Espere 10-15 minutos e intente nuevamente. Si persiste por mas de 1 hora, ' +
+        'consulte estado del SRI en https://www.sri.gob.ec'
+      ] };
+    }
     const body = await resp.text();
     console.log('[SRI Recepcion] HTTP', resp.status, '| resp:', body.substring(0, 600));
 
@@ -1307,7 +1320,12 @@ export async function enviarXMLAlSRI(xml: string, ambiente: string, timeoutMs = 
     clearTimeout(timer);
     const detail = [err.name, err.message, err.cause?.message || String(err.cause || '')].filter(Boolean).join(' — ');
     console.error('[SRI Recepcion] Error:', detail);
-    return { recibida: false, devuelta: false, errores: [`Error conectando al SRI: ${detail}`] };
+    const esCertInvalido = /NotValidForName|invalid peer certificate|UnknownIssuer/i.test(detail);
+    const errorMsg = esCertInvalido
+      ? 'El servidor del SRI presenta un certificado TLS invalido en este momento (falla del SRI, no del ERP). ' +
+        'Espere 10-15 minutos e intente nuevamente.'
+      : `Error conectando al SRI: ${detail}`;
+    return { recibida: false, devuelta: false, errores: [errorMsg] };
   }
 }
 
@@ -1343,8 +1361,17 @@ export async function consultarAutorizacionSRI(claveAcceso: string, ambiente: st
       },
       body: soap,
       signal: controller.signal,
+      // Ver comentario en enviarXMLAlSRI sobre por que no seguimos redirects.
+      redirect: 'manual',
     });
     clearTimeout(timer);
+    if (resp.status >= 300 && resp.status < 400) {
+      return {
+        autorizado: false, numeroAutorizacion: '', fechaAutorizacion: '',
+        mensajes: ['SRI esta redirigiendo a una IP con certificado TLS invalido. Falla temporal del servicio SRI. Espere 10-15 minutos e intente.'],
+        estadoSRI: ''
+      };
+    }
     const body = await resp.text();
     console.log('[SRI Autorizacion] HTTP', resp.status, '| resp:', body.substring(0, 800));
 
@@ -1372,7 +1399,11 @@ export async function consultarAutorizacionSRI(claveAcceso: string, ambiente: st
     clearTimeout(timer);
     const detail = [err.name, err.message, err.cause?.message || String(err.cause || '')].filter(Boolean).join(' — ');
     console.error('[SRI Autorizacion] Error:', detail);
-    return { autorizado: false, numeroAutorizacion: '', fechaAutorizacion: '', mensajes: [`Error SRI autorizacion: ${detail}`], estadoSRI: '' };
+    const esCertInvalido = /NotValidForName|invalid peer certificate|UnknownIssuer/i.test(detail);
+    const errorMsg = esCertInvalido
+      ? 'El servidor del SRI presenta un certificado TLS invalido en este momento. Falla temporal del servicio del SRI (no del ERP). Espere 10-15 minutos e intente nuevamente.'
+      : `Error SRI autorizacion: ${detail}`;
+    return { autorizado: false, numeroAutorizacion: '', fechaAutorizacion: '', mensajes: [errorMsg], estadoSRI: '' };
   }
 }
 
