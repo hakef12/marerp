@@ -393,6 +393,16 @@ export function setupRRHHRoutes(app: any, authMiddleware: any) {
   };
 
   const SBU = 482; // SBU Ecuador 2026 (acuerdo tripartito, vigente desde 1/1/2026)
+  const DIAS_ANIO_LABORAL = 360; // año comercial laboral Ecuador
+
+  // Vacaciones anuales segun Art. 69 del Codigo de Trabajo:
+  //   15 dias por año cumplido. A partir del 6to año (>5 años de servicio),
+  //   1 dia adicional por cada año extra, hasta un maximo de 15 dias extras.
+  const diasVacacionesAnuales = (mesesAnt: number) => {
+    const aniosCompletos = Math.floor(mesesAnt / 12);
+    if (aniosCompletos <= 5) return 15;
+    return 15 + Math.min(aniosCompletos - 5, 15);
+  };
 
   const computeRol = (emp: any, extras: any = {}) => {
     const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -405,6 +415,9 @@ export function setupRRHHRoutes(app: any, authMiddleware: any) {
     const valorHoraBase = salarioBase / 160;
     const horasExtrasDiurnas = Number(extras.horas_extras_diurnas || horasExtras);
     const horasExtrasNocturnas = Number(extras.horas_extras_nocturnas || 0);
+    // Validacion limite Art. 55: max 4h/dia suplementarias (sin contar
+    // extraordinarias). El sistema acepta el valor pero lo flagea.
+    const excedeLimiteSuplementarias = horasExtrasDiurnas > 4 * 22; // 4h x 22 dias habiles
     const montoExtras = horasExtrasDiurnas * valorHoraBase * 1.5 + horasExtrasNocturnas * valorHoraBase * 2;
 
     const salarioBruto = r2(salarioBase + montoExtras + otrosIngresos);
@@ -413,24 +426,26 @@ export function setupRRHHRoutes(app: any, authMiddleware: any) {
     const iessPersonal = r2(salarioBruto * 0.0945);
     const iessPatronal = r2(salarioBruto * 0.1115);
 
-    // Fondos de reserva (solo si > 12 meses de antigüedad)
+    // Fondos de reserva (Art. 196): a partir del 13er mes de trabajo
     const fechaIngreso = emp.fecha_ingreso ? new Date(emp.fecha_ingreso) : new Date();
     const mesesAntigüedad = Math.floor((Date.now() - fechaIngreso.getTime()) / (30.44 * 86400000));
     const tieneFondosReserva = mesesAntigüedad >= 12;
     const fondosReserva = tieneFondosReserva ? r2(salarioBruto * 0.0833) : 0;
 
-    // Impuesto a la Renta
-    const ingresoAnualProyectado = salarioBruto * 12 + salarioBruto; // incluye 13ro
+    // Impuesto a la Renta — decimos 13 y 14 son ingresos exentos (Art. 9 LRTI)
+    // por lo que NO se incluyen en la proyeccion anual.
+    const ingresoAnualProyectado = salarioBruto * 12;
     const irAnual = calcularIR(ingresoAnualProyectado);
     const irMensual = r2(irAnual / 12);
 
     // Neto a pagar
     const netoPagar = r2(salarioBruto - iessPersonal - irMensual - descuentos);
 
-    // Provisiones
+    // Provisiones — vacaciones escaladas por antiguedad (Art. 69)
+    const diasVac = diasVacacionesAnuales(mesesAntigüedad);
     const provDecimo13 = r2(salarioBruto / 12);
     const provDecimo14 = r2(SBU / 12);
-    const provVacaciones = r2(salarioBruto / 24);
+    const provVacaciones = r2(salarioBruto * diasVac / DIAS_ANIO_LABORAL / 12);
 
     // Costo total empresa
     const costoEmpresa = r2(salarioBruto + iessPatronal + fondosReserva + provDecimo13 + provDecimo14 + provVacaciones);
@@ -460,6 +475,8 @@ export function setupRRHHRoutes(app: any, authMiddleware: any) {
       prov_decimo13: provDecimo13,
       prov_decimo14: provDecimo14,
       prov_vacaciones: provVacaciones,
+      dias_vacaciones_anuales: diasVac,
+      excede_limite_horas_extras_art_55: excedeLimiteSuplementarias,
       costo_empresa: costoEmpresa,
     };
   };
@@ -611,55 +628,219 @@ export function setupRRHHRoutes(app: any, authMiddleware: any) {
     } catch (e: any) { return c.json({ error: e.message }, 500); }
   });
 
-  // POST /rrhh/nomina/finiquito — calcula liquidación de un empleado
+  // POST /rrhh/nomina/finiquito — calcula liquidacion de un empleado
+  //
+  // Body:
+  //   empleado_id: string (requerido)
+  //   fecha_salida: 'YYYY-MM-DD' (default: hoy)
+  //   motivo: 'renuncia' | 'desahucio' | 'despido_intempestivo' | 'visto_bueno' (default 'renuncia')
+  //   region: 'sierra_oriente' | 'costa_galapagos' (default: emp.region o 'sierra_oriente')
+  //
+  // Cumple Codigo de Trabajo Ecuador:
+  //   Art. 69    — Vacaciones (15 dias + escalonadas desde año 6, max 30)
+  //   Art. 71    — Pago vacaciones = remuneracion / 24 base, ajustado por antiguedad
+  //   Art. 97    — 15% utilidades (calculado en endpoint separado)
+  //   Art. 111   — Decimo tercero (1 dic — 30 nov)
+  //   Art. 113   — Decimo cuarto regionalizado:
+  //                  Sierra/Oriente: 1 ago — 31 jul
+  //                  Costa/Galapagos: 1 mar — 28 feb
+  //   Art. 185   — Bonificacion por desahucio: 25% ultima remuneracion x años (max 25)
+  //   Art. 188   — Indemnizacion despido intempestivo:
+  //                  Hasta 3 años de servicio: 3 meses de remuneracion
+  //                  Mas de 3 años: 3 meses + 1 mes por cada año adicional
+  //                  Maximo total: 25 meses
+  //   Art. 196   — Fondos de reserva 8.33% mensual desde mes 13
   app.post("/server/rrhh/nomina/finiquito", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
-      const { empleado_id, fecha_salida, motivo = 'renuncia' } = await c.req.json();
+      const body = await c.req.json();
+      const { empleado_id, fecha_salida, motivo = 'renuncia' } = body;
       const empleados = await obtenerEmpleados(auth.empresaId);
       const emp = empleados.find((e: any) => e.id === empleado_id);
       if (!emp) return c.json({ error: 'Empleado no encontrado' }, 404);
 
       const r2 = (n: number) => Math.round(n * 100) / 100;
+      const region: 'sierra_oriente' | 'costa_galapagos' =
+        (body.region || emp.region || 'sierra_oriente') as any;
+
       const fechaIngreso = new Date(emp.fecha_ingreso || Date.now());
       const fechaSalida = fecha_salida ? new Date(fecha_salida) : new Date();
       const diasTrabajados = Math.floor((fechaSalida.getTime() - fechaIngreso.getTime()) / 86400000);
-      const aniosTrabajados = diasTrabajados / 365;
-      const mesesTrabajados = diasTrabajados / 30.44;
+      const aniosTrabajados = diasTrabajados / DIAS_ANIO_LABORAL;
+      const mesesTrabajados = diasTrabajados / 30;
       const salario = Number(emp.salario_base || emp.salario || 0);
 
-      // Días del año actual (para provisiones proporcionales)
-      const inicioAnio = new Date(fechaSalida.getFullYear(), 0, 1);
-      const diasAnioActual = Math.floor((fechaSalida.getTime() - inicioAnio.getTime()) / 86400000);
+      // ── Decimo 13ro proporcional (Art. 111): periodo 1-dic año anterior a 30-nov ──
+      // Si salida cae despues del 30-nov, el periodo es 1-dic año actual a fecha_salida
+      const anio = fechaSalida.getFullYear();
+      const inicio13 = fechaSalida >= new Date(anio, 10, 30) // 30 nov
+        ? new Date(anio, 11, 1)        // 1 dic año actual
+        : new Date(anio - 1, 11, 1);   // 1 dic año anterior
+      const dias13 = Math.max(0, Math.floor((fechaSalida.getTime() - inicio13.getTime()) / 86400000));
+      const decimo13Proporcional = r2(salario * dias13 / DIAS_ANIO_LABORAL);
 
-      const decimo13Proporcional   = r2((salario / 12) * (diasAnioActual / 30.44 % 12 || 12));
-      const decimo14Proporcional   = r2((SBU / 12) * Math.min(diasAnioActual / 30.44, 12));
-      const vacacionesProporcionales = r2((salario / 24) * (diasAnioActual / 30.44 % 12 || 12));
+      // ── Decimo 14to proporcional (Art. 113): regionalizado ──────────────
+      let inicio14: Date;
+      if (region === 'sierra_oriente') {
+        // 1 ago — 31 jul
+        inicio14 = fechaSalida >= new Date(anio, 7, 1)
+          ? new Date(anio, 7, 1)
+          : new Date(anio - 1, 7, 1);
+      } else {
+        // Costa/Galapagos: 1 mar — 28 feb
+        inicio14 = fechaSalida >= new Date(anio, 2, 1)
+          ? new Date(anio, 2, 1)
+          : new Date(anio - 1, 2, 1);
+      }
+      const dias14 = Math.max(0, Math.floor((fechaSalida.getTime() - inicio14.getTime()) / 86400000));
+      const decimo14Proporcional = r2(SBU * dias14 / DIAS_ANIO_LABORAL);
 
-      // Desahucio (si empleador termina el contrato sin justa causa)
+      // ── Vacaciones proporcionales (Art. 69-71) ──────────────────────────
+      // Dias por año segun antiguedad
+      const mesesAnt = Math.floor(diasTrabajados / 30);
+      const diasVac = diasVacacionesAnuales(mesesAnt);
+      // Proporcional al ultimo año de servicio (desde aniversario hasta salida)
+      const mesesDesdeAniversario = mesesAnt % 12;
+      const vacacionesProporcionales = r2(salario * diasVac * mesesDesdeAniversario / 12 / DIAS_ANIO_LABORAL);
+
+      // ── Fondos de reserva proporcionales (Art. 196) ─────────────────────
+      // 8.33% mensual desde mes 13. Aqui se acumulan los pendientes del año
+      // (simplificado: meses desde 1-ene o desde mes 13 si es primer año).
+      const inicioFR = fechaIngreso.getTime() + 365 * 86400000;
+      const inicioFRYear = new Date(Math.max(inicioFR, new Date(anio, 0, 1).getTime()));
+      const mesesFR = fechaSalida > inicioFRYear
+        ? Math.floor((fechaSalida.getTime() - inicioFRYear.getTime()) / (30 * 86400000))
+        : 0;
+      const fondosReservaProp = mesesTrabajados > 12 ? r2(salario * 0.0833 * mesesFR) : 0;
+
+      // ── Bonificacion por desahucio (Art. 185) ───────────────────────────
+      // 25% de la ultima remuneracion x años de servicio (sin tope explicito,
+      // pero por jurisprudencia se aplica el tope de 25 años de Art. 188)
       const desahucio = motivo === 'desahucio'
         ? r2(salario * 0.25 * Math.min(aniosTrabajados, 25))
         : 0;
 
-      // Fondos de reserva proporcionales (si > 12 meses)
-      const fondosReservaProp = mesesTrabajados > 12 ? r2(salario * 0.0833) : 0;
+      // ── Indemnizacion despido intempestivo (Art. 188) ───────────────────
+      // Hasta 3 años: 3 meses de remuneracion
+      // Mas de 3 años: 3 meses + 1 mes por año adicional, hasta 25 meses total
+      let indemnizacionDespido = 0;
+      if (motivo === 'despido_intempestivo') {
+        const mesesIndemniz = aniosTrabajados <= 3
+          ? 3
+          : Math.min(25, 3 + (Math.floor(aniosTrabajados) - 3));
+        indemnizacionDespido = r2(salario * mesesIndemniz);
+      }
 
-      const total = r2(decimo13Proporcional + decimo14Proporcional + vacacionesProporcionales + desahucio + fondosReservaProp);
+      const total = r2(
+        decimo13Proporcional + decimo14Proporcional + vacacionesProporcionales +
+        fondosReservaProp + desahucio + indemnizacionDespido
+      );
+
+      const notas: Record<string, string> = {
+        renuncia: 'Renuncia voluntaria — sin indemnizacion ni desahucio (Art. 169).',
+        desahucio: 'Desahucio por empleador (Art. 185) = 25% ultima remuneracion x años de servicio.',
+        despido_intempestivo: 'Despido intempestivo (Art. 188) = 3 meses + 1 mes por cada año sobre 3, max 25 meses.',
+        visto_bueno: 'Visto bueno aprobado por inspector — equivale a despido intempestivo si la causa fue del trabajador.',
+      };
 
       return c.json({
         empleado: { nombre: emp.nombre_completo || emp.nombre, cargo: emp.cargo, email: emp.email },
-        periodo: { fecha_ingreso: emp.fecha_ingreso, fecha_salida: fechaSalida.toISOString().split('T')[0], dias_trabajados: diasTrabajados, anios: r2(aniosTrabajados) },
+        periodo: {
+          fecha_ingreso: emp.fecha_ingreso,
+          fecha_salida: fechaSalida.toISOString().split('T')[0],
+          dias_trabajados: diasTrabajados,
+          anios: r2(aniosTrabajados),
+          region,
+        },
         calculo: {
           salario_base: salario,
-          decimo13_proporcional:    decimo13Proporcional,
-          decimo14_proporcional:    decimo14Proporcional,
+          dias_vacaciones_anuales: diasVac,
+          decimo13_proporcional: decimo13Proporcional,
+          decimo14_proporcional: decimo14Proporcional,
           vacaciones_proporcionales: vacacionesProporcionales,
           fondos_reserva_proporcional: fondosReservaProp,
           desahucio,
-          total_liquidacion:         total,
+          indemnizacion_despido_intempestivo: indemnizacionDespido,
+          total_liquidacion: total,
         },
         motivo,
-        nota: motivo === 'desahucio' ? 'Desahucio = 25% salario × años (máx. 25 años)' : 'Sin desahucio en renuncia voluntaria',
+        nota: notas[motivo] || notas.renuncia,
+      });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // POST /rrhh/utilidades — reparte el 15% de utilidades segun Art. 97
+  //
+  // Body:
+  //   utilidad_ejercicio: number (utilidad contable antes de impuestos)
+  //   anio: number (ejercicio fiscal)
+  //   cargas_familiares: { [empleado_id]: number } (default 0 por empleado)
+  //   meses_trabajados: { [empleado_id]: number } (default 12 por empleado activo)
+  //
+  // Reparto:
+  //   - 10% en proporcion al tiempo trabajado en el ejercicio
+  //   - 5% en proporcion a las cargas familiares (conyuge, hijos < 18, hijos
+  //     discapacitados sin limite de edad)
+  app.post("/server/rrhh/utilidades", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const body = await c.req.json();
+      const utilidad = Number(body.utilidad_ejercicio || 0);
+      const anio = Number(body.anio || new Date().getFullYear() - 1);
+      const cargasMap = body.cargas_familiares || {};
+      const mesesMap  = body.meses_trabajados || {};
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+
+      if (utilidad <= 0) {
+        return c.json({ anio, utilidad_ejercicio: utilidad, total_a_repartir: 0,
+          mensaje: 'Sin utilidades — no aplica reparto del Art. 97.', reparto: [] });
+      }
+
+      const empleados = await obtenerEmpleados(auth.empresaId);
+      const activos = empleados.filter((e: any) => e.activo !== false && e.estado !== 'inactivo');
+
+      const totalParaRepartir = r2(utilidad * 0.15);
+      const fondo10 = r2(totalParaRepartir * (10 / 15)); // 10% de la utilidad
+      const fondo5  = r2(totalParaRepartir * (5 / 15));  // 5% de la utilidad
+
+      // Totales para prorratear
+      const totalMeses = activos.reduce((s: number, e: any) =>
+        s + (Number(mesesMap[e.id] ?? 12)), 0);
+      const totalCargas = activos.reduce((s: number, e: any) =>
+        s + (Number(cargasMap[e.id] ?? 0)), 0);
+
+      const reparto = activos.map((e: any) => {
+        const meses  = Number(mesesMap[e.id] ?? 12);
+        const cargas = Number(cargasMap[e.id] ?? 0);
+        const porTiempo  = totalMeses  > 0 ? r2(fondo10 * meses  / totalMeses)  : 0;
+        const porCargas  = totalCargas > 0 ? r2(fondo5  * cargas / totalCargas) : 0;
+        const total = r2(porTiempo + porCargas);
+        return {
+          empleado_id: e.id,
+          empleado_nombre: e.nombre_completo || e.nombre || '',
+          cargo: e.cargo || '',
+          meses_trabajados: meses,
+          cargas_familiares: cargas,
+          parte_tiempo_10pct: porTiempo,
+          parte_cargas_5pct: porCargas,
+          total_a_recibir: total,
+        };
+      });
+
+      const totalRepartido = r2(reparto.reduce((s: number, r: any) => s + r.total_a_recibir, 0));
+
+      return c.json({
+        anio,
+        utilidad_ejercicio: r2(utilidad),
+        total_a_repartir: totalParaRepartir,
+        fondo_10pct_tiempo: fondo10,
+        fondo_5pct_cargas: fondo5,
+        total_repartido: totalRepartido,
+        empleados_beneficiarios: activos.length,
+        reparto,
+        nota: 'Art. 97 Codigo de Trabajo: 15% utilidades. 10% por tiempo trabajado + 5% por cargas familiares. ' +
+              'Pago hasta 15 de abril del año siguiente. Cargas familiares = conyuge/conviviente + hijos menores de 18 ' +
+              'o con discapacidad sin limite de edad. VERIFIQUE el numero de cargas con cada empleado.',
       });
     } catch (e: any) { return c.json({ error: e.message }, 500); }
   });
