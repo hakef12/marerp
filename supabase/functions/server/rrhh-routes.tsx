@@ -13,6 +13,7 @@ import {
   eliminarEmpleado,
   registrarAsientoAutomatico
 } from "./kv-helpers.tsx";
+import * as kv from "./kv_store.tsx";
 
 const getDB = () => createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -841,6 +842,101 @@ export function setupRRHHRoutes(app: any, authMiddleware: any) {
         nota: 'Art. 97 Codigo de Trabajo: 15% utilidades. 10% por tiempo trabajado + 5% por cargas familiares. ' +
               'Pago hasta 15 de abril del año siguiente. Cargas familiares = conyuge/conviviente + hijos menores de 18 ' +
               'o con discapacidad sin limite de edad. VERIFIQUE el numero de cargas con cada empleado.',
+      });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // ── ENCUESTA DE CLIMA LABORAL (anonima) ────────────────────────────────
+  //
+  // Las respuestas se almacenan bajo claves con prefijo
+  // `clima_<empresaId>_<periodo>_<hash>` donde:
+  //   periodo = 'YYYY-Q1' | 'YYYY-Q2' | 'YYYY-Q3' | 'YYYY-Q4'
+  //   hash    = SHA-256(empresaId + empleadoId + periodo) — estable
+  // Esto:
+  //   1. Permite que un mismo empleado solo cuente una vez por periodo
+  //      (idempotente: re-enviar sobrescribe su respuesta anterior).
+  //   2. NO almacena el empleado_id, solo el hash, garantizando anonimato.
+  //   3. Listar por prefijo agrega todas las respuestas sin identificarlas.
+
+  const periodoActual = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+  };
+
+  const hashEmpleadoPeriodo = async (empresaId: string, empleadoId: string, periodo: string) => {
+    const data = new TextEncoder().encode(`${empresaId}|${empleadoId}|${periodo}`);
+    const buf  = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  // POST /rrhh/clima/responder — guarda respuesta anonima del periodo actual
+  app.post("/server/rrhh/clima/responder", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const { respuestas } = await c.req.json();
+      if (!Array.isArray(respuestas) || respuestas.length === 0) {
+        return c.json({ error: 'respuestas: array no vacio requerido' }, 400);
+      }
+      // Validar que cada respuesta sea numero 1..5
+      const r = respuestas.map((v: any) => Number(v));
+      if (r.some(v => !Number.isFinite(v) || v < 1 || v > 5)) {
+        return c.json({ error: 'cada respuesta debe ser un numero entre 1 y 5' }, 400);
+      }
+      const periodo = periodoActual();
+      const hash = await hashEmpleadoPeriodo(auth.empresaId, auth.userId, periodo);
+      const key  = `clima_${auth.empresaId}_${periodo}_${hash}`;
+      await kv.set(key, {
+        respuestas: r,
+        periodo,
+        created_at: new Date().toISOString(),
+      });
+      return c.json({ ok: true, periodo, hash_respuesta: hash.slice(0, 8) });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // GET /rrhh/clima/resultados?periodo=YYYY-Qn — agrega respuestas del periodo
+  // Por privacidad solo devuelve agregados si hay >= 3 respuestas.
+  app.get("/server/rrhh/clima/resultados", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const periodo = (c.req.query('periodo') as string) || periodoActual();
+      const prefix  = `clima_${auth.empresaId}_${periodo}_`;
+      const valores = await kv.getByPrefix(prefix);
+
+      // Verificar si el usuario actual ya respondio (sin revelar quien mas)
+      const miHash = await hashEmpleadoPeriodo(auth.empresaId, auth.userId, periodo);
+      const yaRespondi = await kv.get(`${prefix}${miHash}`).then((v: any) => !!v).catch(() => false);
+
+      if (valores.length < 3) {
+        return c.json({
+          periodo,
+          total_respuestas: valores.length,
+          ya_respondi: yaRespondi,
+          umbral_minimo: 3,
+          mensaje: `Se requieren al menos 3 respuestas para mostrar resultados (preservacion de anonimato). Actualmente: ${valores.length}.`,
+          promedios_por_pregunta: null,
+          promedio_general: null,
+        });
+      }
+
+      // Agregado: promedio por indice de pregunta
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const numPreguntas = Math.max(...valores.map((v: any) => (v?.respuestas?.length || 0)));
+      const promedios: number[] = [];
+      for (let i = 0; i < numPreguntas; i++) {
+        const items = valores.map((v: any) => Number(v?.respuestas?.[i]))
+          .filter((n: number) => Number.isFinite(n));
+        promedios.push(items.length > 0 ? r2(items.reduce((a: number, b: number) => a + b, 0) / items.length) : 0);
+      }
+      const promedioGeneral = promedios.length > 0
+        ? r2(promedios.reduce((a, b) => a + b, 0) / promedios.length) : 0;
+
+      return c.json({
+        periodo,
+        total_respuestas: valores.length,
+        ya_respondi: yaRespondi,
+        promedios_por_pregunta: promedios,
+        promedio_general: promedioGeneral,
       });
     } catch (e: any) { return c.json({ error: e.message }, 500); }
   });

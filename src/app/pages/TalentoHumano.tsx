@@ -93,6 +93,16 @@ export default function TalentoHumano() {
   const [encuestaRespuestas, setEncuestaRespuestas] = useState<Record<number, number>>({});
   const [encuestaEnviada, setEncuestaEnviada] = useState(false);
   const [resultadosEncuesta, setResultadosEncuesta] = useState<{ promedio: number; nivel: string; color: string } | null>(null);
+  const [climaResultados, setClimaResultados] = useState<{
+    periodo: string;
+    total_respuestas: number;
+    ya_respondi: boolean;
+    umbral_minimo?: number;
+    mensaje?: string;
+    promedios_por_pregunta: number[] | null;
+    promedio_general: number | null;
+  } | null>(null);
+  const [climaLoading, setClimaLoading] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -109,6 +119,7 @@ export default function TalentoHumano() {
     if (view === 'reclutamiento') fetchVacantes();
     if (view === 'evaluaciones') fetchEvaluaciones();
     if (view === 'capacitacion') fetchCapacitaciones();
+    if (view === 'clima') fetchClimaResultados();
   };
 
   const fetchEmpleados = async () => {
@@ -539,47 +550,64 @@ export default function TalentoHumano() {
     '¿Recomendaría esta empresa como un buen lugar para trabajar?',
   ];
 
-  // Simulated historical responses from 3 other employees (anonymous)
-  const RESPUESTAS_HISTORICAS: Record<number, number>[] = [
-    { 0: 4, 1: 3, 2: 4, 3: 5, 4: 3, 5: 3, 6: 4, 7: 4 },
-    { 0: 5, 1: 4, 2: 5, 3: 4, 4: 4, 5: 4, 6: 5, 7: 5 },
-    { 0: 3, 1: 3, 2: 3, 3: 4, 4: 2, 5: 3, 6: 3, 7: 3 },
-  ];
+  const fetchClimaResultados = async () => {
+    try {
+      setClimaLoading(true);
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/rrhh/clima/resultados`,
+        { headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'X-User-Token': token || '',
+          'Content-Type': 'application/json',
+        } }
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      setClimaResultados(data);
+      if (data.ya_respondi) setEncuestaEnviada(true);
+    } catch { /* silencioso */ }
+    finally { setClimaLoading(false); }
+  };
 
-  const enviarEncuesta = () => {
-    const valores = Object.values(encuestaRespuestas);
-    if (valores.length < PREGUNTAS_CLIMA.length) {
+  const enviarEncuesta = async () => {
+    const valores = PREGUNTAS_CLIMA.map((_, i) => encuestaRespuestas[i]);
+    if (valores.some(v => !v)) {
       toast.error('Por favor responde todas las preguntas antes de enviar.');
       return;
     }
-    const promedio = valores.reduce((a, b) => a + b, 0) / valores.length;
-    let nivel: string;
-    let color: string;
-    if (promedio <= 2) {
-      nivel = 'Crítico';
-      color = 'red';
-    } else if (promedio <= 4) {
-      nivel = 'Mejorable';
-      color = 'yellow';
-    } else {
-      nivel = 'Bueno';
-      color = 'green';
+    try {
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/rrhh/clima/responder`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'X-User-Token': token || '',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ respuestas: valores }),
+        }
+      );
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        toast.error(e.error || 'Error al enviar la encuesta');
+        return;
+      }
+      const promedio = valores.reduce((a, b) => a + b, 0) / valores.length;
+      let nivel: string, color: string;
+      if (promedio <= 2)      { nivel = 'Crítico';   color = 'red'; }
+      else if (promedio <= 4) { nivel = 'Mejorable'; color = 'yellow'; }
+      else                    { nivel = 'Bueno';    color = 'green'; }
+      setResultadosEncuesta({ promedio, nivel, color });
+      setEncuestaEnviada(true);
+      toast.success('¡Encuesta enviada exitosamente!');
+      await fetchClimaResultados();
+    } catch (e: any) {
+      toast.error(e?.message || 'Error al enviar la encuesta');
     }
-    setResultadosEncuesta({ promedio, nivel, color });
-    setEncuestaEnviada(true);
-    toast.success('¡Encuesta enviada exitosamente!');
   };
 
-  const promedioAgregado = (() => {
-    const todas = encuestaEnviada
-      ? [...RESPUESTAS_HISTORICAS, encuestaRespuestas]
-      : RESPUESTAS_HISTORICAS;
-    const suma = todas.reduce((acc, resp) => {
-      const vals = Object.values(resp);
-      return acc + vals.reduce((a, b) => a + b, 0) / vals.length;
-    }, 0);
-    return suma / todas.length;
-  })();
+  const promedioAgregado = climaResultados?.promedio_general ?? 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -1128,7 +1156,7 @@ export default function TalentoHumano() {
             </CardContent>
           </Card>
 
-          {/* Resultados agregados */}
+          {/* Resultados agregados — datos reales del backend, anónimos */}
           <Card className="bg-white border-[#F97316]/20">
             <CardHeader>
               <CardTitle className="text-gray-900 flex items-center gap-2">
@@ -1136,47 +1164,55 @@ export default function TalentoHumano() {
                 Resultados Agregados del Equipo
               </CardTitle>
               <p className="text-gray-600 text-sm">
-                Basado en {encuestaEnviada ? 4 : 3} respuestas anónimas
+                {climaLoading
+                  ? 'Cargando…'
+                  : climaResultados
+                    ? `Periodo ${climaResultados.periodo} · ${climaResultados.total_respuestas} respuesta${climaResultados.total_respuestas === 1 ? '' : 's'} anónima${climaResultados.total_respuestas === 1 ? '' : 's'}`
+                    : 'Sin datos'}
               </p>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {PREGUNTAS_CLIMA.map((pregunta, idx) => {
-                  const historicos = RESPUESTAS_HISTORICAS.map((r) => r[idx]);
-                  const propioVal = encuestaEnviada ? encuestaRespuestas[idx] ?? null : null;
-                  const todos = propioVal !== null ? [...historicos, propioVal] : historicos;
-                  const promQ = todos.reduce((a, b) => a + b, 0) / todos.length;
-                  return (
-                    <div key={idx} className="space-y-1">
-                      <div className="flex justify-between items-center">
-                        <p className="text-gray-600 text-sm">{idx + 1}. {pregunta}</p>
-                        <span className="text-gray-900 font-bold text-sm ml-4 shrink-0">{promQ.toFixed(1)}/5</span>
+              {climaResultados && climaResultados.promedios_por_pregunta ? (
+                <div className="space-y-4">
+                  {PREGUNTAS_CLIMA.map((pregunta, idx) => {
+                    const promQ = climaResultados.promedios_por_pregunta?.[idx] ?? 0;
+                    return (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex justify-between items-center">
+                          <p className="text-gray-600 text-sm">{idx + 1}. {pregunta}</p>
+                          <span className="text-gray-900 font-bold text-sm ml-4 shrink-0">{promQ.toFixed(1)}/5</span>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              promQ >= 4 ? 'bg-green-400' : promQ >= 3 ? 'bg-yellow-400' : 'bg-red-400'
+                            }`}
+                            style={{ width: `${(promQ / 5) * 100}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            promQ >= 4 ? 'bg-green-400' : promQ >= 3 ? 'bg-yellow-400' : 'bg-red-400'
-                          }`}
-                          style={{ width: `${(promQ / 5) * 100}%` }}
-                        />
-                      </div>
+                    );
+                  })}
+                  <div className="mt-6 p-4 rounded-lg bg-gray-50 border border-[#F97316]/20 flex items-center justify-between">
+                    <div>
+                      <p className="text-gray-600 text-sm">Promedio general del equipo</p>
+                      <p className="text-2xl font-bold text-gray-900">{promedioAgregado.toFixed(2)} / 5.00</p>
                     </div>
-                  );
-                })}
-                <div className="mt-6 p-4 rounded-lg bg-gray-50 border border-[#F97316]/20 flex items-center justify-between">
-                  <div>
-                    <p className="text-gray-600 text-sm">Promedio general del equipo</p>
-                    <p className="text-2xl font-bold text-gray-900">{promedioAgregado.toFixed(2)} / 5.00</p>
-                  </div>
-                  <div className={`text-3xl px-4 py-2 rounded-lg font-bold ${
-                    promedioAgregado >= 4 ? 'bg-green-500/20 text-green-400' :
-                    promedioAgregado >= 2 ? 'bg-yellow-500/20 text-yellow-400' :
-                    'bg-red-500/20 text-red-400'
-                  }`}>
-                    {promedioAgregado >= 4 ? 'Bueno' : promedioAgregado >= 2 ? 'Mejorable' : 'Crítico'}
+                    <div className={`text-3xl px-4 py-2 rounded-lg font-bold ${
+                      promedioAgregado >= 4 ? 'bg-green-500/20 text-green-400' :
+                      promedioAgregado >= 2 ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-red-500/20 text-red-400'
+                    }`}>
+                      {promedioAgregado >= 4 ? 'Bueno' : promedioAgregado >= 2 ? 'Mejorable' : 'Crítico'}
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="p-6 text-center text-gray-500 text-sm">
+                  {climaResultados?.mensaje ||
+                    'Aún no hay suficientes respuestas para mostrar resultados agregados. Se requieren al menos 3 respuestas para preservar el anonimato.'}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
