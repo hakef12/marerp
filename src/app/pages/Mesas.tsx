@@ -980,10 +980,16 @@ export default function Mesas() {
             <label className="text-xs text-gray-600 block mb-1">Descuento (%)</label>
             <Input type="number" min="0" max="100" value={descuentoPct} onChange={e=>setDescuentoPct(e.target.value)} placeholder="0" className="text-sm"/>
           </div>
-          <div>
-            <label className="text-xs text-gray-600 block mb-1">Propina sugerida (%)</label>
-            <Input type="number" min="0" max="30" value={propinaPct} onChange={e=>setPropinaPct(e.target.value)} placeholder="10" className="text-sm"/>
-          </div>
+          {cuentaData.resumen?.servicio_10pct_automatico ? (
+            <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+              ⚠️ El <strong>{cuentaData.resumen?.porcentaje_servicio || 10}% de servicio</strong> se cobra automáticamente segun la Ley de Turismo y se acumula para distribuir a los empleados. No puede modificarse desde aqui — desactivelo en <em>Configuracion → Facturacion → Reglamento Ley de Turismo</em>.
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs text-gray-600 block mb-1">Propina sugerida (%)</label>
+              <Input type="number" min="0" max="30" value={propinaPct} onChange={e=>setPropinaPct(e.target.value)} placeholder="10" className="text-sm"/>
+            </div>
+          )}
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setModalDescuento(false)} className="flex-1">Cancelar</Button>
             <Button onClick={aplicarDescuento} className="flex-1 bg-orange-500 text-white">Aplicar</Button>

@@ -14,6 +14,7 @@ import {
   registrarAsientoAutomatico
 } from "./kv-helpers.tsx";
 import * as kv from "./kv_store.tsx";
+import { getConfig } from "./facturacion-routes.tsx";
 
 const getDB = () => createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -937,6 +938,149 @@ export function setupRRHHRoutes(app: any, authMiddleware: any) {
         ya_respondi: yaRespondi,
         promedios_por_pregunta: promedios,
         promedio_general: promedioGeneral,
+      });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 10% DE SERVICIO (Ley de Turismo)
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // El 10% recaudado en facturas pertenece a los trabajadores y debe ser
+  // distribuido mensualmente entre todos los empleados del establecimiento.
+  //
+  // Las distribuciones se almacenan en kv_store bajo la clave
+  // `servicio_distribucion_<empresaId>_<anio>_<mes>`. Una sola distribucion
+  // por periodo (re-distribuir sobrescribe).
+
+  const sumarServicioAcumulado = async (db: any, empresaId: string, anio: number, mes: number) => {
+    const fi = `${anio}-${String(mes).padStart(2, '0')}-01`;
+    const ultimoDia = new Date(anio, mes, 0).getDate();
+    const ff = `${anio}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}T23:59:59`;
+    const config: any = await getConfig(empresaId).catch(() => null);
+    const cobra = !!config?.cobra_servicio_10pct;
+    const pct   = Number(config?.porcentaje_servicio ?? 10);
+    if (!cobra) return { total: 0, configurado: false, porcentaje: pct };
+    const { data: ventas } = await db.from('ventas')
+      .select('subtotal')
+      .eq('empresa_id', empresaId)
+      .eq('anulada', false)
+      .gte('created_at', `${fi}T00:00:00`)
+      .lte('created_at', ff);
+    const subtotal = (ventas || []).reduce((s: number, v: any) => s + Number(v.subtotal || 0), 0);
+    const total = Math.round(subtotal * pct / 100 * 100) / 100;
+    return { total, configurado: true, porcentaje: pct, subtotal_periodo: Math.round(subtotal * 100) / 100 };
+  };
+
+  // GET /rrhh/servicio/acumulado?anio=YYYY&mes=MM
+  // Devuelve el total acumulado del 10% en el periodo + estado de distribucion
+  app.get("/server/rrhh/servicio/acumulado", authMiddleware, async (c: any) => {
+    const auth = c.get('auth'); const db = getDB();
+    try {
+      const anio = Number(c.req.query('anio') || new Date().getFullYear());
+      const mes  = Number(c.req.query('mes')  || new Date().getMonth() + 1);
+      const calc = await sumarServicioAcumulado(db, auth.empresaId, anio, mes);
+      const distribucion = await kv.get(`servicio_distribucion_${auth.empresaId}_${anio}_${mes}`);
+      return c.json({ anio, mes, ...calc, distribucion: distribucion || null });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // POST /rrhh/servicio/distribuir
+  // body: { anio, mes, total_servicio?, criterio?: 'equitativo' | 'horas',
+  //         horas_por_empleado?: { [empleadoId]: number } }
+  // Distribuye el 10% acumulado en el periodo. Si no se pasa total_servicio,
+  // se calcula desde ventas. Genera asiento contable opcional.
+  app.post("/server/rrhh/servicio/distribuir", authMiddleware, async (c: any) => {
+    const auth = c.get('auth'); const db = getDB();
+    try {
+      const body = await c.req.json();
+      const anio = Number(body.anio);
+      const mes  = Number(body.mes);
+      if (!anio || !mes) return c.json({ error: 'anio y mes requeridos' }, 400);
+      const criterio: 'equitativo' | 'horas' = body.criterio === 'horas' ? 'horas' : 'equitativo';
+      const horasMap = body.horas_por_empleado || {};
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+
+      let totalServicio = Number(body.total_servicio || 0);
+      if (totalServicio <= 0) {
+        const calc = await sumarServicioAcumulado(db, auth.empresaId, anio, mes);
+        totalServicio = calc.total;
+      }
+      if (totalServicio <= 0) {
+        return c.json({ error: 'No hay 10% de servicio acumulado en el periodo' }, 400);
+      }
+
+      const empleados = await obtenerEmpleados(auth.empresaId);
+      const activos = empleados.filter((e: any) => e.activo !== false && e.estado !== 'inactivo');
+      if (activos.length === 0) return c.json({ error: 'No hay empleados activos para distribuir' }, 400);
+
+      let reparto: any[];
+      if (criterio === 'horas') {
+        const totalHoras = activos.reduce((s: number, e: any) => s + Number(horasMap[e.id] || 0), 0);
+        if (totalHoras <= 0) {
+          return c.json({ error: 'criterio=horas requiere horas_por_empleado con al menos un valor > 0' }, 400);
+        }
+        reparto = activos.map((e: any) => {
+          const h = Number(horasMap[e.id] || 0);
+          const monto = r2(totalServicio * h / totalHoras);
+          return {
+            empleado_id: e.id,
+            empleado_nombre: e.nombre_completo || e.nombre || '',
+            cargo: e.cargo || '',
+            horas: h,
+            monto,
+          };
+        });
+      } else {
+        const porEmp = r2(totalServicio / activos.length);
+        // Ajuste de redondeo: el remanente se suma al ultimo empleado
+        let acumulado = 0;
+        reparto = activos.map((e: any, i: number) => {
+          const esUltimo = i === activos.length - 1;
+          const monto = esUltimo ? r2(totalServicio - acumulado) : porEmp;
+          acumulado += monto;
+          return {
+            empleado_id: e.id,
+            empleado_nombre: e.nombre_completo || e.nombre || '',
+            cargo: e.cargo || '',
+            monto,
+          };
+        });
+      }
+
+      const totalRepartido = r2(reparto.reduce((s, r) => s + r.monto, 0));
+
+      // Asiento contable: DB 2010706 (acumulado) / CR 2010704 (sueldos por pagar)
+      try {
+        const fechaAsiento = `${anio}-${String(mes).padStart(2, '0')}-${String(new Date(anio, mes, 0).getDate()).padStart(2, '0')}`;
+        await registrarAsientoAutomatico(auth.empresaId, {
+          tipo: 'distribucion_servicio_10',
+          descripcion: `Distribucion 10% servicio ${mes}/${anio}`,
+          referencia: `SERV-${anio}-${String(mes).padStart(2, '0')}`,
+          fecha: fechaAsiento,
+          items: [
+            { codigo: '2010706', debito:  totalRepartido, descripcion: 'Liquidacion Servicio 10% por Pagar' },
+            { codigo: '2010704', credito: totalRepartido, descripcion: 'A Sueldos por Pagar a Empleados' },
+          ],
+        });
+      } catch (e) {
+        console.warn('No se pudo generar asiento contable de servicio 10%:', e);
+      }
+
+      const distribucion = {
+        anio, mes, criterio,
+        total_servicio: r2(totalServicio),
+        total_repartido: totalRepartido,
+        empleados_beneficiarios: reparto.length,
+        reparto,
+        created_at: new Date().toISOString(),
+      };
+      await kv.set(`servicio_distribucion_${auth.empresaId}_${anio}_${mes}`, distribucion);
+
+      return c.json({
+        ok: true,
+        ...distribucion,
+        nota: 'El 10% se distribuyo entre los empleados activos. Recuerde sumar este monto al sueldo del periodo para efectos de calculo de decimo tercero y cuarto (no para IESS).',
       });
     } catch (e: any) { return c.json({ error: e.message }, 500); }
   });

@@ -426,6 +426,9 @@ export default function TalentoHumano() {
   const [finiquitoEmpId, setFiniquitoEmpId]   = useState('');
   const [finiquitoMotivo, setFiniquitoMotivo] = useState<'renuncia'|'desahucio'>('renuncia');
   const [finiquitoData, setFiniquitoData]     = useState<any>(null);
+  const [servicio10Data, setServicio10Data]   = useState<any>(null);
+  const [servicio10Loading, setServicio10Loading] = useState(false);
+  const [servicio10Criterio, setServicio10Criterio] = useState<'equitativo'|'horas'>('equitativo');
 
   const guardarNomina = async () => {
     setNominaGuardando(true);
@@ -473,6 +476,44 @@ export default function TalentoHumano() {
       const d = await res.json();
       if (res.ok) toast.success('✅ Asiento contable de nómina generado');
       else toast.error(d.error || 'Error');
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  const consultarServicio10 = async () => {
+    setServicio10Loading(true);
+    try {
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/rrhh/servicio/acumulado?anio=${nominaAnio}&mes=${nominaMes}`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '', 'Content-Type': 'application/json' } }
+      );
+      const d = await res.json();
+      if (res.ok) setServicio10Data(d);
+      else toast.error(d.error || 'Error consultando 10% servicio');
+    } catch (e: any) { toast.error(e.message); }
+    finally { setServicio10Loading(false); }
+  };
+
+  const distribuirServicio10 = async () => {
+    if (!servicio10Data) { toast.error('Primero consulta el acumulado'); return; }
+    if (!servicio10Data.configurado) { toast.error('Active el cobro del 10% en Configuracion → Facturacion → Reglamento Ley de Turismo'); return; }
+    if (!servicio10Data.total || servicio10Data.total <= 0) { toast.error('No hay acumulado en el periodo'); return; }
+    if (!confirm(`¿Distribuir $${Number(servicio10Data.total).toFixed(2)} entre los empleados activos (criterio: ${servicio10Criterio})?`)) return;
+    try {
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/rrhh/servicio/distribuir`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ anio: nominaAnio, mes: nominaMes, criterio: servicio10Criterio }),
+        }
+      );
+      const d = await res.json();
+      if (res.ok) {
+        toast.success(`10% distribuido: $${Number(d.total_repartido).toFixed(2)} entre ${d.empleados_beneficiarios} empleado(s)`);
+        await consultarServicio10();
+      } else {
+        toast.error(d.error || 'Error');
+      }
     } catch (e: any) { toast.error(e.message); }
   };
 
@@ -1220,6 +1261,82 @@ export default function TalentoHumano() {
 
       {/* VISTA: NÓMINA */}
       {view === 'nomina' && (
+        <>
+        {/* 10% Servicio Ley de Turismo — distribucion mensual */}
+        <Card className="bg-white border-amber-200 mb-4">
+          <CardHeader>
+            <CardTitle className="text-gray-900 flex items-center gap-2 text-base">
+              💰 10% de Servicio (Ley de Turismo) — {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][nominaMes-1]} {nominaAnio}
+            </CardTitle>
+            <p className="text-xs text-gray-600">
+              El 10% cobrado en facturas pertenece a los trabajadores y debe distribuirse mensualmente.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button onClick={consultarServicio10} disabled={servicio10Loading} size="sm" variant="outline"
+                className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                {servicio10Loading ? '...' : '🔄 Consultar acumulado'}
+              </Button>
+              {servicio10Data && (
+                <>
+                  <div className="text-sm">
+                    {servicio10Data.configurado ? (
+                      <>
+                        <span className="text-gray-600">Acumulado del periodo:</span>{' '}
+                        <strong className="text-amber-700">${Number(servicio10Data.total || 0).toFixed(2)}</strong>
+                        <span className="text-xs text-gray-400 ml-2">
+                          ({servicio10Data.porcentaje}% sobre ${Number(servicio10Data.subtotal_periodo || 0).toFixed(2)} de ventas)
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-red-600">
+                        ⚠️ El cobro del 10% no esta activo. Actívelo en <em>Configuracion → Facturacion → Reglamento Ley de Turismo</em>.
+                      </span>
+                    )}
+                  </div>
+                  {servicio10Data.configurado && (
+                    <>
+                      <select value={servicio10Criterio} onChange={e => setServicio10Criterio(e.target.value as any)}
+                        className="border border-amber-200 rounded px-2 py-1.5 text-sm bg-white text-gray-900">
+                        <option value="equitativo">Reparto equitativo</option>
+                        <option value="horas">Por horas trabajadas</option>
+                      </select>
+                      <Button onClick={distribuirServicio10} size="sm" className="bg-amber-500 hover:bg-amber-600 text-white">
+                        💵 Distribuir
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            {servicio10Data?.distribucion && (
+              <div className="mt-4 border-t border-amber-100 pt-3">
+                <p className="text-xs text-gray-600 mb-2">
+                  Última distribución: {new Date(servicio10Data.distribucion.created_at).toLocaleString()} ·
+                  Criterio: <strong>{servicio10Data.distribucion.criterio}</strong> ·
+                  Beneficiarios: <strong>{servicio10Data.distribucion.empleados_beneficiarios}</strong>
+                </p>
+                <div className="rounded border border-amber-100 overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-amber-50">
+                      <tr>{['Empleado','Cargo','Monto'].map(h=><th key={h} className="px-3 py-1.5 text-left text-amber-700">{h}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {(servicio10Data.distribucion.reparto || []).map((r: any, i: number) => (
+                        <tr key={i} className={i%2===0?'':'bg-amber-50/30'}>
+                          <td className="px-3 py-1">{r.empleado_nombre}</td>
+                          <td className="px-3 py-1 text-gray-500">{r.cargo}</td>
+                          <td className="px-3 py-1 font-mono font-bold text-right">${Number(r.monto).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
         <Card className="bg-white border-[#F97316]/20">
           <CardHeader>
             <div className="flex flex-col gap-3">
@@ -1418,6 +1535,7 @@ export default function TalentoHumano() {
             )}
           </CardContent>
         </Card>
+        </>
       )}
 
       {/* MODAL: NUEVO EMPLEADO */}

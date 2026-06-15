@@ -58,6 +58,15 @@ export default function ConfiguracionFacturacion() {
     firma_electronica_nombre: '',
     firma_electronica_validez: '',
     ambiente: 'pruebas',
+    // Reglamento Ley de Turismo
+    numero_registro_turismo: '',
+    categoria_tenedores: 0,
+    luaf_numero: '',
+    luaf_fecha_emision: '',
+    luaf_fecha_vencimiento: '',
+    // 10% servicio Ley de Turismo
+    cobra_servicio_10pct: false,
+    porcentaje_servicio: 10,
   });
 
   useEffect(() => {
@@ -300,6 +309,78 @@ export default function ConfiguracionFacturacion() {
                 <Input value={config.agente_retencion} onChange={e => setConfig({ ...config, agente_retencion: e.target.value })}
                   className="bg-white border-[#F97316]/20 text-gray-900" placeholder="Dejar vacío si no aplica" />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Ley de Turismo (restaurantes turísticos categorizados) */}
+        <Card className="bg-white border-[#F97316]/20">
+          <CardHeader>
+            <CardTitle className="text-gray-900">Reglamento Ley de Turismo</CardTitle>
+            <CardDescription>Aplica a restaurantes inscritos en el Registro Nacional de Turismo</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-gray-600">N° Registro Nacional de Turismo</Label>
+                <Input value={config.numero_registro_turismo || ''}
+                  onChange={e => setConfig({ ...config, numero_registro_turismo: e.target.value })}
+                  className="bg-white border-[#F97316]/20 text-gray-900" placeholder="Ej: 0917-XXXX" />
+              </div>
+              <div>
+                <Label className="text-gray-600">Categoría (tenedores)</Label>
+                <select value={config.categoria_tenedores ?? 0}
+                  onChange={e => setConfig({ ...config, categoria_tenedores: Number(e.target.value) })}
+                  className="w-full h-10 rounded-md border border-[#F97316]/20 bg-white text-gray-900 px-3 text-sm">
+                  <option value={0}>Sin categorizar</option>
+                  <option value={1}>1 tenedor</option>
+                  <option value={2}>2 tenedores</option>
+                  <option value={3}>3 tenedores</option>
+                  <option value={4}>4 tenedores</option>
+                  <option value={5}>5 tenedores</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-gray-600">N° LUAF</Label>
+                <Input value={config.luaf_numero || ''}
+                  onChange={e => setConfig({ ...config, luaf_numero: e.target.value })}
+                  className="bg-white border-[#F97316]/20 text-gray-900" placeholder="Licencia Única Anual de Funcionamiento" />
+              </div>
+              <div>
+                <Label className="text-gray-600">LUAF — Fecha emisión</Label>
+                <Input type="date" value={config.luaf_fecha_emision || ''}
+                  onChange={e => setConfig({ ...config, luaf_fecha_emision: e.target.value })}
+                  className="bg-white border-[#F97316]/20 text-gray-900" />
+              </div>
+              <div>
+                <Label className="text-gray-600">LUAF — Fecha vencimiento</Label>
+                <Input type="date" value={config.luaf_fecha_vencimiento || ''}
+                  onChange={e => setConfig({ ...config, luaf_fecha_vencimiento: e.target.value })}
+                  className="bg-white border-[#F97316]/20 text-gray-900" />
+                <p className="text-xs text-gray-400 mt-1">Operar sin LUAF vigente conlleva clausura del establecimiento.</p>
+              </div>
+            </div>
+            <div className="border-t border-[#F97316]/10 pt-4 space-y-4">
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <input type="checkbox" checked={config.cobra_servicio_10pct || false}
+                  onChange={e => setConfig({ ...config, cobra_servicio_10pct: e.target.checked })}
+                  className="w-4 h-4 rounded border-[#F97316]/20 accent-[#F97316]" />
+                <span className="text-gray-700 font-medium">Cobrar 10% de servicio en facturas (obligatorio para restaurantes turísticos categorizados ≥ 2 tenedores)</span>
+              </label>
+              {config.cobra_servicio_10pct && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-gray-600">Porcentaje de servicio (%)</Label>
+                    <Input type="number" min={0} max={20} step={0.5}
+                      value={config.porcentaje_servicio ?? 10}
+                      onChange={e => setConfig({ ...config, porcentaje_servicio: Number(e.target.value) })}
+                      className="bg-white border-[#F97316]/20 text-gray-900" />
+                  </div>
+                  <div className="text-xs text-gray-500 self-end pb-2">
+                    Se calcula sobre el subtotal antes de IVA. Se acumula en cuenta <b>2010706 Servicio 10% por Pagar</b> y debe distribuirse mensualmente entre todos los empleados (módulo Talento Humano).
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

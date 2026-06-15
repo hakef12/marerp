@@ -413,6 +413,7 @@ function buildSRIXML(f: any): string {
   const totalSinImp     = (subtotalGravado + subtotal0).toFixed(2);
   const descuento       = Number(f.total_descuento || f.descuento || 0).toFixed(2);
   const iva             = Number(f.iva || 0).toFixed(2);
+  const propina         = Number(f.propina || 0).toFixed(2); // 10% servicio Ley de Turismo
   const total           = Number(f.total || 0).toFixed(2);
 
   // totalConImpuestos: un bloque por tarifa usada
@@ -495,7 +496,7 @@ function buildSRIXML(f: any): string {
     `<totalSinImpuestos>${totalSinImp}</totalSinImpuestos>` +
     `<totalDescuento>${descuento}</totalDescuento>` +
     totalConImpuestos +
-    `<propina>0.00</propina>` +
+    `<propina>${propina}</propina>` +
     `<importeTotal>${total}</importeTotal>` +
     `<moneda>DOLAR</moneda>` +
     `<pagos>${pagos}</pagos>` +
@@ -1562,6 +1563,11 @@ export async function handleGetConfiguracionFacturacion(req: Request, empresaId:
           regimen_rimpe: false, tipo_contribuyente: 'sociedad', codigo_establecimiento: '001', punto_emision: '001',
           secuencial_actual: 1, firma_electronica_activa: false,
           firma_electronica_nombre: '', firma_electronica_validez: '', ambiente: 'pruebas',
+          // Reglamento Ley de Turismo Ecuador (03-OCT-2025)
+          numero_registro_turismo: '', categoria_tenedores: 0,
+          luaf_numero: '', luaf_fecha_emision: '', luaf_fecha_vencimiento: '',
+          // 10% de servicio (Decreto Ejecutivo 1269 — restaurantes turísticos categorizados)
+          cobra_servicio_10pct: false, porcentaje_servicio: 10,
         }
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }

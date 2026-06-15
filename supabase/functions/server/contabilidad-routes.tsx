@@ -75,6 +75,7 @@ const PLAN_CONTABLE_ECUADOR = [
   { codigo: '2010703', nombre: 'Con el IESS',                                tipo: 'pasivo',     nivel: 4, es_grupo: false },
   { codigo: '2010704', nombre: 'Por Beneficios de Ley a Empleados',          tipo: 'pasivo',     nivel: 4, es_grupo: false },
   { codigo: '2010705', nombre: 'Participación Trabajadores por Pagar',       tipo: 'pasivo',     nivel: 4, es_grupo: false },
+  { codigo: '2010706', nombre: 'Servicio 10% por Pagar a Trabajadores',      tipo: 'pasivo',     nivel: 4, es_grupo: false },
   { codigo: '20110',   nombre: 'Anticipos de Clientes',                      tipo: 'pasivo',     nivel: 3, es_grupo: false },
   { codigo: '202',     nombre: 'PASIVO NO CORRIENTE',                        tipo: 'pasivo',     nivel: 2, es_grupo: true  },
   { codigo: '20203',   nombre: 'Obligaciones Financieras Largo Plazo',       tipo: 'pasivo',     nivel: 3, es_grupo: false },

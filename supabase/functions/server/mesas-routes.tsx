@@ -4,6 +4,7 @@
  */
 
 import { createClient } from "npm:@supabase/supabase-js";
+import { getConfig } from "./facturacion-routes.tsx";
 
 type EstadoMesa = 'libre' | 'ocupada' | 'reservada' | 'esperando_cuenta';
 
@@ -341,9 +342,18 @@ export function setupMesasRoutes(app: any, authMiddleware: any) {
       // Descuento / propina guardados en mesa metadata
       const meta = typeof mesa.metadata === 'string' ? JSON.parse(mesa.metadata||'{}') : (mesa.metadata||{});
       const descuento = Number(meta.descuento || 0);
-      const propina   = Number(meta.propina   || 0);
       const pagos_parciales: any[] = meta.pagos_parciales || [];
       const pagado = pagos_parciales.reduce((s: number, p: any) => s + Number(p.monto||0), 0);
+
+      // 10% de servicio (Ley de Turismo): si la empresa lo cobra obligatorio,
+      // se calcula automaticamente sobre el subtotal y NO se puede sobrescribir
+      // a mano. Si no esta activo, se respeta el valor manual guardado en meta.
+      const config: any = await getConfig(auth.empresaId).catch(() => null);
+      const cobraServicio = !!config?.cobra_servicio_10pct;
+      const pctServicio   = Number(config?.porcentaje_servicio ?? 10);
+      const propina = cobraServicio
+        ? Math.round(subtotalTotal * pctServicio / 100 * 100) / 100
+        : Number(meta.propina || 0);
       const saldoPendiente = Math.max(0, totalTotal - descuento + propina - pagado);
 
       return c.json({
@@ -354,7 +364,9 @@ export function setupMesasRoutes(app: any, authMiddleware: any) {
           subtotal: Math.round(subtotalTotal*100)/100,
           iva:      Math.round(ivaTotal*100)/100,
           total:    Math.round(totalTotal*100)/100,
-          descuento,  propina,
+          descuento, propina,
+          servicio_10pct_automatico: cobraServicio,
+          porcentaje_servicio: pctServicio,
           pagado:   Math.round(pagado*100)/100,
           saldo_pendiente: Math.round(saldoPendiente*100)/100,
           items_count: todosItems.length,
