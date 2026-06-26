@@ -1585,6 +1585,28 @@ export async function handleGetCertificadoInfo(req: Request, empresaId: string) 
 export async function handleGetConfiguracionFacturacion(req: Request, empresaId: string) {
   try {
     const config = await getConfig(empresaId);
+    // Defaults para campos que pueden faltar en configs existentes que se
+    // guardaron antes de agregar estos campos (canales_venta, turismo, etc.).
+    // Se mergean SIEMPRE para que el frontend reciba una config completa.
+    const CANALES_DEFAULT = [
+      { codigo: 'directo',    nombre: 'Directo',    comision_pct: 0,  activo: true,  color: '#22c55e' },
+      { codigo: 'uber_eats',  nombre: 'Uber Eats',  comision_pct: 30, activo: true,  color: '#000000' },
+      { codigo: 'rappi',      nombre: 'Rappi',      comision_pct: 25, activo: true,  color: '#FF441F' },
+      { codigo: 'pedidosya',  nombre: 'PedidosYa',  comision_pct: 22, activo: true,  color: '#FA0050' },
+      { codigo: 'didi_food',  nombre: 'DiDi Food',  comision_pct: 25, activo: true,  color: '#FF7A00' },
+    ];
+    if (config) {
+      if (!Array.isArray(config.canales_venta) || config.canales_venta.length === 0) {
+        config.canales_venta = CANALES_DEFAULT;
+      }
+      if (config.cobra_servicio_10pct === undefined) config.cobra_servicio_10pct = false;
+      if (config.porcentaje_servicio === undefined) config.porcentaje_servicio = 10;
+      if (config.numero_registro_turismo === undefined) config.numero_registro_turismo = '';
+      if (config.categoria_tenedores === undefined) config.categoria_tenedores = 0;
+      if (config.luaf_numero === undefined) config.luaf_numero = '';
+      if (config.luaf_fecha_emision === undefined) config.luaf_fecha_emision = '';
+      if (config.luaf_fecha_vencimiento === undefined) config.luaf_fecha_vencimiento = '';
+    }
     return new Response(
       JSON.stringify({
         configuracion: config || {
