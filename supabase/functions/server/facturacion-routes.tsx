@@ -1599,6 +1599,14 @@ export async function handleGetConfiguracionFacturacion(req: Request, empresaId:
           luaf_numero: '', luaf_fecha_emision: '', luaf_fecha_vencimiento: '',
           // 10% de servicio (Decreto Ejecutivo 1269 — restaurantes turísticos categorizados)
           cobra_servicio_10pct: false, porcentaje_servicio: 10,
+          // Canales de venta y comisiones de delivery (apps)
+          canales_venta: [
+            { codigo: 'directo',    nombre: 'Directo',    comision_pct: 0,  activo: true,  color: '#22c55e' },
+            { codigo: 'uber_eats',  nombre: 'Uber Eats',  comision_pct: 30, activo: true,  color: '#000000' },
+            { codigo: 'rappi',      nombre: 'Rappi',      comision_pct: 25, activo: true,  color: '#FF441F' },
+            { codigo: 'pedidosya',  nombre: 'PedidosYa',  comision_pct: 22, activo: true,  color: '#FA0050' },
+            { codigo: 'didi_food',  nombre: 'DiDi Food',  comision_pct: 25, activo: true,  color: '#FF7A00' },
+          ],
         }
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }

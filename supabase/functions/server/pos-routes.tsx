@@ -12,6 +12,7 @@ import {
   registrarAsientoAutomatico,
 } from "./kv-helpers.tsx";
 import { validarLimite } from "./planes.tsx";
+import { getConfig } from "./facturacion-routes.tsx";
 
 const ROLES_ADMIN = ['gerente', 'admin', 'super_admin'];
 
@@ -122,6 +123,23 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
         }, 403);
       }
 
+      // ── Canal de venta y comisión de delivery (apps) ──────────────
+      // Si body.canal_venta viene (ej. 'uber_eats'), buscamos la comisión en
+      // la configuración. Si no, default a 'directo' (0%).
+      const canalVentaCodigo = String(body.canal_venta || 'directo');
+      let comisionPct = Number(body.comision_pct ?? -1);
+      if (comisionPct < 0) {
+        // Leer de configuración
+        try {
+          const cfg: any = await getConfig(auth.empresaId);
+          const canales = Array.isArray(cfg?.canales_venta) ? cfg.canales_venta : [];
+          const canal = canales.find((c: any) => c.codigo === canalVentaCodigo);
+          comisionPct = canal ? Number(canal.comision_pct || 0) : 0;
+        } catch { comisionPct = 0; }
+      }
+      const totalBruto = Number(body.total || 0);
+      const comisionMonto = Math.round(totalBruto * (comisionPct / 100) * 100) / 100;
+
       const ventaData = {
         ...body,
         id: `venta-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -131,6 +149,10 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
         cajero_nombre: auth.user?.nombre_completo || 'Cajero',
         estado: body.estado || 'completada',
         anulada: false,
+        canal_venta: canalVentaCodigo,
+        comision_pct: comisionPct,
+        comision_monto: comisionMonto,
+        total_neto: parseFloat((totalBruto - comisionMonto).toFixed(2)),
       };
 
       const venta = await guardarVenta(auth.empresaId, ventaData);
@@ -164,13 +186,25 @@ export function setupPOSRoutes(app: any, authMiddleware: any) {
         if (totalVenta > 0) {
           // Cuenta de ingreso según método de pago
           // 1.1.01 = Caja (efectivo / tarjeta registrada en caja)
+          // Si la venta tiene comision (delivery por app), el efectivo recibido
+          // es menor: la app retiene la comision y deposita el neto.
+          const comisionAsiento = Number(venta.comision_monto || 0);
+          const efectivoNeto = parseFloat((totalVenta - comisionAsiento).toFixed(2));
           const cuentaDebito = '1.1.01';
 
           const asientoItems: any[] = [];
-          asientoItems.push({ codigo: cuentaDebito, debito: parseFloat(totalVenta.toFixed(2)), descripcion: `Cobro venta ${refVenta}` });
+          asientoItems.push({ codigo: cuentaDebito, debito: efectivoNeto, descripcion: `Cobro venta ${refVenta} (neto)` });
+          if (comisionAsiento > 0) {
+            asientoItems.push({
+              codigo: '520106',
+              debito: comisionAsiento,
+              descripcion: `Comision ${venta.canal_venta || 'app'} (${venta.comision_pct || 0}%)`
+            });
+          }
 
           if (ivaVenta > 0 && subtotalVenta > 0) {
-            // Venta con IVA: separar ingreso e impuesto
+            // Venta con IVA: separar ingreso e impuesto (el ingreso es BRUTO,
+            // la comision es un gasto aparte; el IVA se causa sobre el bruto).
             asientoItems.push({ codigo: '4.1.01', credito: parseFloat(subtotalVenta.toFixed(2)), descripcion: 'Ingreso por ventas' });
             asientoItems.push({ codigo: '2.1.03', credito: parseFloat(ivaVenta.toFixed(2)),      descripcion: 'IVA en ventas por pagar' });
           } else {

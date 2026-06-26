@@ -445,6 +445,90 @@ export function setupBIRoutes(app: any, authMiddleware: any) {
     }
   });
 
+  // ─── Analisis por canal de venta (delivery apps) ────────────────────────────
+  app.get("/server/bi/por-canal", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const ventas = (await obtenerVentas(auth.empresaId)).filter((v: any) => !v.anulada);
+      const productos = await obtenerProductos(auth.empresaId);
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+
+      // Agrupar por canal_venta
+      const porCanal: Record<string, any> = {};
+      for (const v of ventas) {
+        const canal = v.canal_venta || 'directo';
+        if (!porCanal[canal]) {
+          porCanal[canal] = {
+            codigo: canal,
+            ventas: 0,
+            ingreso_bruto: 0,
+            comision_total: 0,
+            ingreso_neto: 0,
+            costo_mercaderia: 0,
+            comision_pct_promedio_acc: 0,
+            unidades_vendidas: 0,
+          };
+        }
+        const totalBruto = Number(v.total || 0);
+        const comision = Number(v.comision_monto || 0);
+        const pct = Number(v.comision_pct || 0);
+        porCanal[canal].ventas += 1;
+        porCanal[canal].ingreso_bruto += totalBruto;
+        porCanal[canal].comision_total += comision;
+        porCanal[canal].ingreso_neto += (totalBruto - comision);
+        porCanal[canal].comision_pct_promedio_acc += pct;
+
+        for (const it of (v.items || [])) {
+          const prod = productos.find((p: any) => p.id === it.producto_id);
+          const { costo } = getCostoUnitarioConfiable(prod);
+          porCanal[canal].costo_mercaderia += costo * (it.cantidad || 0);
+          porCanal[canal].unidades_vendidas += (it.cantidad || 0);
+        }
+      }
+
+      const canales = Object.values(porCanal).map((c: any) => {
+        const utilidad_real = c.ingreso_neto - c.costo_mercaderia;
+        const margen_real_pct = c.ingreso_bruto > 0 ? (utilidad_real / c.ingreso_bruto * 100) : 0;
+        return {
+          codigo: c.codigo,
+          ventas: c.ventas,
+          unidades_vendidas: c.unidades_vendidas,
+          ingreso_bruto: r2(c.ingreso_bruto),
+          comision_total: r2(c.comision_total),
+          comision_pct_promedio: c.ventas > 0 ? r2(c.comision_pct_promedio_acc / c.ventas) : 0,
+          ingreso_neto: r2(c.ingreso_neto),
+          costo_mercaderia: r2(c.costo_mercaderia),
+          utilidad_real: r2(utilidad_real),
+          margen_real_pct: r2(margen_real_pct),
+        };
+      }).sort((a: any, b: any) => b.ingreso_bruto - a.ingreso_bruto);
+
+      const totales = canales.reduce((t: any, c: any) => ({
+        ventas: t.ventas + c.ventas,
+        ingreso_bruto: t.ingreso_bruto + c.ingreso_bruto,
+        comision_total: t.comision_total + c.comision_total,
+        ingreso_neto: t.ingreso_neto + c.ingreso_neto,
+        costo_mercaderia: t.costo_mercaderia + c.costo_mercaderia,
+        utilidad_real: t.utilidad_real + c.utilidad_real,
+      }), { ventas: 0, ingreso_bruto: 0, comision_total: 0, ingreso_neto: 0, costo_mercaderia: 0, utilidad_real: 0 });
+
+      return c.json({
+        canales,
+        totales: {
+          ...totales,
+          ingreso_bruto: r2(totales.ingreso_bruto),
+          comision_total: r2(totales.comision_total),
+          ingreso_neto: r2(totales.ingreso_neto),
+          costo_mercaderia: r2(totales.costo_mercaderia),
+          utilidad_real: r2(totales.utilidad_real),
+          margen_real_pct: totales.ingreso_bruto > 0 ? r2(totales.utilidad_real / totales.ingreso_bruto * 100) : 0,
+        },
+      });
+    } catch (e: any) {
+      return c.json({ error: e.message }, 500);
+    }
+  });
+
   // ─── Diagnostico de costos: identifica productos con costos absurdos ────────
   // Lista todos los productos comparando precio_compra/costo_unitario con
   // precio_venta y marca los problematicos para que el usuario los corrija.

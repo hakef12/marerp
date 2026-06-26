@@ -82,6 +82,8 @@ export default function BusinessIntelligence() {
   const [rentabilidad,          setRentabilidad]          = useState<any>(null);
   const [diagnostico,           setDiagnostico]           = useState<any>(null);
   const [diagnosticoLoading,    setDiagnosticoLoading]    = useState(false);
+  const [porCanal,              setPorCanal]              = useState<any>(null);
+  const [porCanalLoading,       setPorCanalLoading]       = useState(false);
   const [tendenciaMensual,      setTendenciaMensual]      = useState<any[]>([]);
 
   // ── Estado Reportes ───────────────────────────────────────────────────────
@@ -97,6 +99,21 @@ export default function BusinessIntelligence() {
   const [rpCargando,     setRpCargando]     = useState(false);
   const [rpBusqueda,     setRpBusqueda]     = useState('');
   const [rpVentaAbierta, setRpVentaAbierta] = useState<string|null>(null);
+
+  const cargarPorCanal = async () => {
+    setPorCanalLoading(true);
+    try {
+      const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/bi/por-canal`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '' } }
+      );
+      const d = await res.json();
+      if (res.ok) setPorCanal(d);
+      else toast.error(d.error || 'Error');
+    } catch (e: any) { toast.error(e.message); }
+    finally { setPorCanalLoading(false); }
+  };
 
   const cargarReportes = async () => {
     if (!token) return;
@@ -342,6 +359,7 @@ export default function BusinessIntelligence() {
           <TabsTrigger value="ventas">Análisis de Ventas</TabsTrigger>
           <TabsTrigger value="productos">Productos</TabsTrigger>
           <TabsTrigger value="rentabilidad">Rentabilidad</TabsTrigger>
+          <TabsTrigger value="por_canal" onClick={cargarPorCanal}>Por Canal (Delivery)</TabsTrigger>
           <TabsTrigger value="tendencias">Tendencias</TabsTrigger>
           <TabsTrigger value="reportes" onClick={cargarReportes}>Reportes</TabsTrigger>
         </TabsList>
@@ -744,6 +762,89 @@ export default function BusinessIntelligence() {
                   </CardContent>
                 </Card>
               )}
+            </>
+          )}
+        </TabsContent>
+
+        {/* ── TAB: Por Canal (Delivery Apps) ─────────────────────────────────── */}
+        <TabsContent value="por_canal" className="space-y-6 mt-4">
+          {porCanalLoading && <p className="text-sm text-gray-500">Cargando…</p>}
+          {!porCanal && !porCanalLoading && (
+            <Card className="bg-white border-[#F97316]/20">
+              <CardContent className="p-12 text-center">
+                <Package className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+                <p className="text-gray-600">Cliquea la pestaña para cargar el análisis por canal de venta</p>
+              </CardContent>
+            </Card>
+          )}
+          {porCanal && (
+            <>
+              {/* Métricas globales */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <RentMetric label="Ingreso Bruto"   value={fmt$(porCanal.totales.ingreso_bruto)} color="text-gray-700" />
+                <RentMetric label="Comisión Total"  value={fmt$(porCanal.totales.comision_total)} color="text-red-500" />
+                <RentMetric label="Ingreso Neto"    value={fmt$(porCanal.totales.ingreso_neto)} color="text-green-600" />
+                <RentMetric label="Margen Real"     value={fmtPct(porCanal.totales.margen_real_pct)}
+                  color={porCanal.totales.margen_real_pct >= 30 ? 'text-green-600' : porCanal.totales.margen_real_pct >= 15 ? 'text-amber-500' : 'text-red-500'} />
+              </div>
+
+              {/* Tabla por canal */}
+              <Card className="bg-white border-[#F97316]/20">
+                <CardHeader>
+                  <CardTitle className="text-gray-900 text-base">Comparación por Canal de Venta</CardTitle>
+                  <p className="text-xs text-gray-500">
+                    El "Margen Real" descuenta la comisión de la app + el costo de mercadería. Es lo que realmente te queda.
+                  </p>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left py-2 px-3 text-gray-700 font-medium">Canal</th>
+                          <th className="text-right py-2 px-3 text-gray-700 font-medium">Ventas</th>
+                          <th className="text-right py-2 px-3 text-gray-700 font-medium">Bruto</th>
+                          <th className="text-right py-2 px-3 text-gray-700 font-medium">Comisión</th>
+                          <th className="text-right py-2 px-3 text-gray-700 font-medium">Neto</th>
+                          <th className="text-right py-2 px-3 text-gray-700 font-medium">Costo merc.</th>
+                          <th className="text-right py-2 px-3 text-gray-700 font-medium">Utilidad</th>
+                          <th className="text-right py-2 px-3 text-gray-700 font-medium">Margen real</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {porCanal.canales.length === 0 && (
+                          <tr><td colSpan={8} className="text-center py-8 text-gray-400">Aún no hay ventas registradas con canal de venta</td></tr>
+                        )}
+                        {porCanal.canales.map((c: any) => {
+                          const colorMargen = c.margen_real_pct >= 30 ? 'text-green-600' : c.margen_real_pct >= 15 ? 'text-amber-600' : c.margen_real_pct >= 0 ? 'text-red-500' : 'text-red-700 font-bold';
+                          return (
+                            <tr key={c.codigo} className="border-b border-gray-100">
+                              <td className="py-2 px-3 font-medium text-gray-900">
+                                {c.codigo}
+                                {c.comision_pct_promedio > 0 && <span className="ml-2 text-xs text-gray-500">({c.comision_pct_promedio}%)</span>}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono">{c.ventas}</td>
+                              <td className="py-2 px-3 text-right font-mono">${c.ingreso_bruto.toFixed(2)}</td>
+                              <td className="py-2 px-3 text-right font-mono text-red-500">{c.comision_total > 0 ? `-$${c.comision_total.toFixed(2)}` : '—'}</td>
+                              <td className="py-2 px-3 text-right font-mono">${c.ingreso_neto.toFixed(2)}</td>
+                              <td className="py-2 px-3 text-right font-mono text-gray-600">${c.costo_mercaderia.toFixed(2)}</td>
+                              <td className={`py-2 px-3 text-right font-mono font-bold ${c.utilidad_real >= 0 ? 'text-green-600' : 'text-red-600'}`}>${c.utilidad_real.toFixed(2)}</td>
+                              <td className={`py-2 px-3 text-right font-bold ${colorMargen}`}>{c.margen_real_pct.toFixed(1)}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                <strong>💡 Tip:</strong> si una app te da margen negativo o muy bajo, podés:
+                (a) subir el precio del menú en esa app para compensar comisión, o
+                (b) negociar tarifa con la app, o
+                (c) priorizar canal directo. Configurá comisiones en <em>Configuración → Facturación → Canales de Venta</em>.
+              </div>
             </>
           )}
         </TabsContent>

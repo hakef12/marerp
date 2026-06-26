@@ -225,6 +225,26 @@ export default function POS() {
   const [tipoServicio, setTipoServicio] = useState<TipoServicio>(() => {
     try { return (sessionStorage.getItem('pos_tipo_servicio') as TipoServicio) || 'mesa'; } catch { return 'mesa'; }
   });
+  // Canal de venta — solo aplica cuando es delivery (apps cobran comision)
+  const [canalVenta, setCanalVenta] = useState<string>('directo');
+  const [canalesVenta, setCanalesVenta] = useState<any[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/facturacion/configuracion`,
+          { headers: apiHeaders(token) }
+        );
+        if (res.ok) {
+          const d = await res.json();
+          const canales = d?.configuracion?.canales_venta || [];
+          setCanalesVenta(canales.filter((c: any) => c.activo));
+        }
+      } catch { /* fallback silencioso */ }
+    })();
+  }, [token]);
+  const canalActual = canalesVenta.find(c => c.codigo === canalVenta);
+  const comisionPctActual = Number(canalActual?.comision_pct || 0);
   const [mesa, setMesa] = useState(() => {
     try { return sessionStorage.getItem('pos_mesa') || ''; } catch { return ''; }
   });
@@ -566,6 +586,9 @@ export default function POS() {
         mesa: tipoServicio === 'mesa' ? mesa : undefined,
         cliente: cliente || undefined,
         tipo_servicio: tipoServicio,
+        // Canal solo aplica en delivery (las apps cobran comision). En mesa
+        // o para_llevar siempre es 'directo'.
+        canal_venta: tipoServicio === 'delivery' ? canalVenta : 'directo',
         estado: 'completada',
         notas,
         bodega_id: bodegaActiva?.id,
@@ -1320,6 +1343,29 @@ export default function POS() {
                         placeholder="0.00"
                         className="h-8 text-sm bg-white border-orange-400/30 text-gray-900 placeholder:text-gray-400 flex-1"
                       />
+                    </div>
+                  )}
+
+                  {/* Canal de venta (solo delivery) */}
+                  {tipoServicio === 'delivery' && canalesVenta.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-600 whitespace-nowrap">📱 Canal</span>
+                        <select value={canalVenta} onChange={e => setCanalVenta(e.target.value)}
+                          className="h-8 text-sm bg-white border border-orange-400/30 rounded px-2 text-gray-900 flex-1">
+                          {canalesVenta.map(c => (
+                            <option key={c.codigo} value={c.codigo}>
+                              {c.nombre} {c.comision_pct > 0 ? `(-${c.comision_pct}%)` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {comisionPctActual > 0 && (
+                        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                          Comisión {comisionPctActual}%: <strong>-${(total * comisionPctActual / 100).toFixed(2)}</strong>
+                          → Neto: <strong>${(total * (1 - comisionPctActual / 100)).toFixed(2)}</strong>
+                        </div>
+                      )}
                     </div>
                   )}
 

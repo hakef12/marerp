@@ -67,6 +67,14 @@ export default function ConfiguracionFacturacion() {
     // 10% servicio Ley de Turismo
     cobra_servicio_10pct: false,
     porcentaje_servicio: 10,
+    // Canales de venta (delivery apps)
+    canales_venta: [
+      { codigo: 'directo',    nombre: 'Directo',    comision_pct: 0,  activo: true,  color: '#22c55e' },
+      { codigo: 'uber_eats',  nombre: 'Uber Eats',  comision_pct: 30, activo: true,  color: '#000000' },
+      { codigo: 'rappi',      nombre: 'Rappi',      comision_pct: 25, activo: true,  color: '#FF441F' },
+      { codigo: 'pedidosya',  nombre: 'PedidosYa',  comision_pct: 22, activo: true,  color: '#FA0050' },
+      { codigo: 'didi_food',  nombre: 'DiDi Food',  comision_pct: 25, activo: true,  color: '#FF7A00' },
+    ] as { codigo: string; nombre: string; comision_pct: number; activo: boolean; color: string }[],
   });
 
   useEffect(() => {
@@ -381,6 +389,105 @@ export default function ConfiguracionFacturacion() {
                   </div>
                 </div>
               )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Canales de Venta — Delivery Apps */}
+        <Card className="bg-white border-[#F97316]/20">
+          <CardHeader>
+            <CardTitle className="text-gray-900">Canales de Venta y Delivery</CardTitle>
+            <CardDescription>
+              Define las comisiones que cobra cada plataforma. Se aplican automáticamente al registrar una venta.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left py-2 px-3 text-gray-700 font-medium">Canal</th>
+                    <th className="text-left py-2 px-3 text-gray-700 font-medium">Código</th>
+                    <th className="text-right py-2 px-3 text-gray-700 font-medium">Comisión %</th>
+                    <th className="text-center py-2 px-3 text-gray-700 font-medium">Activo</th>
+                    <th className="text-center py-2 px-3 text-gray-700 font-medium">Color</th>
+                    <th className="text-center py-2 px-3 text-gray-700 font-medium">Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(config.canales_venta || []).map((canal: any, idx: number) => (
+                    <tr key={idx} className="border-b border-gray-100">
+                      <td className="py-2 px-3">
+                        <Input value={canal.nombre}
+                          onChange={e => {
+                            const arr = [...(config.canales_venta || [])];
+                            arr[idx] = { ...arr[idx], nombre: e.target.value };
+                            setConfig({ ...config, canales_venta: arr });
+                          }}
+                          className="bg-white border-[#F97316]/20 text-gray-900 h-8" />
+                      </td>
+                      <td className="py-2 px-3">
+                        <Input value={canal.codigo}
+                          onChange={e => {
+                            const arr = [...(config.canales_venta || [])];
+                            arr[idx] = { ...arr[idx], codigo: e.target.value.toLowerCase().replace(/\s+/g, '_') };
+                            setConfig({ ...config, canales_venta: arr });
+                          }}
+                          disabled={canal.codigo === 'directo'}
+                          className="bg-white border-[#F97316]/20 text-gray-900 h-8 font-mono text-xs" />
+                      </td>
+                      <td className="py-2 px-3">
+                        <Input type="number" min={0} max={100} step={0.5} value={canal.comision_pct}
+                          onChange={e => {
+                            const arr = [...(config.canales_venta || [])];
+                            arr[idx] = { ...arr[idx], comision_pct: Number(e.target.value) || 0 };
+                            setConfig({ ...config, canales_venta: arr });
+                          }}
+                          disabled={canal.codigo === 'directo'}
+                          className="bg-white border-[#F97316]/20 text-gray-900 h-8 text-right" />
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <input type="checkbox" checked={canal.activo}
+                          onChange={e => {
+                            const arr = [...(config.canales_venta || [])];
+                            arr[idx] = { ...arr[idx], activo: e.target.checked };
+                            setConfig({ ...config, canales_venta: arr });
+                          }}
+                          className="w-4 h-4 accent-[#F97316]" />
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <input type="color" value={canal.color}
+                          onChange={e => {
+                            const arr = [...(config.canales_venta || [])];
+                            arr[idx] = { ...arr[idx], color: e.target.value };
+                            setConfig({ ...config, canales_venta: arr });
+                          }}
+                          className="w-8 h-6 rounded border border-gray-200" />
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        {canal.codigo !== 'directo' && (
+                          <button type="button" onClick={() => {
+                            const arr = (config.canales_venta || []).filter((_: any, i: number) => i !== idx);
+                            setConfig({ ...config, canales_venta: arr });
+                          }} className="text-red-500 hover:text-red-700 text-xs">Eliminar</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button type="button"
+              onClick={() => {
+                const arr = [...(config.canales_venta || [])];
+                arr.push({ codigo: `canal_${arr.length}`, nombre: 'Nuevo canal', comision_pct: 20, activo: true, color: '#888888' });
+                setConfig({ ...config, canales_venta: arr });
+              }}
+              className="text-sm text-[#F97316] hover:text-[#C2410C] font-medium">
+              + Agregar canal personalizado
+            </button>
+            <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-800">
+              <strong>💡 Cómo se aplica:</strong> al registrar una venta por POS o cerrar mesa, se selecciona el canal. El sistema calcula automáticamente la comisión (como gasto contable en cuenta <code>520106</code>) y reporta el ingreso neto real. Los reportes de Business Intelligence separan ventas por canal para que veas tu margen real después de comisiones.
             </div>
           </CardContent>
         </Card>

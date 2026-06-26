@@ -139,6 +139,7 @@ const PLAN_CONTABLE_ECUADOR = [
   { codigo: '520103',  nombre: 'Beneficios Sociales e Indemnizaciones',     tipo: 'gasto',      nivel: 3, es_grupo: false },
   { codigo: '520104',  nombre: 'Gasto Planes de Beneficios a Empleados',    tipo: 'gasto',      nivel: 3, es_grupo: false },
   { codigo: '520105',  nombre: 'Honorarios, Comisiones y Dietas',           tipo: 'gasto',      nivel: 3, es_grupo: false },
+  { codigo: '520106',  nombre: 'Comisiones por Servicios de Delivery',      tipo: 'gasto',      nivel: 3, es_grupo: false },
   { codigo: '520108',  nombre: 'Mantenimiento y Reparaciones',               tipo: 'gasto',      nivel: 3, es_grupo: false },
   { codigo: '520109',  nombre: 'Arrendamiento Operativo',                   tipo: 'gasto',      nivel: 3, es_grupo: false },
   { codigo: '520111',  nombre: 'Promoción y Publicidad',                    tipo: 'gasto',      nivel: 3, es_grupo: false },
