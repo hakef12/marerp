@@ -79,6 +79,8 @@ export default function BusinessIntelligence() {
   const [productosPorCategoria, setProductosPorCategoria] = useState<any[]>([]);
   const [topProductos,          setTopProductos]          = useState<any[]>([]);
   const [rentabilidad,          setRentabilidad]          = useState<any>(null);
+  const [diagnostico,           setDiagnostico]           = useState<any>(null);
+  const [diagnosticoLoading,    setDiagnosticoLoading]    = useState(false);
   const [tendenciaMensual,      setTendenciaMensual]      = useState<any[]>([]);
 
   // ── Estado Reportes ───────────────────────────────────────────────────────
@@ -124,6 +126,21 @@ export default function BusinessIntelligence() {
     } catch { /* */ } finally {
       setRpCargando(false);
     }
+  };
+
+  const ejecutarDiagnostico = async () => {
+    setDiagnosticoLoading(true);
+    try {
+      const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/bi/diagnostico-costos`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '' } }
+      );
+      const d = await res.json();
+      if (res.ok) setDiagnostico(d);
+      else toast.error(d.error || 'Error en diagnóstico');
+    } catch (e: any) { toast.error(e.message); }
+    finally { setDiagnosticoLoading(false); }
   };
 
   useEffect(() => {
@@ -516,6 +533,90 @@ export default function BusinessIntelligence() {
             </Card>
           ) : (
             <>
+              {/* Aviso de productos con costo descartado */}
+              {(rentabilidad.productos_con_costo_descartado > 0 || rentabilidad.aviso_costos) && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 flex items-start justify-between gap-3">
+                  <div>
+                    <strong>⚠️ Datos de costo con problemas detectados.</strong>{' '}
+                    {rentabilidad.aviso_costos}{' '}
+                    Hacé clic en "Diagnosticar costos" para ver qué productos corregir.
+                  </div>
+                  <Button size="sm" onClick={ejecutarDiagnostico} disabled={diagnosticoLoading}
+                    className="bg-amber-500 hover:bg-amber-600 text-white shrink-0">
+                    {diagnosticoLoading ? '...' : '🔍 Diagnosticar costos'}
+                  </Button>
+                </div>
+              )}
+
+              {/* Boton de diagnostico (siempre disponible) */}
+              {!rentabilidad.productos_con_costo_descartado && (
+                <div className="flex justify-end">
+                  <Button size="sm" variant="outline" onClick={ejecutarDiagnostico} disabled={diagnosticoLoading}
+                    className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                    {diagnosticoLoading ? 'Analizando...' : '🔍 Diagnosticar costos'}
+                  </Button>
+                </div>
+              )}
+
+              {/* Panel de resultados del diagnostico */}
+              {diagnostico && (
+                <Card className="bg-white border-amber-200">
+                  <CardHeader>
+                    <CardTitle className="text-gray-900 text-base flex items-center justify-between">
+                      <span>🔍 Diagnóstico de costos — {diagnostico.con_problema} de {diagnostico.total_productos} productos con problemas</span>
+                      <Button size="sm" variant="ghost" onClick={() => setDiagnostico(null)}>✕</Button>
+                    </CardTitle>
+                    <div className="flex gap-4 text-xs text-gray-600 mt-2">
+                      <span>❌ Costo absurdo: <strong>{diagnostico.costo_absurdo}</strong></span>
+                      <span>⚠️ Costo alto: <strong>{diagnostico.costo_alto}</strong></span>
+                      <span>⭕ Sin costo: <strong>{diagnostico.sin_costo}</strong></span>
+                      <span>💸 Impacto estimado 90d: <strong>${Number(diagnostico.impacto_estimado_90d).toFixed(2)}</strong></span>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {diagnostico.problemas.length === 0 ? (
+                      <p className="text-sm text-green-600">✅ Todos los productos tienen costos razonables.</p>
+                    ) : (
+                      <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-white">
+                            <tr className="border-b border-amber-200">
+                              <th className="text-left py-2 px-2 text-gray-700">Producto</th>
+                              <th className="text-right py-2 px-2 text-gray-700">PV</th>
+                              <th className="text-right py-2 px-2 text-gray-700">Costo usado</th>
+                              <th className="text-right py-2 px-2 text-gray-700">Ratio</th>
+                              <th className="text-right py-2 px-2 text-gray-700">Vendidos (90d)</th>
+                              <th className="text-left py-2 px-2 text-gray-700">Problema</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {diagnostico.problemas.map((p: any) => {
+                              const icono = p.severidad === 'absurdo' ? '❌' : p.severidad === 'alto' ? '⚠️' : '⭕';
+                              const color = p.severidad === 'absurdo' ? 'text-red-700' : p.severidad === 'alto' ? 'text-amber-700' : 'text-gray-600';
+                              return (
+                                <tr key={p.producto_id} className="border-b border-gray-100">
+                                  <td className="py-1.5 px-2 text-gray-900 font-medium">{icono} {p.nombre}</td>
+                                  <td className="py-1.5 px-2 text-right font-mono">${Number(p.precio_venta).toFixed(2)}</td>
+                                  <td className="py-1.5 px-2 text-right font-mono">${Number(p.costo_usado).toFixed(2)}</td>
+                                  <td className={`py-1.5 px-2 text-right font-mono font-bold ${color}`}>
+                                    {p.ratio_costo_precio > 0 ? `${(p.ratio_costo_precio * 100).toFixed(0)}%` : '—'}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-right text-gray-600">{p.unidades_vendidas_90d}</td>
+                                  <td className={`py-1.5 px-2 text-xs ${color}`}>{p.mensaje}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-3">
+                      💡 Andá a <strong>Inventario → Productos</strong> y corregí el <em>precio de compra</em> o <em>costo unitario</em> de cada producto marcado. Los reportes se actualizan automáticamente.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Métricas globales */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <RentMetric label="Ingreso Total"    value={fmt$(rentabilidad.ingreso_total)}   color="text-green-400" />

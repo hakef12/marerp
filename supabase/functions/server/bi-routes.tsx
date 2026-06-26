@@ -2,12 +2,33 @@
 // RUTAS: BUSINESS INTELLIGENCE - USANDO KV STORE
 // =====================================================
 
-import { 
+import {
   inicializarDatosDemo,
   obtenerProductos,
   obtenerVentas,
   obtenerCategorias
 } from "./kv-helpers.tsx";
+
+// ─── Helper: extraer un costo unitario CONFIABLE de un producto ──────────────
+// El campo precio_compra/costo_unitario/costo_promedio puede estar mal cargado
+// (factura total en vez de unitario, unidades distintas, costo de receta erroneo).
+// Regla defensiva: si el costo > 2 x precio_venta, lo descartamos para no
+// envenenar reportes con valores absurdos. Esto NO arregla la data — solo
+// evita que el dashboard mienta.
+//
+// Retorna { costo, fueDescartado } para que el caller pueda contar cuantos
+// productos quedaron sin costo confiable.
+function getCostoUnitarioConfiable(prod: any): { costo: number; descartado: boolean; razon?: string } {
+  if (!prod) return { costo: 0, descartado: false };
+  const raw = parseFloat(prod.precio_compra) || parseFloat(prod.costo_promedio) || parseFloat(prod.costo_unitario) || 0;
+  if (raw <= 0) return { costo: 0, descartado: false };
+  const precioVenta = parseFloat(prod.precio_venta) || parseFloat(prod.precio) || 0;
+  // Si el costo supera 2x el precio de venta, asumimos data corrupta
+  if (precioVenta > 0 && raw > precioVenta * 2) {
+    return { costo: 0, descartado: true, razon: `costo $${raw.toFixed(2)} > 2x precio_venta $${precioVenta.toFixed(2)}` };
+  }
+  return { costo: raw, descartado: false };
+}
 
 export function setupBIRoutes(app: any, authMiddleware: any) {
 
@@ -319,8 +340,7 @@ export function setupBIRoutes(app: any, authMiddleware: any) {
           const key    = item.producto_id || item.nombre || 'desconocido';
           const nombre = item.nombre || productos.find((p: any) => p.id === item.producto_id)?.nombre || 'Desconocido';
           const prod   = productos.find((p: any) => p.id === item.producto_id);
-          const costoU = parseFloat(prod?.precio_compra) || parseFloat(prod?.costo_promedio) ||
-                         parseFloat(prod?.costo_unitario) || 0;
+          const { costo: costoU } = getCostoUnitarioConfiable(prod);
           if (!conteo[key]) conteo[key] = { nombre, ventas: 0, ingresos: 0, costo: 0 };
           conteo[key].ventas   += item.cantidad || 0;
           conteo[key].ingresos += item.subtotal || 0;
@@ -338,15 +358,16 @@ export function setupBIRoutes(app: any, authMiddleware: any) {
           margen:   p.ingresos > 0 ? parseFloat(((p.ingresos - p.costo) / p.ingresos * 100).toFixed(1)) : 0,
         }));
 
-      // ── Rentabilidad general ──────────────────────────────────────────────────
+      // ── Rentabilidad general (con clamp defensivo de costos absurdos) ─────
       let ingreso_total = 0, costo_total = 0;
+      const productosDescartados = new Set<string>();
       ventas.forEach((v: any) => {
         ingreso_total += v.total || 0;
         (v.items || []).forEach((item: any) => {
-          const prod   = productos.find((p: any) => p.id === item.producto_id);
-          const costoU = parseFloat(prod?.precio_compra) || parseFloat(prod?.costo_promedio) ||
-                         parseFloat(prod?.costo_unitario) || 0;
-          costo_total += costoU * (item.cantidad || 0);
+          const prod = productos.find((p: any) => p.id === item.producto_id);
+          const { costo, descartado } = getCostoUnitarioConfiable(prod);
+          if (descartado && prod) productosDescartados.add(prod.id);
+          costo_total += costo * (item.cantidad || 0);
         });
       });
       const utilidad_bruta = ingreso_total - costo_total;
@@ -410,12 +431,101 @@ export function setupBIRoutes(app: any, authMiddleware: any) {
           margen_bruto,
           food_cost_pct,
           top_rentables,
+          // Diagnostico: cuantos productos quedaron sin costo confiable
+          productos_con_costo_descartado: productosDescartados.size,
+          aviso_costos: productosDescartados.size > 0
+            ? `Se descartaron ${productosDescartados.size} productos con costo > 2x precio_venta. Use el diagnostico de costos para corregirlos.`
+            : null,
         },
         tendencia_mensual,
       });
     } catch (error: any) {
       console.error('❌ Error en analytics:', error);
       return c.json({ error: 'Error al obtener analytics', details: error.message }, 500);
+    }
+  });
+
+  // ─── Diagnostico de costos: identifica productos con costos absurdos ────────
+  // Lista todos los productos comparando precio_compra/costo_unitario con
+  // precio_venta y marca los problematicos para que el usuario los corrija.
+  app.get("/server/bi/diagnostico-costos", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const productos = await obtenerProductos(auth.empresaId);
+      const ventas    = (await obtenerVentas(auth.empresaId)).filter((v: any) => !v.anulada);
+
+      // Calcular unidades vendidas por producto (ultimos 90 dias)
+      const limite = new Date(); limite.setDate(limite.getDate() - 90);
+      const ventasPorProducto: Record<string, number> = {};
+      ventas.forEach((v: any) => {
+        const f = v.fecha ? new Date(v.fecha) : new Date(v.created_at || 0);
+        if (f < limite) return;
+        (v.items || []).forEach((it: any) => {
+          if (!it.producto_id) return;
+          ventasPorProducto[it.producto_id] = (ventasPorProducto[it.producto_id] || 0) + (it.cantidad || 0);
+        });
+      });
+
+      const filas = productos.map((p: any) => {
+        const precioVenta = parseFloat(p.precio_venta) || parseFloat(p.precio) || 0;
+        const precioCompra = parseFloat(p.precio_compra) || 0;
+        const costoUnitario = parseFloat(p.costo_unitario) || 0;
+        const costoPromedio = parseFloat(p.costo_promedio) || 0;
+        const costoUsado = precioCompra || costoPromedio || costoUnitario || 0;
+        const ratio = precioVenta > 0 ? costoUsado / precioVenta : 0;
+        const vendidos90d = ventasPorProducto[p.id] || 0;
+
+        let severidad: 'ok' | 'sin_costo' | 'alto' | 'absurdo' = 'ok';
+        let mensaje = '';
+        if (costoUsado === 0 && precioVenta > 0) {
+          severidad = 'sin_costo';
+          mensaje = 'Sin costo cargado — la utilidad reportada esta inflada';
+        } else if (precioVenta > 0 && ratio > 2) {
+          severidad = 'absurdo';
+          mensaje = `Costo es ${ratio.toFixed(1)}x el precio de venta — probablemente esta mal capturado`;
+        } else if (precioVenta > 0 && ratio > 1) {
+          severidad = 'alto';
+          mensaje = `Costo (${(ratio*100).toFixed(0)}%) supera precio de venta — perdida en cada venta`;
+        }
+
+        return {
+          producto_id: p.id,
+          codigo: p.codigo,
+          nombre: p.nombre,
+          categoria: p.categoria || '',
+          precio_venta: precioVenta,
+          precio_compra: precioCompra,
+          costo_unitario: costoUnitario,
+          costo_promedio: costoPromedio,
+          costo_usado: costoUsado,
+          ratio_costo_precio: parseFloat(ratio.toFixed(2)),
+          unidades_vendidas_90d: vendidos90d,
+          severidad,
+          mensaje,
+        };
+      });
+
+      const problemas = filas.filter((f: any) => f.severidad !== 'ok');
+      const totalImpactoEnVentas = problemas
+        .filter((f: any) => f.severidad === 'absurdo' || f.severidad === 'alto')
+        .reduce((s: number, f: any) => s + f.costo_usado * f.unidades_vendidas_90d, 0);
+
+      return c.json({
+        total_productos: filas.length,
+        con_problema: problemas.length,
+        sin_costo: filas.filter((f: any) => f.severidad === 'sin_costo').length,
+        costo_alto: filas.filter((f: any) => f.severidad === 'alto').length,
+        costo_absurdo: filas.filter((f: any) => f.severidad === 'absurdo').length,
+        impacto_estimado_90d: parseFloat(totalImpactoEnVentas.toFixed(2)),
+        problemas: problemas.sort((a: any, b: any) => {
+          // Ordenar por: severidad absurdo > alto > sin_costo, luego por unidades vendidas
+          const orden = { absurdo: 3, alto: 2, sin_costo: 1, ok: 0 };
+          if (orden[b.severidad] !== orden[a.severidad]) return orden[b.severidad] - orden[a.severidad];
+          return b.unidades_vendidas_90d - a.unidades_vendidas_90d;
+        }),
+      });
+    } catch (e: any) {
+      return c.json({ error: e.message }, 500);
     }
   });
 }
