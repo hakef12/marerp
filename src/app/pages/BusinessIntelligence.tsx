@@ -144,6 +144,30 @@ export default function BusinessIntelligence() {
     finally { setDiagnosticoLoading(false); }
   };
 
+  const recalcularTodasLasRecetas = async () => {
+    if (!confirm('¿Recalcular el costo de TODAS las recetas a partir de los costos actuales de los ingredientes? Esto va a actualizar los costos de los platos terminados.')) return;
+    setDiagnosticoLoading(true);
+    try {
+      const { projectId, publicAnonKey } = await import('/utils/supabase/info');
+      const res = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/cocina/recetas/recalcular-todas`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '', 'Content-Type': 'application/json' },
+          body: '{}',
+        }
+      );
+      const d = await res.json();
+      if (res.ok) {
+        toast.success(`✅ ${d.recetas_actualizadas} receta(s) recalculadas. ${d.platos_actualizados.length} plato(s) con costo actualizado.`);
+        await ejecutarDiagnostico(); // refrescar
+      } else {
+        toast.error(d.error || 'Error al recalcular recetas');
+      }
+    } catch (e: any) { toast.error(e.message); }
+    finally { setDiagnosticoLoading(false); }
+  };
+
   useEffect(() => {
     const fetchBIData = async () => {
       if (!token) return;
@@ -614,6 +638,15 @@ export default function BusinessIntelligence() {
                     <p className="text-xs text-gray-500 mt-3">
                       💡 Andá a <strong>Inventario → Productos</strong> y corregí el <em>precio de compra</em> o <em>costo unitario</em> de cada producto marcado. Los reportes se actualizan automáticamente.
                     </p>
+                    <div className="mt-3 pt-3 border-t border-amber-100 flex items-center justify-between gap-3 flex-wrap">
+                      <p className="text-xs text-gray-600">
+                        ¿Tenés platos con costo desactualizado? Recalculá todas las recetas usando los costos actuales de ingredientes:
+                      </p>
+                      <Button size="sm" onClick={recalcularTodasLasRecetas} disabled={diagnosticoLoading}
+                        className="bg-blue-500 hover:bg-blue-600 text-white shrink-0">
+                        🔄 Recalcular todas las recetas
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               )}

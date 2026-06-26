@@ -49,15 +49,106 @@ function resolverCostoIngrediente(
     return costoPorUnidad * cantidad;
   }
 
-  // Ingrediente normal: buscar en productos del inventario
+  // Ingrediente normal: buscar en productos del inventario.
+  // Prioridad NIC 2: el costo valido para valuacion es el promedio ponderado,
+  // no el ultimo precio pagado. Por eso costo_promedio va PRIMERO. precio_compra
+  // queda como ultimo fallback porque puede tener valores absurdos de facturas
+  // mal capturadas en el pasado.
   const prod = productos.find((p: any) => p.id === ing.insumo_id);
   const costoUnit = prod
-    ? (parseFloat(prod.precio_compra)  ||
-       parseFloat(prod.costo_receta)   ||
+    ? (parseFloat(prod.costo_promedio) ||
        parseFloat(prod.costo_unitario) ||
-       parseFloat(prod.costo_promedio) || 0)
+       parseFloat(prod.precio_costo)   ||
+       parseFloat(prod.costo_receta)   ||
+       parseFloat(prod.precio_compra)  || 0)
     : (parseFloat(ing.costo_unitario) || 0);
   return costoUnit * cantidad;
+}
+
+// ─── Recalcula recetas afectadas por cambios en costos de ingredientes ───────
+// productosAfectadosIds: ids de productos cuyo costo acaba de cambiar.
+// Para cada receta que contenga al menos uno como ingrediente directo, recalcula
+// su costo_por_unidad y actualiza el producto vinculado. Tambien procesa
+// sub-recetas en cascada (si A usa B, y B cambia, A se recalcula).
+//
+// Retorna: { recetas_actualizadas: number, productos_actualizados: [{id, nombre, costo_anterior, costo_nuevo}] }
+export async function recalcularRecetasAfectadas(
+  empresaId: string,
+  productosAfectadosIds: string[],
+): Promise<{ recetas_actualizadas: number; productos_actualizados: any[] }> {
+  if (productosAfectadosIds.length === 0) return { recetas_actualizadas: 0, productos_actualizados: [] };
+  try {
+    const productos = await obtenerProductos(empresaId);
+    const todasRecetas = await obtenerRecetas(empresaId);
+    const actualizados: any[] = [];
+
+    // Procesar en pasadas: primero sub-recetas (sus cambios propagan), luego finales
+    // Hacemos 3 pasadas como tope para que cambios en cadena se propaguen
+    let afectadosAcumulados = new Set(productosAfectadosIds);
+    let recetasActualizadas = 0;
+
+    for (let pasada = 0; pasada < 3; pasada++) {
+      const nuevosAfectadosEnPasada = new Set<string>();
+      // Recetas a recalcular: las que tengan al menos un ingrediente afectado
+      const recetasAfectadas = todasRecetas.filter((r: any) =>
+        Array.isArray(r.ingredientes) &&
+        r.ingredientes.some((ing: any) => afectadosAcumulados.has(ing.insumo_id))
+      );
+      if (recetasAfectadas.length === 0) break;
+
+      // Sub-recetas primero (afectan a recetas finales que las usen)
+      recetasAfectadas.sort((a: any, b: any) =>
+        (a.es_subreceta ? 0 : 1) - (b.es_subreceta ? 0 : 1)
+      );
+
+      for (const receta of recetasAfectadas) {
+        const costoTotal = (receta.ingredientes || []).reduce((sum: number, ing: any) =>
+          sum + resolverCostoIngrediente(ing, productos, todasRecetas), 0);
+        const costoPorUnidad = costoTotal / (parseInt(receta.porciones) || 1);
+        if (costoPorUnidad <= 0) continue;
+
+        const costoFinal = parseFloat(costoPorUnidad.toFixed(4));
+
+        if (receta.es_subreceta) {
+          // Actualizar la sub-receta en sitio (no hay producto vinculado)
+          const costoAnt = parseFloat(receta.costo_por_unidad) || 0;
+          if (Math.abs(costoAnt - costoFinal) < 0.0001) continue;
+          await guardarReceta(empresaId, { ...receta, costo_por_unidad: costoFinal });
+          // Las sub-recetas no afectan productos directamente; afectan otras recetas en la proxima pasada
+          recetasActualizadas++;
+        } else if (receta.producto_id) {
+          const prod = productos.find((p: any) => p.id === receta.producto_id);
+          if (!prod) continue;
+          const costoAnt = parseFloat(prod.costo_receta) || parseFloat(prod.precio_compra) || 0;
+          if (Math.abs(costoAnt - costoFinal) < 0.0001) continue;
+          await guardarProducto(empresaId, {
+            ...prod,
+            precio_compra: costoFinal,
+            costo_receta:  costoFinal,
+            costo_promedio: costoFinal, // alinear con NIC 2
+            costo_unitario: costoFinal,
+          });
+          actualizados.push({
+            producto_id: prod.id,
+            nombre: prod.nombre,
+            costo_anterior: costoAnt,
+            costo_nuevo: costoFinal,
+          });
+          // Si este plato es a su vez ingrediente de otras recetas, marcarlo
+          nuevosAfectadosEnPasada.add(prod.id);
+          recetasActualizadas++;
+        }
+      }
+
+      if (nuevosAfectadosEnPasada.size === 0) break;
+      afectadosAcumulados = new Set([...afectadosAcumulados, ...nuevosAfectadosEnPasada]);
+    }
+
+    return { recetas_actualizadas: recetasActualizadas, productos_actualizados: actualizados };
+  } catch (e: any) {
+    console.error('[recalcularRecetasAfectadas] Error:', e.message);
+    return { recetas_actualizadas: 0, productos_actualizados: [] };
+  }
 }
 
 // ─── Actualizar costo del producto/subreceta ligado a la receta ───────────────
@@ -545,66 +636,41 @@ export function setupCocinaRoutes(app: any, authMiddleware: any) {
   // Recalcula el costo por porción de TODAS las recetas existentes y actualiza
   // el precio_compra del producto final vinculado.
   // Útil para recetas creadas antes de que existiera esta lógica automática.
+  // Recalcula TODAS las recetas (manual trigger). Util para limpiar estado tras
+  // cambios masivos de costos. Usa la misma logica de recalcularRecetasAfectadas
+  // pero pasando TODOS los ids de ingredientes como afectados.
   app.post("/server/cocina/recetas/backfill-costos", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
-      const recetas = await obtenerRecetas(auth.empresaId);
       const productos = await obtenerProductos(auth.empresaId);
-      const actualizados: string[] = [];
-      const sinProducto: string[] = [];
-
-      for (const receta of recetas) {
-        const { producto_id, porciones, ingredientes, nombre } = receta;
-        if (!producto_id || !Array.isArray(ingredientes) || ingredientes.length === 0) {
-          sinProducto.push(nombre || receta.id);
-          continue;
-        }
-
-        // Calcular costo total usando todos los campos de costo posibles
-        const costoTotal = ingredientes.reduce((sum: number, ing: any) => {
-          const prod = productos.find((p: any) => p.id === ing.insumo_id);
-          const costoUnit = prod
-            ? (parseFloat(prod.precio_compra)  ||
-               parseFloat(prod.costo_receta)   ||
-               parseFloat(prod.costo_unitario) ||
-               parseFloat(prod.costo_promedio) || 0)
-            : (parseFloat(ing.costo_unitario) || 0);
-          return sum + costoUnit * (parseFloat(ing.cantidad) || 0);
-        }, 0);
-
-        const porcNum = parseInt(porciones) || 1;
-        const costoPorPorcion = costoTotal / porcNum;
-        if (costoPorPorcion <= 0) { sinProducto.push(nombre || receta.id); continue; }
-
-        const prod = productos.find((p: any) => p.id === producto_id);
-        if (prod) {
-          await guardarProducto(auth.empresaId, {
-            ...prod,
-            precio_compra: parseFloat(costoPorPorcion.toFixed(4)),
-            costo_receta: parseFloat(costoPorPorcion.toFixed(4)),
-          });
-          // Actualizar local para sub-recetas que usan este producto en la misma pasada
-          const idx = productos.findIndex((p: any) => p.id === producto_id);
-          if (idx >= 0) {
-            productos[idx].precio_compra = costoPorPorcion;
-            productos[idx].costo_receta  = costoPorPorcion;
-          }
-          actualizados.push(`${nombre} → $${costoPorPorcion.toFixed(4)}/porción`);
-        } else {
-          sinProducto.push(nombre || receta.id);
-        }
-      }
-
+      // Recalcular pasando como "afectados" todos los productos del inventario
+      const todosLosIds = productos.map((p: any) => p.id);
+      const result = await recalcularRecetasAfectadas(auth.empresaId, todosLosIds);
       return c.json({
         success: true,
-        actualizados: actualizados.length,
-        sin_producto_vinculado: sinProducto.length,
-        detalle: actualizados,
-        omitidos: sinProducto,
-        mensaje: `${actualizados.length} receta(s) recalculadas. ${sinProducto.length} sin producto vinculado o sin costo.`,
+        recetas_actualizadas: result.recetas_actualizadas,
+        platos_actualizados: result.productos_actualizados,
+        mensaje: `${result.recetas_actualizadas} receta(s) recalculadas. ${result.productos_actualizados.length} producto(s) actualizado(s).`,
       });
     } catch (error: any) {
       return c.json({ error: 'Error en backfill de costos', details: error.message }, 500);
+    }
+  });
+
+  // Alias mas descriptivo
+  app.post("/server/cocina/recetas/recalcular-todas", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const productos = await obtenerProductos(auth.empresaId);
+      const todosLosIds = productos.map((p: any) => p.id);
+      const result = await recalcularRecetasAfectadas(auth.empresaId, todosLosIds);
+      return c.json({
+        success: true,
+        recetas_actualizadas: result.recetas_actualizadas,
+        platos_actualizados: result.productos_actualizados,
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
     }
   });
 

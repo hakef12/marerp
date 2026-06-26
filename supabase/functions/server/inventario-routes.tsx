@@ -24,6 +24,7 @@ import {
   obtenerAsientos
 } from "./kv-helpers.tsx";
 import { registrarAuditoria, verificarPassword } from "./audit-helper.tsx";
+import { recalcularRecetasAfectadas } from "./cocina-routes.tsx";
 import { validarLimite } from "./planes.tsx";
 
 const getDB = () => createClient(
@@ -1115,10 +1116,25 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
         }
       }
 
+      // PASO FINAL: Recalcular recetas afectadas en cascada.
+      // Si alguno de los productos cuyo costo cambio es un ingrediente de una
+      // receta, la receta (y los platos que la usen) se recalculan automaticamente.
+      const idsConCostoActualizado = costosAplicados.map((c: any) => c.producto_id);
+      let recalcRecetas = { recetas_actualizadas: 0, productos_actualizados: [] as any[] };
+      if (idsConCostoActualizado.length > 0) {
+        try {
+          recalcRecetas = await recalcularRecetasAfectadas(auth.empresaId, idsConCostoActualizado);
+        } catch (e: any) {
+          console.warn('[compras] Recalculo de recetas fallo:', e?.message);
+        }
+      }
+
       return c.json({
         compra,
         costos_aplicados: costosAplicados,
         costos_sospechosos: costosSospechosos,
+        recetas_recalculadas: recalcRecetas.recetas_actualizadas,
+        platos_actualizados: recalcRecetas.productos_actualizados,
         aviso: costosSospechosos.length > 0
           ? `${costosSospechosos.length} producto(s) NO actualizaron su costo por sospecha de error en cantidad/unidad. Revisa el detalle.`
           : null,
