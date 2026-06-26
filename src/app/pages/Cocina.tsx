@@ -23,7 +23,11 @@ import {
   FileDown,
   FileSpreadsheet,
   RefreshCw,
+  ChevronDown,
+  ChevronRight,
+  Search,
 } from 'lucide-react';
+import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import RecetaModal from '../components/cocina/RecetaModal';
 import ProducirModal from '../components/cocina/ProducirModal';
@@ -35,6 +39,88 @@ import {
   exportOrdenesProduccionToExcel,
   exportReporteKDSToPDF,
 } from '../utils/exportUtils';
+
+// ─── Fila de receta con expandible ───────────────────────────────────────────
+function FragmentReceta({
+  recipe, expandida, costo, pv, margen, ingredientes,
+  inventoryProducts, loadingRecetaId,
+  onToggle, onProducir, onEditar, onEliminar,
+}: any) {
+  const colorMargen = margen >= 60 ? 'text-green-600' : margen >= 30 ? 'text-amber-600' : margen > 0 ? 'text-red-600' : 'text-gray-400';
+  return (
+    <>
+      <tr className="border-b border-gray-100 hover:bg-orange-50/40 cursor-pointer" onClick={onToggle}>
+        <td className="py-2 px-2 text-center">
+          {expandida ? <ChevronDown className="w-4 h-4 text-gray-500 inline" /> : <ChevronRight className="w-4 h-4 text-gray-500 inline" />}
+        </td>
+        <td className="py-2 px-3">
+          <div className="font-medium text-gray-900">{recipe.nombre}</div>
+          <div className="text-xs text-gray-400 sm:hidden">{recipe.categoria || 'Sin categoría'}</div>
+        </td>
+        <td className="py-2 px-3 text-gray-500 hidden sm:table-cell">{recipe.categoria || 'Sin categoría'}</td>
+        <td className="py-2 px-3 text-right font-mono">{costo > 0 ? `$${costo.toFixed(2)}` : <span className="text-amber-600 text-xs">$0.00</span>}</td>
+        <td className="py-2 px-3 text-right font-mono text-[#F97316] hidden md:table-cell">{pv > 0 ? `$${pv.toFixed(2)}` : '—'}</td>
+        <td className={`py-2 px-3 text-right font-bold hidden md:table-cell ${colorMargen}`}>{pv > 0 ? `${margen.toFixed(0)}%` : '—'}</td>
+        <td className="py-2 px-3 text-right text-gray-600 hidden lg:table-cell">{recipe.tiempo_preparacion || 0}m</td>
+        <td className="py-2 px-3" onClick={(e) => e.stopPropagation()}>
+          <div className="flex gap-1 justify-center">
+            <Button variant="outline" size="sm" className="h-7 px-2 border-[#F97316]/30 text-[#F97316]" onClick={onProducir} title="Producir">
+              <Factory className="w-3.5 h-3.5" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 px-2 border-[#FB923C]/30 text-[#FB923C]" onClick={onEditar} disabled={loadingRecetaId === recipe.id} title="Editar">
+              <Pencil className="w-3.5 h-3.5" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 px-2 border-red-500/30 text-red-400" onClick={onEliminar} title="Eliminar">
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </td>
+      </tr>
+      {expandida && (
+        <tr className="bg-orange-50/30 border-b border-orange-100">
+          <td></td>
+          <td colSpan={7} className="py-3 px-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Métricas */}
+              <div className="bg-white rounded border border-orange-100 p-3 space-y-2">
+                <div className="text-xs font-bold uppercase text-gray-500">Resumen</div>
+                <div className="text-sm flex justify-between"><span className="text-gray-600">Costo/porción</span><span className="font-mono font-bold">${costo.toFixed(2)}</span></div>
+                <div className="text-sm flex justify-between"><span className="text-gray-600">Precio venta</span><span className="font-mono font-bold text-[#F97316]">{pv > 0 ? `$${pv.toFixed(2)}` : '—'}</span></div>
+                <div className="text-sm flex justify-between"><span className="text-gray-600">Margen</span><span className={`font-mono font-bold ${colorMargen}`}>{pv > 0 ? `${margen.toFixed(1)}%` : '—'}</span></div>
+                <div className="text-sm flex justify-between"><span className="text-gray-600">Porciones</span><span className="font-mono">{recipe.porciones}</span></div>
+                <div className="text-sm flex justify-between"><span className="text-gray-600">Tiempo</span><span className="font-mono">{recipe.tiempo_preparacion || 0} min</span></div>
+                <div className="text-sm flex justify-between"><span className="text-gray-600">Dificultad</span><span className="text-xs">{recipe.dificultad || '—'}</span></div>
+              </div>
+              {/* Ingredientes */}
+              <div className="bg-white rounded border border-orange-100 p-3 md:col-span-2">
+                <div className="text-xs font-bold uppercase text-gray-500 mb-2">Ingredientes ({ingredientes.length})</div>
+                {ingredientes.length === 0 ? (
+                  <p className="text-sm text-amber-700">⚠️ Sin ingredientes — el costo va a ser $0. Editá la receta para agregarlos.</p>
+                ) : (
+                  <div className="space-y-1 max-h-64 overflow-y-auto">
+                    {ingredientes.map((ing: any, idx: number) => {
+                      const rawId = ing.insumo_id || ing.producto_id || ing.insumo?.id || ing.productos?.id;
+                      const prodCatalogo = rawId
+                        ? inventoryProducts.find((p: any) => p.id === rawId || String(p.id).toLowerCase() === String(rawId).toLowerCase())
+                        : null;
+                      const nombre = ing.insumo?.nombre || ing.productos?.nombre || ing.nombre_producto || ing.nombre || prodCatalogo?.nombre || (rawId ? `(${String(rawId).slice(0,8)})` : 'Ingrediente');
+                      return (
+                        <div key={idx} className="text-sm flex justify-between items-center bg-gray-50 px-2 py-1 rounded">
+                          <span className="font-medium text-gray-900">{nombre}</span>
+                          <span className="text-[#F97316] font-medium font-mono text-xs">{ing.cantidad} {ing.unidad_medida || ''}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
 
 export default function Cocina() {
   const { token } = useAuth();
@@ -51,6 +137,18 @@ export default function Cocina() {
   const [showProducirModal, setShowProducirModal] = useState(false);
   const [selectedReceta, setSelectedReceta] = useState<any | null>(null);
   const [loadingRecetaId, setLoadingRecetaId] = useState<string | null>(null);
+  // Vista de lista de recetas: busqueda + paginacion + filas expandibles
+  const [recetaSearch, setRecetaSearch] = useState('');
+  const [recetaPage, setRecetaPage]   = useState(1);
+  const RECETAS_POR_PAGINA = 20;
+  const [recetasExpandidas, setRecetasExpandidas] = useState<Set<string>>(new Set());
+  const toggleRecetaExpandida = (id: string) => {
+    setRecetasExpandidas(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [expandedOrders, setExpandedOrders] = useState<Set<any>>(new Set());
 
@@ -555,89 +653,103 @@ export default function Cocina() {
                 </Button>
               </CardContent>
             </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {recipes.map((recipe, idx) => (
-                <Card key={recipe.id || idx} className="bg-gradient-to-br from-gray-50 to-gray-100 border-[#F97316]/20 hover:border-[#F97316]/50 transition-all">
-                  <CardHeader className="bg-gradient-to-br from-[#C2410C]/20 to-[#F97316]/10 border-b border-[#F97316]/10">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-xl text-gray-900 mb-1">{recipe.nombre}</CardTitle>
-                        <p className="text-sm font-medium text-[#F97316]">{recipe.categoria || 'Sin categoría'}</p>
-                      </div>
-                      <Badge className={getDificultadBadge(recipe.dificultad)} variant="outline">
-                        {getDificultadText(recipe.dificultad)}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-100">
-                      <div>
-                        <p className="text-xs text-gray-600 font-bold uppercase">Costo/Porción</p>
-                        <p className="text-lg font-black text-gray-900">${recipe.costo_por_porcion?.toFixed(2) || '0.00'}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600 font-bold uppercase">Precio Venta</p>
-                        {recipe.precio_sugerido > 0
-                          ? <p className="text-lg font-black text-[#F97316]">${recipe.precio_sugerido.toFixed(2)}</p>
-                          : <button onClick={() => abrirEditorReceta(recipe.id)} className="text-sm text-gray-400 hover:text-[#F97316] transition-colors underline underline-offset-2">Sin precio — editar</button>
-                        }
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600 font-bold uppercase">Porciones</p>
-                        <p className="text-lg font-black text-gray-900">{recipe.porciones}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600 font-bold uppercase">Tiempo</p>
-                        <p className="text-lg font-black text-gray-900">{recipe.tiempo_preparacion || 0}m</p>
-                      </div>
-                    </div>
-                    
-                    <div className="pt-3 border-t border-gray-100">
-                      <p className="text-xs text-gray-600 font-bold uppercase mb-2">
-                        Ingredientes ({(recipe.ingredientes || recipe.receta_ingredientes)?.length || 0})
-                      </p>
-                      <div className="space-y-1 max-h-32 overflow-y-auto">
-                        {(recipe.ingredientes || recipe.receta_ingredientes)?.map((ing: any, idx: number) => {
-                          const rawId = ing.insumo_id || ing.producto_id || ing.insumo?.id || ing.productos?.id;
-                          const prodCatalogo = rawId
-                            ? inventoryProducts.find((p: any) => p.id === rawId || String(p.id).toLowerCase() === String(rawId).toLowerCase())
-                            : null;
+          ) : (() => {
+            // ── Filtrar + paginar ──────────────────────────────────────────
+            const q = recetaSearch.trim().toLowerCase();
+            const recetasFiltradas = q
+              ? recipes.filter((r: any) =>
+                  String(r.nombre || '').toLowerCase().includes(q) ||
+                  String(r.categoria || '').toLowerCase().includes(q))
+              : recipes;
+            const totalPaginas = Math.max(1, Math.ceil(recetasFiltradas.length / RECETAS_POR_PAGINA));
+            const paginaActual = Math.min(recetaPage, totalPaginas);
+            const inicio = (paginaActual - 1) * RECETAS_POR_PAGINA;
+            const recetasPagina = recetasFiltradas.slice(inicio, inicio + RECETAS_POR_PAGINA);
 
-                          const nombreTraducido =
-                            ing.insumo?.nombre ||
-                            ing.productos?.nombre ||
-                            ing.nombre_producto ||
-                            ing.nombre ||
-                            prodCatalogo?.nombre ||
-                            (rawId ? `(${String(rawId).slice(0,8)})` : 'Ingrediente');
-
+            return (
+              <Card className="bg-white border-[#F97316]/20">
+                <CardHeader className="pb-3">
+                  <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+                    <div className="flex items-center gap-2 flex-1 max-w-md">
+                      <Search className="w-4 h-4 text-gray-400" />
+                      <Input
+                        placeholder="Buscar receta por nombre o categoría..."
+                        value={recetaSearch}
+                        onChange={e => { setRecetaSearch(e.target.value); setRecetaPage(1); }}
+                        className="bg-white border-[#F97316]/20 text-gray-900"
+                      />
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {recetasFiltradas.length} receta{recetasFiltradas.length !== 1 ? 's' : ''}
+                      {q && ` (filtradas de ${recipes.length})`}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="w-8"></th>
+                          <th className="text-left py-2 px-3 text-gray-600 font-medium">Receta</th>
+                          <th className="text-left py-2 px-3 text-gray-600 font-medium hidden sm:table-cell">Categoría</th>
+                          <th className="text-right py-2 px-3 text-gray-600 font-medium">Costo/porc.</th>
+                          <th className="text-right py-2 px-3 text-gray-600 font-medium hidden md:table-cell">PV</th>
+                          <th className="text-right py-2 px-3 text-gray-600 font-medium hidden md:table-cell">Margen</th>
+                          <th className="text-right py-2 px-3 text-gray-600 font-medium hidden lg:table-cell">Tiempo</th>
+                          <th className="text-center py-2 px-3 text-gray-600 font-medium">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recetasPagina.length === 0 && (
+                          <tr><td colSpan={8} className="text-center py-8 text-gray-400">
+                            No se encontraron recetas con "{q}"
+                          </td></tr>
+                        )}
+                        {recetasPagina.map((recipe: any) => {
+                          const expandida = recetasExpandidas.has(recipe.id);
+                          const costo = recipe.costo_por_porcion || 0;
+                          const pv    = recipe.precio_sugerido || 0;
+                          const margen = pv > 0 ? ((pv - costo) / pv * 100) : 0;
+                          const ingredientes = recipe.ingredientes || recipe.receta_ingredientes || [];
                           return (
-                            <div key={idx} className="text-sm text-gray-600 flex justify-between bg-gray-50 p-1 px-2 rounded mb-1">
-                              <span className="font-bold text-gray-900">{nombreTraducido}</span>
-                              <span className="text-[#F97316] font-medium">{ing.cantidad} {ing.unidad_medida}</span>
-                            </div>
+                            <FragmentReceta
+                              key={recipe.id}
+                              recipe={recipe}
+                              expandida={expandida}
+                              costo={costo}
+                              pv={pv}
+                              margen={margen}
+                              ingredientes={ingredientes}
+                              inventoryProducts={inventoryProducts}
+                              loadingRecetaId={loadingRecetaId}
+                              onToggle={() => toggleRecetaExpandida(recipe.id)}
+                              onProducir={() => { setSelectedReceta(recipe); setShowProducirModal(true); }}
+                              onEditar={() => abrirEditorReceta(recipe.id)}
+                              onEliminar={() => eliminarReceta(recipe.id)}
+                            />
                           );
                         })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {totalPaginas > 1 && (
+                    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50">
+                      <div className="text-xs text-gray-500">
+                        Página {paginaActual} de {totalPaginas} · Mostrando {recetasPagina.length} de {recetasFiltradas.length}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" disabled={paginaActual <= 1}
+                          onClick={() => setRecetaPage(p => Math.max(1, p - 1))}>← Anterior</Button>
+                        <Button size="sm" variant="outline" disabled={paginaActual >= totalPaginas}
+                          onClick={() => setRecetaPage(p => Math.min(totalPaginas, p + 1))}>Siguiente →</Button>
                       </div>
                     </div>
-
-                    <div className="flex gap-2 pt-3 border-t border-gray-100">
-                      <Button variant="outline" size="sm" className="flex-1 border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10" onClick={() => { setSelectedReceta(recipe); setShowProducirModal(true); }}>
-                        <Factory className="w-4 h-4 mr-1" /> Producir
-                      </Button>
-                      <Button variant="outline" size="sm" className="flex-1 border-[#FB923C]/30 text-[#FB923C] hover:bg-[#FB923C]/10" onClick={() => abrirEditorReceta(recipe.id)} disabled={loadingRecetaId === recipe.id}>
-                        <Pencil className="w-4 h-4 mr-1" /> {loadingRecetaId === recipe.id ? 'Cargando...' : 'Editar'}
-                      </Button>
-                      <Button variant="outline" size="sm" className="border-red-500/30 text-red-400 hover:bg-red-500/10" onClick={() => eliminarReceta(recipe.id)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
         </div>
       )}
 
