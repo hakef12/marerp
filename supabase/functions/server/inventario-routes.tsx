@@ -867,10 +867,42 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
       const total_compra = itemsCalculados.reduce((s: number, i: any) => s + i.costo_total, 0);
 
       paso = 'movimientos';
+      // Lista de items cuyo costo NO se aplico al producto por sospecha de error.
+      // Se devuelve al frontend para que muestre advertencia.
+      const costosSospechosos: any[] = [];
+      const costosAplicados: any[] = [];
+
+      // DB client reutilizable (en lugar de re-importar en cada iteracion)
+      const dbClient = (await import("npm:@supabase/supabase-js")).createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      );
+
       for (const item of itemsCalculados) {
-        // Solo ítems de inventario con producto asignado crean movimientos de stock
+        // Solo items de inventario con producto asignado crean movimientos de stock
         if (!item.a_inventario || !item.producto_id) continue;
 
+        // PASO 1: Leer estado actual del producto ANTES del movimiento
+        // (necesitamos stock_anterior y costo_anterior para promedio ponderado)
+        let stockAnterior = 0;
+        let costoAnterior = 0;
+        let precioVenta = 0;
+        let nombreProducto = '';
+        try {
+          const { data: prodAct } = await dbClient.from('productos')
+            .select('stock_actual,costo_unitario,precio_costo,precio_venta,precio,nombre')
+            .eq('id', item.producto_id)
+            .eq('empresa_id', auth.empresaId)
+            .maybeSingle();
+          if (prodAct) {
+            stockAnterior = Number(prodAct.stock_actual) || 0;
+            costoAnterior = Number(prodAct.costo_unitario) || Number(prodAct.precio_costo) || 0;
+            precioVenta   = Number(prodAct.precio_venta) || Number(prodAct.precio) || 0;
+            nombreProducto = prodAct.nombre || '';
+          }
+        } catch { /* si falla la lectura, seguimos con valores en 0 */ }
+
+        // PASO 2: Registrar el movimiento (ingresa stock)
         await guardarMovimiento(auth.empresaId, {
           tipo: 'entrada',
           producto_id:    item.producto_id,
@@ -882,22 +914,54 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
           usuario_id:     auth.userId,
         });
 
-        // Actualizar SOLO el precio de compra del producto — NO el stock
-        // (el stock ya fue actualizado dentro de guardarMovimiento)
-        // Usar update directo para evitar sobreescribir el stock recién actualizado
+        // PASO 3: Calcular costo promedio ponderado (NIC 2) y validar
         if (item.costo_unitario > 0) {
-          const db = (await import("npm:@supabase/supabase-js")).createClient(
-            Deno.env.get('SUPABASE_URL')!,
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-          );
-          await db.from('productos')
-            .update({
-              precio_costo:   item.costo_unitario,
-              costo_unitario: item.costo_unitario,
-              updated_at:     new Date().toISOString(),
-            })
-            .eq('id', item.producto_id)
-            .eq('empresa_id', auth.empresaId);
+          const cantidadNueva = Number(item.cantidad) || 0;
+          const costoFactura  = Number(item.costo_unitario) || 0;
+          // Promedio ponderado: si no habia stock anterior o costo anterior, usar el de la factura
+          const costoPonderado = (stockAnterior > 0 && costoAnterior > 0)
+            ? (stockAnterior * costoAnterior + cantidadNueva * costoFactura) / (stockAnterior + cantidadNueva)
+            : costoFactura;
+          const costoFinal = Math.round(costoPonderado * 10000) / 10000;
+
+          // Validacion defensiva: si el costo resultante supera el 80% del precio
+          // de venta, probablemente la cantidad esta mal capturada (paquete vs unidad).
+          // No actualizamos para no envenenar la data — pero registramos el movimiento.
+          const esSospechoso = precioVenta > 0 && costoFinal > precioVenta * 0.8;
+
+          if (esSospechoso) {
+            costosSospechosos.push({
+              producto_id: item.producto_id,
+              nombre: nombreProducto || item.descripcion || 'Sin nombre',
+              precio_venta: precioVenta,
+              costo_anterior: costoAnterior,
+              costo_factura: costoFactura,
+              costo_propuesto: costoFinal,
+              cantidad_factura: cantidadNueva,
+              ratio: precioVenta > 0 ? Math.round(costoFinal / precioVenta * 100) / 100 : 0,
+              motivo: `Costo propuesto $${costoFinal.toFixed(2)} es el ${(costoFinal/precioVenta*100).toFixed(0)}% del precio de venta $${precioVenta.toFixed(2)}. Posible error en cantidad/unidad. Stock no se afecta — solo el costo del producto se mantuvo en $${costoAnterior.toFixed(2)}.`,
+            });
+            // Importante: NO actualizamos precio_costo/costo_unitario del producto.
+            // El movimiento ya quedo registrado con el costo de la factura para trazabilidad,
+            // pero el master del producto conserva el costo anterior valido.
+          } else {
+            await dbClient.from('productos')
+              .update({
+                precio_costo:   costoFinal,
+                costo_unitario: costoFinal,
+                costo_promedio: costoFinal,
+                updated_at:     new Date().toISOString(),
+              })
+              .eq('id', item.producto_id)
+              .eq('empresa_id', auth.empresaId);
+            costosAplicados.push({
+              producto_id: item.producto_id,
+              nombre: nombreProducto,
+              costo_anterior: costoAnterior,
+              costo_nuevo: costoFinal,
+              metodo: stockAnterior > 0 ? 'promedio_ponderado' : 'primer_costo',
+            });
+          }
         }
       }
 
@@ -1051,7 +1115,14 @@ export function setupInventarioRoutes(app: any, authMiddleware: any) {
         }
       }
 
-      return c.json({ compra }, 201);
+      return c.json({
+        compra,
+        costos_aplicados: costosAplicados,
+        costos_sospechosos: costosSospechosos,
+        aviso: costosSospechosos.length > 0
+          ? `${costosSospechosos.length} producto(s) NO actualizaron su costo por sospecha de error en cantidad/unidad. Revisa el detalle.`
+          : null,
+      }, 201);
     } catch (error: any) {
       console.error(`[compras POST] Error en paso "${paso}":`, error?.message);
       return c.json({ error: 'Error al registrar compra', details: error.message, paso }, 500);

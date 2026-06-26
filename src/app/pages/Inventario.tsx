@@ -871,7 +871,24 @@ export default function Inventario() {
         })
       });
       if (response.ok) {
+        const result = await response.json();
+        const sospechosos = result.costos_sospechosos || [];
+
         toast.success(compraForm.tipo_pago === 'credito' ? 'Compra a crédito registrada — se creó cuenta por pagar' : 'Compra registrada y stock actualizado');
+
+        // Si hay productos con costo sospechoso, alertar al usuario
+        if (sospechosos.length > 0) {
+          const lista = sospechosos.map((s: any) =>
+            `• ${s.nombre}: factura propone $${s.costo_propuesto.toFixed(2)} (${(s.ratio * 100).toFixed(0)}% del PV $${s.precio_venta.toFixed(2)}). Mantenido en $${s.costo_anterior.toFixed(2)}.`
+          ).join('\n');
+          // Toast persistente con detalle
+          toast.warning(
+            `⚠️ ${sospechosos.length} producto(s) con costo sospechoso — NO se actualizó el costo del producto (stock sí). Revisá la cantidad/unidad en la factura. Detalle en la consola.`,
+            { duration: 12000 }
+          );
+          console.warn('[Costos sospechosos detectados]\n' + lista);
+        }
+
         setShowCompraForm(false);
         setCompraForm({ proveedor_id: '', fecha: new Date().toISOString().split('T')[0], numero_factura: '', observaciones: '', tipo_pago: 'contado', fecha_vencimiento: '' });
         setCompraItems([{ producto_id: '', descripcion_libre: '', cantidad: '1', costo_total: '', tipo_contable: '', confianza: 'sugerido' }]);
