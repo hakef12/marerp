@@ -8,6 +8,34 @@ import {
   obtenerVentas,
   obtenerCategorias
 } from "./kv-helpers.tsx";
+import * as kv from "./kv_store.tsx";
+
+// Mapa de zonas horarias soportadas → offset en horas vs UTC (sin DST por ahora).
+// La mayoría de paises objetivo (Ecuador, Colombia, Peru) no tienen DST.
+const TZ_OFFSETS: Record<string, number> = {
+  'America/Guayaquil':   -5,
+  'America/Bogota':      -5,
+  'America/Lima':        -5,
+  'America/New_York':    -5, // simplificado (en realidad -5/-4 con DST)
+  'America/Mexico_City': -6,
+  'America/Argentina/Buenos_Aires': -3,
+  'America/Santiago':    -4,
+  'America/Caracas':     -4,
+  'UTC':                  0,
+};
+
+// Lee la zona horaria configurada de la empresa y devuelve el offset en ms.
+// Default Ecuador (UTC-5) si no hay config.
+async function obtenerOffsetEmpresa(empresaId: string): Promise<number> {
+  try {
+    const prefs: any = await kv.get(`empresa_${empresaId}_prefs_sistema`);
+    const tz = prefs?.zona_horaria || 'America/Guayaquil';
+    const hours = TZ_OFFSETS[tz] ?? -5;
+    return hours * 60 * 60 * 1000;
+  } catch {
+    return -5 * 60 * 60 * 1000;
+  }
+}
 
 // ─── Helper: extraer un costo unitario CONFIABLE de un producto ──────────────
 // El campo precio_compra/costo_unitario/costo_promedio puede estar mal cargado
@@ -291,23 +319,23 @@ export function setupBIRoutes(app: any, authMiddleware: any) {
       const ticket_promedio_tendencia = pct(ticket_promedio, ticket_ant);
 
       // ── Ventas por día — últimos 30 días (con estimación de gastos/utilidad) ──
-      // IMPORTANTE: el servidor Deno corre en UTC pero el usuario esta en Ecuador
-      // (UTC-5, sin DST). Una venta hecha a las 7pm Ecuador se guarda como UTC
-      // del dia SIGUIENTE. Si bucketizamos por UTC date, esa venta aparece en
-      // el dia equivocado. Convertimos a hora Ecuador antes de extraer el dia.
-      const ECUADOR_OFFSET_MS = -5 * 60 * 60 * 1000;
-      const fechaDiaEcuador = (isoUtc: string) => {
+      // El servidor Deno corre en UTC pero el usuario esta en su zona local.
+      // Una venta hecha tarde se guarda como UTC del dia siguiente. Para que
+      // el chart muestre el dia local correcto, convertimos al timezone de la
+      // empresa (Configuracion → Sistema → Zona Horaria) antes de bucketizar.
+      const offsetMs = await obtenerOffsetEmpresa(auth.empresaId);
+      const fechaDiaLocal = (isoUtc: string) => {
         if (!isoUtc) return '';
         const t = new Date(isoUtc).getTime();
         if (isNaN(t)) return '';
-        return new Date(t + ECUADOR_OFFSET_MS).toISOString().split('T')[0];
+        return new Date(t + offsetMs).toISOString().split('T')[0];
       };
       const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const ventasRecientes = ventas.filter((v: any) => new Date(v.fecha) >= hace30);
 
       const porDiaMap: Record<string, { ventas: number; gastos: number }> = {};
       ventasRecientes.forEach((v: any) => {
-        const dia = fechaDiaEcuador(v.fecha);
+        const dia = fechaDiaLocal(v.fecha);
         if (!dia) return;
         if (!porDiaMap[dia]) porDiaMap[dia] = { ventas: 0, gastos: 0 };
         porDiaMap[dia].ventas += v.total || 0;

@@ -1164,6 +1164,52 @@ app.post("/server/admin/enviar-avisos", authMiddleware, superAdminMiddleware, as
   }
 });
 
+// ── Preferencias del sistema (zona horaria, moneda, formato, etc.) ──────────
+// Persistidas en kv_store con clave `empresa_<id>_prefs_sistema`. Default
+// Ecuador/USD/15% IVA.
+const PREFS_SISTEMA_DEFAULT = {
+  zona_horaria: 'America/Guayaquil',
+  moneda: 'USD',
+  formato_fecha: 'DD/MM/YYYY',
+  decimales: 2,
+  inicio_ejercicio_fiscal: '01-01',
+};
+app.get("/server/configuracion", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    const [sistema, notificaciones] = await Promise.all([
+      kv.get(`empresa_${auth.empresaId}_prefs_sistema`).catch(() => null),
+      kv.get(`empresa_${auth.empresaId}_prefs_notificaciones`).catch(() => null),
+    ]);
+    return c.json({
+      sistema: { ...PREFS_SISTEMA_DEFAULT, ...(sistema || {}) },
+      notificaciones: notificaciones || {},
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+app.put("/server/configuracion/sistema", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    const body = await c.req.json();
+    await kv.set(`empresa_${auth.empresaId}_prefs_sistema`, { ...PREFS_SISTEMA_DEFAULT, ...body });
+    return c.json({ ok: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+app.put("/server/configuracion/notificaciones", authMiddleware, async (c) => {
+  const auth: AuthContext = c.get('auth');
+  try {
+    const body = await c.req.json();
+    await kv.set(`empresa_${auth.empresaId}_prefs_notificaciones`, body || {});
+    return c.json({ ok: true });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 // Facturación: configuración
 app.get("/server/facturacion/configuracion", authMiddleware, async (c) => {
   const auth: AuthContext = c.get('auth');
