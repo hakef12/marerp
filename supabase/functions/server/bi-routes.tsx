@@ -291,12 +291,23 @@ export function setupBIRoutes(app: any, authMiddleware: any) {
       const ticket_promedio_tendencia = pct(ticket_promedio, ticket_ant);
 
       // ── Ventas por día — últimos 30 días (con estimación de gastos/utilidad) ──
+      // IMPORTANTE: el servidor Deno corre en UTC pero el usuario esta en Ecuador
+      // (UTC-5, sin DST). Una venta hecha a las 7pm Ecuador se guarda como UTC
+      // del dia SIGUIENTE. Si bucketizamos por UTC date, esa venta aparece en
+      // el dia equivocado. Convertimos a hora Ecuador antes de extraer el dia.
+      const ECUADOR_OFFSET_MS = -5 * 60 * 60 * 1000;
+      const fechaDiaEcuador = (isoUtc: string) => {
+        if (!isoUtc) return '';
+        const t = new Date(isoUtc).getTime();
+        if (isNaN(t)) return '';
+        return new Date(t + ECUADOR_OFFSET_MS).toISOString().split('T')[0];
+      };
       const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const ventasRecientes = ventas.filter((v: any) => new Date(v.fecha) >= hace30);
 
       const porDiaMap: Record<string, { ventas: number; gastos: number }> = {};
       ventasRecientes.forEach((v: any) => {
-        const dia = (v.fecha || '').split('T')[0];
+        const dia = fechaDiaEcuador(v.fecha);
         if (!dia) return;
         if (!porDiaMap[dia]) porDiaMap[dia] = { ventas: 0, gastos: 0 };
         porDiaMap[dia].ventas += v.total || 0;
