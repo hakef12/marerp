@@ -359,7 +359,7 @@ export async function eliminarReceta(empresaId: string, recetaId: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function obtenerVentas(empresaId: string) {
-  return sqlConFallback(
+  const ventas = await sqlConFallback(
     async () => {
       const db = getDB();
       const { data, error } = await db.from('ventas')
@@ -370,6 +370,20 @@ export async function obtenerVentas(empresaId: string) {
     },
     `empresa_${empresaId}_ventas`
   );
+  // Mergear campos guardados en metadata JSONB al top-level para que el resto
+  // del codigo pueda leer canal_venta, comision_pct, etc. sin saber donde
+  // estan almacenados. Solo se mergean cuando el campo top-level es undefined
+  // o null, para no pisar columnas reales con datos en metadata stale.
+  return (ventas || []).map((v: any) => {
+    const meta = typeof v.metadata === 'string'
+      ? (() => { try { return JSON.parse(v.metadata); } catch { return {}; } })()
+      : (v.metadata || {});
+    const merged: Record<string, any> = { ...v, metadata: meta };
+    for (const k of Object.keys(meta)) {
+      if (merged[k] === undefined || merged[k] === null) merged[k] = meta[k];
+    }
+    return merged;
+  });
 }
 
 export async function guardarVenta(empresaId: string, venta: any) {
@@ -414,6 +428,11 @@ export async function guardarVenta(empresaId: string, venta: any) {
       ...(venta.anulada_por       ? { anulada_por:       venta.anulada_por       } : {}),
       ...(venta.anulada_por_nombre ? { anulada_por_nombre: venta.anulada_por_nombre } : {}),
       ...(venta.fecha_anulacion   ? { fecha_anulacion:   venta.fecha_anulacion   } : {}),
+      // Canal de venta y comision (delivery apps) — sin columnas propias en BD
+      ...(venta.canal_venta    !== undefined ? { canal_venta:    venta.canal_venta    } : {}),
+      ...(venta.comision_pct   !== undefined ? { comision_pct:   Number(venta.comision_pct)   || 0 } : {}),
+      ...(venta.comision_monto !== undefined ? { comision_monto: Number(venta.comision_monto) || 0 } : {}),
+      ...(venta.total_neto     !== undefined ? { total_neto:     Number(venta.total_neto)     || 0 } : {}),
     },
     // Columnas de migración 006
     bodega_id:         venta.bodega_id         || null,
