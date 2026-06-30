@@ -773,11 +773,16 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       const ingresoAnio = cuentas.filter((ct: any) => ct.tipo === 'ingreso' && !ct.es_grupo)
         .reduce((s: number, ct: any) => s + (saldosAnio[ct.id] || 0), 0);
 
-      const caja = cuentas.filter((ct: any) => ct.codigo === '10101')
+      const caja = cuentas.filter((ct: any) => ct.codigo === '10101' || ct.codigo === '101')
         .reduce((s: number, ct: any) => s + (saldosTotal[ct.id] || 0), 0);
-      const cxc = cuentas.filter((ct: any) => ct.codigo === '1010205')
+      // CxC: todas las subcuentas del grupo 10102 (Activos Financieros — CxC clientes locales,
+      // extranjeros, etc.) excepto la provision 1010209 que es contra-cuenta.
+      const cxc = cuentas
+        .filter((ct: any) => !ct.es_grupo && String(ct.codigo).startsWith('10102') && ct.codigo !== '1010209')
         .reduce((s: number, ct: any) => s + (saldosTotal[ct.id] || 0), 0);
-      const cxp = cuentas.filter((ct: any) => ct.codigo === '2010301')
+      // CxP: todas las subcuentas de Cuentas y Documentos por Pagar (20103).
+      const cxp = cuentas
+        .filter((ct: any) => !ct.es_grupo && String(ct.codigo).startsWith('20103'))
         .reduce((s: number, ct: any) => s + (saldosTotal[ct.id] || 0), 0);
 
       // Ratios de liquidez segun formulas contables estandar:

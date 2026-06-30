@@ -435,7 +435,8 @@ export default function BusinessIntelligence() {
           {/* Tendencia de utilidad */}
           <Card className="bg-white border-[#F97316]/20">
             <CardHeader>
-              <CardTitle className="text-gray-900 text-base">Tendencia de Utilidad Diaria</CardTitle>
+              <CardTitle className="text-gray-900 text-base">Ventas vs Utilidad — Últimos 30 días</CardTitle>
+              <p className="text-xs text-gray-500 mt-1">Naranja = ingresos diarios · Verde = utilidad bruta diaria (ingresos − costo de mercadería)</p>
             </CardHeader>
             <CardContent>
               {ventasPorDia.length === 0 ? (
@@ -453,6 +454,7 @@ export default function BusinessIntelligence() {
                       tickFormatter={(v) => `$${v}`} />
                     <Tooltip {...tooltipStyle}
                       formatter={(value: any) => fmt$(value)} />
+                    <Legend />
                     <Area type="monotone" dataKey="ventas" fill="#F9731615" stroke="#F97316" strokeWidth={2} isAnimationActive={false} name="Ventas" />
                     <Line type="monotone" dataKey="utilidad" stroke="#22c55e" strokeWidth={2}
                       dot={{ fill: '#22c55e', r: 3 }} isAnimationActive={false} name="Utilidad" />
@@ -701,10 +703,12 @@ export default function BusinessIntelligence() {
                         <YAxis dataKey="nombre" type="category" stroke="#e5e7eb"
                           width={130} tick={{ fontSize: 9, fill: '#6b7280' }} />
                         <Tooltip {...tooltipStyle}
-                          formatter={(value: any, name: string) => [
-                            name === 'utilidad' ? fmt$(value) : name === 'margen' ? fmtPct(value) : fmt$(value),
-                            name === 'utilidad' ? 'Utilidad' : name === 'margen' ? 'Margen %' : 'Ingresos',
-                          ]} />
+                          formatter={(value: any, name: string, props: any) => {
+                            const key = props?.dataKey || String(name).toLowerCase();
+                            if (key === 'utilidad') return [fmt$(value), 'Utilidad'];
+                            if (key === 'margen')   return [fmtPct(value), 'Margen %'];
+                            return [fmt$(value), 'Ingresos'];
+                          }} />
                         <Legend />
                         <Bar dataKey="ingresos" fill="#F9731650" radius={[0, 4, 4, 0]} isAnimationActive={false} name="Ingresos" />
                         <Bar dataKey="utilidad"  fill="#22c55e"   radius={[0, 4, 4, 0]} isAnimationActive={false} name="Utilidad" />

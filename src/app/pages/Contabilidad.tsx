@@ -1161,7 +1161,7 @@ export default function Contabilidad() {
                 <div className="text-2xl font-bold text-yellow-400">
                   {(dashboard?.liquidez.ratio_corriente || 0).toFixed(2)}x
                 </div>
-                <div className="text-xs text-gray-600 mt-1">(CxC+Caja)/CxP</div>
+                <div className="text-xs text-gray-600 mt-1">Activo Corriente / Pasivo Corriente</div>
               </CardContent>
             </Card>
           </div>

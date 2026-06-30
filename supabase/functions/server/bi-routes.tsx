@@ -250,7 +250,7 @@ export function setupBIRoutes(app: any, authMiddleware: any) {
   app.get("/server/bi/analytics", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
-      const ventas    = (await obtenerVentas(auth.empresaId)).filter((v: any) => !v.anulada);
+      const todasVentas = (await obtenerVentas(auth.empresaId)).filter((v: any) => !v.anulada);
       const productos = await obtenerProductos(auth.empresaId);
       const categorias = await obtenerCategorias(auth.empresaId);
 
@@ -258,6 +258,12 @@ export function setupBIRoutes(app: any, authMiddleware: any) {
       const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
       const inicioMesAnterior = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
       const finMesAnterior    = new Date(hoy.getFullYear(), hoy.getMonth(), 0, 23, 59, 59);
+      const inicioAnio = new Date(hoy.getFullYear(), 0, 1);
+
+      // BI usa por defecto el AÑO ACTUAL. Antes mostraba el ingreso historico
+      // total lo que causaba que BI diera $4,325 cuando contabilidad solo
+      // contaba $3,806 del año 2026 — los $519 extra eran de años previos.
+      const ventas = todasVentas.filter((v: any) => new Date(v.fecha) >= inicioAnio);
 
       const ventasMes      = ventas.filter((v: any) => new Date(v.fecha) >= inicioMes);
       const ventasMesAnt   = ventas.filter((v: any) => {
@@ -294,12 +300,11 @@ export function setupBIRoutes(app: any, authMiddleware: any) {
         if (!dia) return;
         if (!porDiaMap[dia]) porDiaMap[dia] = { ventas: 0, gastos: 0 };
         porDiaMap[dia].ventas += v.total || 0;
-        // Calcular costo de los ítems para estimar gastos
+        // Calcular costo de los ítems para estimar gastos (con clamp anti-cost-poisoning)
         (v.items || []).forEach((item: any) => {
           const prod = productos.find((p: any) => p.id === item.producto_id);
-          const costoU = parseFloat(prod?.precio_compra) || parseFloat(prod?.costo_promedio) ||
-                         parseFloat(prod?.costo_unitario) || 0;
-          porDiaMap[dia].gastos += costoU * (item.cantidad || 0);
+          const { costo } = getCostoUnitarioConfiable(prod);
+          porDiaMap[dia].gastos += costo * (item.cantidad || 0);
         });
       });
       const ventas_por_dia = Object.entries(porDiaMap)
@@ -347,8 +352,11 @@ export function setupBIRoutes(app: any, authMiddleware: any) {
           conteo[key].costo    += costoU * (item.cantidad || 0);
         });
       });
+      // Top 10 por ingresos generados (no por unidades). Antes ordenaba por
+      // unidades pero la UI mostraba columnas de monto/utilidad, lo que era
+      // confuso. Si interesa ranking por unidades, pasar ?order=unidades.
       const top_productos = Object.values(conteo)
-        .sort((a, b) => b.ventas - a.ventas)
+        .sort((a, b) => b.ingresos - a.ingresos)
         .slice(0, 10)
         .map(p => ({
           nombre:   p.nombre,
