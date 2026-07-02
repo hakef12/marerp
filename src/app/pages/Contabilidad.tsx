@@ -969,8 +969,10 @@ export default function Contabilidad() {
                   'contabilidad_asientos',
                 )}
               />
-              <Button onClick={() => setShowAsientoModal(true)}
-                className="bg-gradient-to-r from-green-600 to-green-500">
+              <Button
+                onClick={() => { setTab('contador'); setSubTabContador('asiento'); }}
+                className="bg-gradient-to-r from-green-600 to-green-500"
+                title="Registrar asiento manual con centros de costo y control de deducibilidad">
                 <Plus className="w-4 h-4 mr-2" /> Nuevo Asiento
               </Button>
               <Button
