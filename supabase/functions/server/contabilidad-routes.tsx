@@ -495,19 +495,31 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       const tipo = c.req.query('tipo') as string;
       if (!ref) return c.json({ error: 'Parametro ref requerido' }, 400);
 
-      // Busqueda directa: referencia = ref (asientos automaticos guardan
-      // referencia = id de la transaccion origen)
+      // Busqueda 1: por referencia exacta (patron principal)
       let query = db.from('asientos_contables')
         .select('*')
         .eq('empresa_id', auth.empresaId)
         .eq('referencia', ref)
         .neq('estado', 'anulado')
         .order('created_at', { ascending: false });
-
       if (tipo) query = query.eq('tipo', tipo);
-
-      const { data: asientos, error } = await query;
+      const { data: dataRef, error } = await query;
       if (error) throw error;
+      let asientos = dataRef || [];
+
+      // Busqueda 2 (fallback): descripcion contiene el ref
+      // Util para facturas electronicas donde factura.id != venta.id pero el
+      // numero_factura aparece en la descripcion del asiento.
+      if (asientos.length === 0) {
+        const { data: dataDesc } = await db.from('asientos_contables')
+          .select('*')
+          .eq('empresa_id', auth.empresaId)
+          .ilike('descripcion', `%${ref}%`)
+          .neq('estado', 'anulado')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        asientos = dataDesc || [];
+      }
 
       if (!asientos || asientos.length === 0) {
         return c.json({ asiento: null, mensaje: 'No se encontro asiento para esta referencia' }, 404);

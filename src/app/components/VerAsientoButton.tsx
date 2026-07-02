@@ -92,16 +92,40 @@ export default function VerAsientoButton({ referencia, tipo, label = 'Ver asient
               {loading && <p className="text-gray-500 text-sm text-center py-8">Cargando asiento…</p>}
 
               {error && !loading && (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 flex items-start gap-2">
-                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                  <div>
-                    <strong>No se encontró asiento contable.</strong>
-                    <p className="mt-1 text-xs">
-                      {error}
-                    </p>
-                    <p className="mt-2 text-xs text-amber-700">
-                      Posibles causas: (1) la transacción falló al generar el asiento — revisar logs; (2) la transacción es muy antigua (antes de la implementación de asientos automáticos); (3) el tipo de transacción no genera asiento automático (ej. una simple orden pendiente sin cobro).
-                    </p>
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>No se encontró asiento contable.</strong>
+                      <p className="mt-1 text-xs">{error}</p>
+                      <p className="mt-2 text-xs text-amber-700">
+                        Posibles causas: (1) la transacción falló al generar el asiento — revisar logs; (2) la transacción es muy antigua (antes de la implementación de asientos automáticos); (3) el tipo de transacción no genera asiento automático (ej. una simple orden pendiente sin cobro).
+                      </p>
+                    </div>
+                  </div>
+                  <div className="border-t border-amber-200 pt-3 flex flex-col sm:flex-row gap-2">
+                    <button
+                      onClick={() => {
+                        setOpen(false);
+                        window.location.hash = '#contabilidad-asientos';
+                        // Fallback: forzar recarga si estamos en otra pagina
+                        setTimeout(() => {
+                          if (!window.location.pathname.includes('contabilidad')) {
+                            window.location.href = '/contabilidad#asientos';
+                          }
+                        }, 100);
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-xs font-medium transition-colors"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      Ver todos los asientos (Libro Diario)
+                    </button>
+                    <button
+                      onClick={abrir}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded bg-white hover:bg-amber-50 border border-amber-300 text-amber-800 text-xs font-medium transition-colors"
+                    >
+                      🔄 Reintentar
+                    </button>
                   </div>
                 </div>
               )}
