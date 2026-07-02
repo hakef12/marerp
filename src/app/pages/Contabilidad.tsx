@@ -161,6 +161,55 @@ const TABS: { id: TabType; label: string; icon: any }[] = [
   { id: 'contador',     label: 'Utilidades',           icon: Calculator },
 ];
 
+// Agrupación de tabs en menús desplegables estilo Contífico. Reduce
+// las 14 pestañas horizontales a 5 grupos + dashboard.
+type TabGroup = {
+  label: string;
+  icon: any;
+  primary?: TabType;              // Si tiene primary, click abre esa vista directo
+  items?: { id: TabType; label: string; icon: any }[];  // Si tiene items, dropdown
+};
+const TAB_GROUPS: TabGroup[] = [
+  { label: 'Dashboard', icon: Activity, primary: 'dashboard' },
+  {
+    label: 'Movimientos',
+    icon: FileText,
+    items: [
+      { id: 'asientos', label: 'Asientos (Libro Diario)', icon: FileText },
+      { id: 'mayor',    label: 'Libro Mayor',              icon: Layers },
+      { id: 'cxc',      label: 'Cuentas por Cobrar',       icon: TrendingUp },
+    ],
+  },
+  {
+    label: 'Reportes',
+    icon: TrendingUp,
+    items: [
+      { id: 'balance',    label: 'Balance General',    icon: DollarSign },
+      { id: 'resultados', label: 'Estado Resultados',  icon: TrendingUp },
+      { id: 'flujo',      label: 'Flujo de Efectivo',  icon: Wallet },
+      { id: 'presupuesto',label: 'Presupuesto',        icon: BarChart2 },
+    ],
+  },
+  {
+    label: 'SRI',
+    icon: CreditCard,
+    items: [
+      { id: 'formularios',  label: 'Formularios (104/103/102/101/125)', icon: CreditCard },
+      { id: 'cierres',      label: 'Cierres de Período',                 icon: AlertCircle },
+      { id: 'conciliacion', label: 'Conciliación Bancaria',              icon: CheckCircle },
+    ],
+  },
+  {
+    label: 'Catálogos',
+    icon: BookOpen,
+    items: [
+      { id: 'catalogo', label: 'Plan de Cuentas', icon: BookOpen },
+      { id: 'activos',  label: 'Activos Fijos',    icon: Calculator },
+    ],
+  },
+  { label: 'Utilidades', icon: Calculator, primary: 'contador' },
+];
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Contabilidad() {
@@ -1198,23 +1247,71 @@ export default function Contabilidad() {
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border border-[#F97316]/20 p-2 flex gap-1 overflow-x-auto flex-wrap">
-        {TABS.map(t => {
-          const Icon = t.icon;
+      {/* Tab Navigation — 5 grupos con dropdowns (estilo Contifico) */}
+      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border border-[#F97316]/20 p-2 flex gap-1 flex-wrap relative">
+        {TAB_GROUPS.map((grp, gi) => {
+          const Icon = grp.icon;
+          // Determinar si el grupo tiene el tab activo (para resaltar)
+          const activeInGroup = grp.primary
+            ? tab === grp.primary
+            : grp.items?.some(it => it.id === tab);
+          const activeItem = grp.items?.find(it => it.id === tab);
+
+          // Grupo simple (sin items): botón directo
+          if (grp.primary && !grp.items) {
+            return (
+              <button
+                key={gi}
+                onClick={() => setTab(grp.primary!)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium whitespace-nowrap transition-all text-sm ${
+                  activeInGroup
+                    ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {grp.label}
+              </button>
+            );
+          }
+
+          // Grupo con items: dropdown
           return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium whitespace-nowrap transition-all text-sm ${
-                tab === t.id
-                  ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {t.label}
-            </button>
+            <div key={gi} className="relative group">
+              <button
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium whitespace-nowrap transition-all text-sm ${
+                  activeInGroup
+                    ? 'bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white shadow-lg shadow-[#F97316]/20'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {grp.label}
+                {activeItem && <span className="text-xs opacity-80">· {activeItem.label.split(' ')[0]}</span>}
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+              </button>
+              {/* Dropdown */}
+              <div className="absolute left-0 top-full mt-1 min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible focus-within:opacity-100 focus-within:visible transition-all z-50 py-1">
+                {grp.items!.map(it => {
+                  const ItIcon = it.icon;
+                  const active = tab === it.id;
+                  return (
+                    <button
+                      key={it.id}
+                      onClick={() => setTab(it.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                        active
+                          ? 'bg-[#F97316]/10 text-[#F97316] font-medium'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <ItIcon className="w-4 h-4 shrink-0" />
+                      {it.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </div>
