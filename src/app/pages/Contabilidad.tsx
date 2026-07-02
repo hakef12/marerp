@@ -167,7 +167,7 @@ type TabGroup = {
   label: string;
   icon: any;
   primary?: TabType;              // Si tiene primary, click abre esa vista directo
-  items?: { id: TabType; label: string; icon: any }[];  // Si tiene items, dropdown
+  items?: { id: TabType; label: string; icon: any; subTab?: string }[];  // Si tiene items, dropdown
 };
 const TAB_GROUPS: TabGroup[] = [
   { label: 'Dashboard', icon: Activity, primary: 'dashboard' },
@@ -207,7 +207,15 @@ const TAB_GROUPS: TabGroup[] = [
       { id: 'activos',  label: 'Activos Fijos',    icon: Calculator },
     ],
   },
-  { label: 'Utilidades', icon: Calculator, primary: 'contador' },
+  {
+    label: 'Utilidades',
+    icon: Calculator,
+    items: [
+      { id: 'contador', label: 'Registrar Asiento Manual', icon: FileText,    subTab: 'asiento' },
+      { id: 'contador', label: 'Centros de Costo',          icon: BookOpen,    subTab: 'centros' },
+      { id: 'contador', label: 'Balance de Comprobación',   icon: DollarSign,  subTab: 'comprobacion' },
+    ],
+  },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -1255,7 +1263,11 @@ export default function Contabilidad() {
           const activeInGroup = grp.primary
             ? tab === grp.primary
             : grp.items?.some(it => it.id === tab);
-          const activeItem = grp.items?.find(it => it.id === tab);
+          // Para grupos donde varios items comparten mismo id (Utilidades),
+          // matchear tambien por subTab activo
+          const activeItem = grp.items?.find(it =>
+            it.id === tab && (!it.subTab || subTabContador === it.subTab)
+          );
 
           // Grupo simple (sin items): botón directo
           if (grp.primary && !grp.items) {
@@ -1292,13 +1304,17 @@ export default function Contabilidad() {
               </button>
               {/* Dropdown */}
               <div className="absolute left-0 top-full mt-1 min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible focus-within:opacity-100 focus-within:visible transition-all z-50 py-1">
-                {grp.items!.map(it => {
+                {grp.items!.map((it, ii) => {
                   const ItIcon = it.icon;
-                  const active = tab === it.id;
+                  // Un item esta activo si coincide tab Y (si hay subTab) coincide subTabContador
+                  const active = tab === it.id && (!it.subTab || subTabContador === it.subTab);
                   return (
                     <button
-                      key={it.id}
-                      onClick={() => setTab(it.id)}
+                      key={`${it.id}-${ii}`}
+                      onClick={() => {
+                        setTab(it.id);
+                        if (it.subTab) setSubTabContador(it.subTab as any);
+                      }}
                       className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
                         active
                           ? 'bg-[#F97316]/10 text-[#F97316] font-medium'
