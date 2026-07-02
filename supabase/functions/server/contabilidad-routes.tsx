@@ -495,7 +495,7 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       const tipo = c.req.query('tipo') as string;
       if (!ref) return c.json({ error: 'Parametro ref requerido' }, 400);
 
-      // Busqueda 1: por referencia exacta (patron principal)
+      // Busqueda 1: por referencia exacta (patron principal — id del documento origen)
       let query = db.from('asientos_contables')
         .select('*')
         .eq('empresa_id', auth.empresaId)
@@ -507,9 +507,22 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       if (error) throw error;
       let asientos = dataRef || [];
 
-      // Busqueda 2 (fallback): descripcion contiene el ref
+      // Busqueda 2 (fallback): referencia LIKE %ref% (para casos donde se guardo
+      // con prefijo como "VTA-" o similar)
+      if (asientos.length === 0) {
+        const { data: dataLike } = await db.from('asientos_contables')
+          .select('*')
+          .eq('empresa_id', auth.empresaId)
+          .ilike('referencia', `%${ref}%`)
+          .neq('estado', 'anulado')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        asientos = dataLike || [];
+      }
+
+      // Busqueda 3 (fallback): descripcion contiene el ref
       // Util para facturas electronicas donde factura.id != venta.id pero el
-      // numero_factura aparece en la descripcion del asiento.
+      // venta_id (numero_ticket) aparece en la descripcion del asiento.
       if (asientos.length === 0) {
         const { data: dataDesc } = await db.from('asientos_contables')
           .select('*')
@@ -519,6 +532,19 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
           .order('created_at', { ascending: false })
           .limit(5);
         asientos = dataDesc || [];
+      }
+
+      // Busqueda 4 (fallback): buscar en el JSONB de items (por si el ref
+      // aparece como descripcion de una linea del asiento — muy comun en
+      // asientos automaticos de venta que incluyen 'Cobro venta [num]')
+      if (asientos.length === 0) {
+        const { data: dataItems } = await db.from('asientos_contables')
+          .select('*')
+          .eq('empresa_id', auth.empresaId)
+          .filter('items', 'cs', JSON.stringify([{ descripcion: ref }]))
+          .neq('estado', 'anulado')
+          .limit(5);
+        asientos = dataItems || [];
       }
 
       if (!asientos || asientos.length === 0) {

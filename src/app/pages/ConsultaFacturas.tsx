@@ -677,7 +677,9 @@ export default function ConsultaFacturas() {
                             <Mail className="w-4 h-4" />
                           </Button>
                           <VerAsientoButton
-                            referencia={String((factura as any).id || factura.numero_factura)}
+                            /* factura.venta_id === venta.numero_ticket, que es lo que aparece
+                               en la descripcion del asiento POS ("Venta [numero_ticket]") */
+                            referencia={String((factura as any).venta_id || factura.numero_factura || (factura as any).id)}
                             tipo="venta_pos"
                             label=""
                             size="xs"
