@@ -142,7 +142,7 @@ const TIPO_LABELS: Record<string, string> = {
   ingreso: 'Ingreso', costo: 'Costo', gasto: 'Gasto',
 };
 
-type TabType = 'dashboard' | 'asientos' | 'catalogo' | 'mayor' | 'balance' | 'resultados' | 'flujo' | 'presupuesto' | 'activos' | 'formularios' | 'conciliacion' | 'cierres' | 'cxc';
+type TabType = 'dashboard' | 'asientos' | 'catalogo' | 'mayor' | 'balance' | 'resultados' | 'flujo' | 'presupuesto' | 'activos' | 'formularios' | 'conciliacion' | 'cierres' | 'cxc' | 'contador';
 
 const TABS: { id: TabType; label: string; icon: any }[] = [
   { id: 'dashboard',    label: 'Dashboard',           icon: Activity },
@@ -158,6 +158,7 @@ const TABS: { id: TabType; label: string; icon: any }[] = [
   { id: 'conciliacion', label: 'Conciliación Bancaria', icon: CheckCircle },
   { id: 'cierres',      label: 'Cierres de Período',   icon: AlertCircle },
   { id: 'cxc',          label: 'Cuentas x Cobrar',     icon: TrendingUp },
+  { id: 'contador',     label: '👨‍💼 Contador',           icon: Calculator },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -224,6 +225,126 @@ export default function Contabilidad() {
   // Conciliación tributaria manual para F101 y F102 (anual)
   const [formGastosNoDeducibles, setFormGastosNoDeducibles] = useState<number>(0);
   const [formIngresosExentos,    setFormIngresosExentos]    = useState<number>(0);
+
+  // ── Tab Contador ──────────────────────────────────────────────────────────
+  const [centrosCosto, setCentrosCosto] = useState<any[]>([]);
+  const [nuevoCentro, setNuevoCentro] = useState({ codigo: '', nombre: '', descripcion: '' });
+  const [subTabContador, setSubTabContador] = useState<'centros'|'asiento'|'comprobacion'>('asiento');
+  // Asiento manual
+  const [asientoManual, setAsientoManual] = useState({
+    fecha: new Date().toISOString().split('T')[0],
+    glosa: '',
+    es_deducible: true,
+    items: [
+      { codigo_cuenta: '', debito: 0, credito: 0, centro_costo_id: '', descripcion: '' },
+      { codigo_cuenta: '', debito: 0, credito: 0, centro_costo_id: '', descripcion: '' },
+    ] as { codigo_cuenta: string; debito: number; credito: number; centro_costo_id: string; descripcion: string }[],
+  });
+  const [asientoManualSaving, setAsientoManualSaving] = useState(false);
+  // Balance de Comprobación
+  const [balanceCompFI, setBalanceCompFI] = useState('');
+  const [balanceCompFF, setBalanceCompFF] = useState('');
+  const [balanceCompCentro, setBalanceCompCentro] = useState('');
+  const [balanceComp, setBalanceComp] = useState<any>(null);
+  const [balanceCompLoading, setBalanceCompLoading] = useState(false);
+
+  const loadCentrosCosto = async () => {
+    try {
+      const d = await apiFetch(`${BASE}/contabilidad/centros-costo`, headers);
+      setCentrosCosto(d.centros || []);
+    } catch { /* silencioso */ }
+  };
+  const crearCentroCosto = async () => {
+    if (!nuevoCentro.nombre.trim()) { toast.error('Nombre requerido'); return; }
+    try {
+      await apiFetch(`${BASE}/contabilidad/centros-costo`, headers, { method: 'POST', body: JSON.stringify(nuevoCentro) });
+      toast.success('Centro creado');
+      setNuevoCentro({ codigo: '', nombre: '', descripcion: '' });
+      loadCentrosCosto();
+    } catch (e: any) { toast.error(e.message); }
+  };
+  const eliminarCentroCosto = async (id: string) => {
+    if (!confirm('¿Eliminar este centro de costo?')) return;
+    try {
+      await apiFetch(`${BASE}/contabilidad/centros-costo/${id}`, headers, { method: 'DELETE' });
+      toast.success('Centro eliminado'); loadCentrosCosto();
+    } catch (e: any) { toast.error(e.message); }
+  };
+  const toggleCentroActivo = async (c: any) => {
+    try {
+      await apiFetch(`${BASE}/contabilidad/centros-costo/${c.id}`, headers, {
+        method: 'PUT', body: JSON.stringify({ activo: !c.activo }),
+      });
+      loadCentrosCosto();
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  const asientoManualTotalDB = asientoManual.items.reduce((s, i) => s + Number(i.debito || 0), 0);
+  const asientoManualTotalCR = asientoManual.items.reduce((s, i) => s + Number(i.credito || 0), 0);
+  const asientoManualBalanceado = Math.abs(asientoManualTotalDB - asientoManualTotalCR) < 0.01 && asientoManualTotalDB > 0;
+
+  const agregarFilaAsiento = () => {
+    setAsientoManual(a => ({
+      ...a,
+      items: [...a.items, { codigo_cuenta: '', debito: 0, credito: 0, centro_costo_id: '', descripcion: '' }],
+    }));
+  };
+  const quitarFilaAsiento = (idx: number) => {
+    setAsientoManual(a => ({ ...a, items: a.items.filter((_, i) => i !== idx) }));
+  };
+  const setFilaAsiento = (idx: number, patch: any) => {
+    setAsientoManual(a => ({
+      ...a,
+      items: a.items.map((it, i) => i === idx ? { ...it, ...patch } : it),
+    }));
+  };
+  const guardarAsientoManual = async () => {
+    if (!asientoManual.glosa.trim()) { toast.error('La glosa es obligatoria'); return; }
+    if (!asientoManualBalanceado) { toast.error('El asiento no está balanceado (Debe ≠ Haber)'); return; }
+    const itemsValidos = asientoManual.items.filter(it => it.codigo_cuenta && (Number(it.debito) > 0 || Number(it.credito) > 0));
+    if (itemsValidos.length < 2) { toast.error('Se requieren al menos 2 líneas con cuenta y monto'); return; }
+    setAsientoManualSaving(true);
+    try {
+      const r = await apiFetch(`${BASE}/contabilidad/asiento-manual`, headers, {
+        method: 'POST',
+        body: JSON.stringify({
+          fecha: asientoManual.fecha,
+          glosa: asientoManual.glosa,
+          es_deducible: asientoManual.es_deducible,
+          items: itemsValidos.map(it => ({
+            codigo_cuenta: it.codigo_cuenta,
+            debito: Number(it.debito || 0),
+            credito: Number(it.credito || 0),
+            centro_costo_id: it.centro_costo_id || null,
+            descripcion: it.descripcion || asientoManual.glosa,
+          })),
+        }),
+      });
+      toast.success(`Asiento ${r.asiento?.numero} guardado`);
+      setAsientoManual({
+        fecha: new Date().toISOString().split('T')[0],
+        glosa: '', es_deducible: true,
+        items: [
+          { codigo_cuenta: '', debito: 0, credito: 0, centro_costo_id: '', descripcion: '' },
+          { codigo_cuenta: '', debito: 0, credito: 0, centro_costo_id: '', descripcion: '' },
+        ],
+      });
+    } catch (e: any) { toast.error(e.message); }
+    finally { setAsientoManualSaving(false); }
+  };
+
+  const cargarBalanceComprobacion = async () => {
+    setBalanceCompLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (balanceCompFI) params.set('fecha_inicio', balanceCompFI);
+      if (balanceCompFF) params.set('fecha_fin', balanceCompFF);
+      if (balanceCompCentro) params.set('centro_costo_id', balanceCompCentro);
+      const d = await apiFetch(`${BASE}/contabilidad/balance-comprobacion?${params}`, headers);
+      setBalanceComp(d);
+    } catch (e: any) { toast.error(e.message); }
+    finally { setBalanceCompLoading(false); }
+  };
 
   // ── Cuentas por Cobrar ───────────────────────────────────────────────────
   const [cxcData, setCxcData]               = useState<any>(null);
@@ -551,6 +672,7 @@ export default function Contabilidad() {
     if (tab === 'conciliacion') loadConciliaciones();
     if (tab === 'cierres')      loadPeriodos();
     if (tab === 'cxc')          loadCxC();
+    if (tab === 'contador')     loadCentrosCosto();
   }, [tab]);
 
   useEffect(() => {
@@ -2060,6 +2182,303 @@ export default function Contabilidad() {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          TAB: CONTADOR (Centros de Costo + Asiento Manual + Balance Comp.)
+         ══════════════════════════════════════════════════════════════════ */}
+      {tab === 'contador' && (
+        <div className="space-y-4">
+          {/* Sub-tabs */}
+          <div className="flex gap-2 border-b border-gray-200">
+            {[
+              { id: 'asiento',       label: '📝 Registrar Asiento' },
+              { id: 'centros',       label: '🏢 Centros de Costo' },
+              { id: 'comprobacion',  label: '📊 Balance de Comprobación' },
+            ].map((s: any) => (
+              <button key={s.id} onClick={() => setSubTabContador(s.id)}
+                className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  subTabContador === s.id ? 'border-[#F97316] text-[#F97316]' : 'border-transparent text-gray-500 hover:text-gray-900'
+                }`}>{s.label}</button>
+            ))}
+          </div>
+
+          {/* ── Sub-tab: Registrar Asiento Manual ── */}
+          {subTabContador === 'asiento' && (
+            <Card className="bg-white border-[#F97316]/20">
+              <CardHeader>
+                <CardTitle className="text-gray-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-[#F97316]" /> Registrar Asiento Manual
+                </CardTitle>
+                <p className="text-xs text-gray-500">
+                  Contabilidad de partida doble. Debe = Haber. Podés asignar centro de costo por línea y marcar el asiento como no deducible.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-600 block mb-1">Fecha</label>
+                    <Input type="date" value={asientoManual.fecha}
+                      onChange={e => setAsientoManual(a => ({ ...a, fecha: e.target.value }))}
+                      className="bg-white border-[#F97316]/20 text-gray-900" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-xs text-gray-600 block mb-1">Glosa (descripción del asiento) *</label>
+                    <Input placeholder="Ej: Provisión gastos servicios básicos noviembre"
+                      value={asientoManual.glosa}
+                      onChange={e => setAsientoManual(a => ({ ...a, glosa: e.target.value }))}
+                      className="bg-white border-[#F97316]/20 text-gray-900" />
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!asientoManual.es_deducible}
+                    onChange={e => setAsientoManual(a => ({ ...a, es_deducible: !e.target.checked }))}
+                    className="w-4 h-4 accent-red-500" />
+                  <span className="text-sm text-gray-700">
+                    <strong className="text-red-600">Gasto NO Deducible</strong> (no se resta de la base imponible en F-101/F-102)
+                  </span>
+                </label>
+
+                {/* Tabla de líneas */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left py-2 px-2 text-gray-600 font-medium w-32">Cuenta *</th>
+                        <th className="text-left py-2 px-2 text-gray-600 font-medium">Descripción</th>
+                        <th className="text-right py-2 px-2 text-gray-600 font-medium w-24">Debe</th>
+                        <th className="text-right py-2 px-2 text-gray-600 font-medium w-24">Haber</th>
+                        <th className="text-left py-2 px-2 text-gray-600 font-medium w-32">Centro Costo</th>
+                        <th className="w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {asientoManual.items.map((it, idx) => (
+                        <tr key={idx} className="border-b border-gray-100">
+                          <td className="py-1 px-2">
+                            <Input list="cuentas-list" value={it.codigo_cuenta}
+                              onChange={e => setFilaAsiento(idx, { codigo_cuenta: e.target.value })}
+                              placeholder="Código"
+                              className="bg-white border-[#F97316]/20 text-gray-900 h-8 text-xs font-mono" />
+                          </td>
+                          <td className="py-1 px-2">
+                            <Input value={it.descripcion}
+                              onChange={e => setFilaAsiento(idx, { descripcion: e.target.value })}
+                              placeholder="Opcional"
+                              className="bg-white border-[#F97316]/20 text-gray-900 h-8 text-xs" />
+                          </td>
+                          <td className="py-1 px-2">
+                            <Input type="number" step="0.01" min="0" value={it.debito || ''}
+                              onChange={e => setFilaAsiento(idx, { debito: Number(e.target.value) || 0, credito: 0 })}
+                              className="bg-white border-[#F97316]/20 text-gray-900 h-8 text-xs text-right font-mono" />
+                          </td>
+                          <td className="py-1 px-2">
+                            <Input type="number" step="0.01" min="0" value={it.credito || ''}
+                              onChange={e => setFilaAsiento(idx, { credito: Number(e.target.value) || 0, debito: 0 })}
+                              className="bg-white border-[#F97316]/20 text-gray-900 h-8 text-xs text-right font-mono" />
+                          </td>
+                          <td className="py-1 px-2">
+                            <select value={it.centro_costo_id}
+                              onChange={e => setFilaAsiento(idx, { centro_costo_id: e.target.value })}
+                              className="w-full h-8 rounded border border-[#F97316]/20 bg-white text-gray-900 px-1 text-xs">
+                              <option value="">—</option>
+                              {centrosCosto.filter((c: any) => c.activo).map((c: any) => (
+                                <option key={c.id} value={c.id}>{c.nombre}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-1 px-1 text-center">
+                            {asientoManual.items.length > 2 && (
+                              <button type="button" onClick={() => quitarFilaAsiento(idx)}
+                                className="text-red-500 hover:text-red-700 text-lg leading-none">×</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+                        <td colSpan={2} className="py-2 px-2 text-right text-gray-700">TOTAL:</td>
+                        <td className="py-2 px-2 text-right font-mono text-gray-900">${asientoManualTotalDB.toFixed(2)}</td>
+                        <td className="py-2 px-2 text-right font-mono text-gray-900">${asientoManualTotalCR.toFixed(2)}</td>
+                        <td colSpan={2} className={`py-2 px-2 text-center text-xs ${asientoManualBalanceado ? 'text-green-600' : 'text-red-600'}`}>
+                          {asientoManualBalanceado ? '✓ Balanceado' : `✗ Diferencia: $${Math.abs(asientoManualTotalDB - asientoManualTotalCR).toFixed(2)}`}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <datalist id="cuentas-list">
+                    {cuentas.filter((c: any) => !c.es_grupo).map((c: any) => (
+                      <option key={c.id} value={c.codigo}>{c.codigo} — {c.nombre}</option>
+                    ))}
+                  </datalist>
+                </div>
+
+                <div className="flex gap-2 justify-between">
+                  <Button variant="outline" size="sm" onClick={agregarFilaAsiento}
+                    className="border-[#F97316]/30 text-[#F97316] hover:bg-[#F97316]/10">
+                    + Agregar línea
+                  </Button>
+                  <Button onClick={guardarAsientoManual} disabled={asientoManualSaving || !asientoManualBalanceado}
+                    className="bg-gradient-to-r from-[#C2410C] to-[#F97316] text-white">
+                    {asientoManualSaving ? 'Guardando...' : '💾 Guardar asiento'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Sub-tab: Centros de Costo ── */}
+          {subTabContador === 'centros' && (
+            <Card className="bg-white border-[#F97316]/20">
+              <CardHeader>
+                <CardTitle className="text-gray-900">🏢 Centros de Costo</CardTitle>
+                <p className="text-xs text-gray-500">
+                  Dimensiones para asignar movimientos por sucursal, proyecto o área. Se pueden usar en asientos, compras y ventas.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2 items-end p-3 bg-gray-50 rounded border border-[#F97316]/20">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-600 block mb-1">Código</label>
+                    <Input value={nuevoCentro.codigo} onChange={e => setNuevoCentro(v => ({ ...v, codigo: e.target.value }))}
+                      placeholder="Auto (CC001)" className="bg-white border-[#F97316]/20 text-gray-900 h-9" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-600 block mb-1">Nombre *</label>
+                    <Input value={nuevoCentro.nombre} onChange={e => setNuevoCentro(v => ({ ...v, nombre: e.target.value }))}
+                      placeholder="Ej: Sucursal Machachi" className="bg-white border-[#F97316]/20 text-gray-900 h-9" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-600 block mb-1">Descripción</label>
+                    <Input value={nuevoCentro.descripcion} onChange={e => setNuevoCentro(v => ({ ...v, descripcion: e.target.value }))}
+                      placeholder="Opcional" className="bg-white border-[#F97316]/20 text-gray-900 h-9" />
+                  </div>
+                  <Button onClick={crearCentroCosto} className="bg-[#F97316] hover:bg-[#C2410C] text-white h-9">
+                    + Crear
+                  </Button>
+                </div>
+
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left py-2 px-3 text-gray-600 font-medium">Código</th>
+                      <th className="text-left py-2 px-3 text-gray-600 font-medium">Nombre</th>
+                      <th className="text-left py-2 px-3 text-gray-600 font-medium">Descripción</th>
+                      <th className="text-center py-2 px-3 text-gray-600 font-medium">Activo</th>
+                      <th className="w-24"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {centrosCosto.length === 0 && (
+                      <tr><td colSpan={5} className="text-center py-8 text-gray-400">
+                        No hay centros de costo. Creá uno arriba (típico: Sucursal Norte, Sucursal Sur, etc.)
+                      </td></tr>
+                    )}
+                    {centrosCosto.map((c: any) => (
+                      <tr key={c.id} className="border-b border-gray-100">
+                        <td className="py-2 px-3 font-mono text-xs">{c.codigo}</td>
+                        <td className="py-2 px-3 font-medium">{c.nombre}</td>
+                        <td className="py-2 px-3 text-gray-500 text-xs">{c.descripcion || '—'}</td>
+                        <td className="py-2 px-3 text-center">
+                          <button onClick={() => toggleCentroActivo(c)}
+                            className={`text-xs px-2 py-1 rounded ${c.activo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {c.activo ? '✓ Activo' : '○ Inactivo'}
+                          </button>
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <button onClick={() => eliminarCentroCosto(c.id)}
+                            className="text-red-500 hover:text-red-700 text-xs">Eliminar</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Sub-tab: Balance de Comprobación ── */}
+          {subTabContador === 'comprobacion' && (
+            <Card className="bg-white border-[#F97316]/20">
+              <CardHeader>
+                <CardTitle className="text-gray-900">📊 Balance de Comprobación</CardTitle>
+                <p className="text-xs text-gray-500">
+                  Lista todas las cuentas con sus movimientos del período. La suma total de Debe debe igualar la suma total de Haber (partida doble).
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div>
+                    <label className="text-xs text-gray-600 block mb-1">Desde</label>
+                    <Input type="date" value={balanceCompFI} onChange={e => setBalanceCompFI(e.target.value)}
+                      className="bg-white border-[#F97316]/20 text-gray-900 h-9" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 block mb-1">Hasta</label>
+                    <Input type="date" value={balanceCompFF} onChange={e => setBalanceCompFF(e.target.value)}
+                      className="bg-white border-[#F97316]/20 text-gray-900 h-9" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 block mb-1">Centro de Costo</label>
+                    <select value={balanceCompCentro} onChange={e => setBalanceCompCentro(e.target.value)}
+                      className="h-9 rounded border border-[#F97316]/20 bg-white text-gray-900 px-2 text-sm">
+                      <option value="">Todos</option>
+                      {centrosCosto.filter((c: any) => c.activo).map((c: any) => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <Button onClick={cargarBalanceComprobacion} disabled={balanceCompLoading}
+                    className="bg-[#F97316] hover:bg-[#C2410C] text-white h-9">
+                    {balanceCompLoading ? 'Cargando...' : 'Generar'}
+                  </Button>
+                </div>
+
+                {balanceComp && (
+                  <>
+                    <div className={`p-3 rounded border ${balanceComp.totales.balanceado_movimientos ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'} text-sm`}>
+                      {balanceComp.totales.balanceado_movimientos ? '✅' : '❌'} <strong>Verificación partida doble:</strong>{' '}
+                      Debe ${balanceComp.totales.total_debito.toFixed(2)} = Haber ${balanceComp.totales.total_credito.toFixed(2)}
+                    </div>
+                    <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="text-left py-2 px-2 text-gray-600 font-medium">Código</th>
+                            <th className="text-left py-2 px-2 text-gray-600 font-medium">Cuenta</th>
+                            <th className="text-right py-2 px-2 text-gray-600 font-medium">Debe</th>
+                            <th className="text-right py-2 px-2 text-gray-600 font-medium">Haber</th>
+                            <th className="text-right py-2 px-2 text-gray-600 font-medium">Saldo Deudor</th>
+                            <th className="text-right py-2 px-2 text-gray-600 font-medium">Saldo Acreedor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {balanceComp.cuentas.map((r: any) => (
+                            <tr key={r.cuenta_id} className="border-b border-gray-100">
+                              <td className="py-1 px-2 font-mono text-xs">{r.codigo}</td>
+                              <td className="py-1 px-2 text-xs">{r.nombre}</td>
+                              <td className="py-1 px-2 text-right font-mono text-xs">{r.debito > 0 ? `$${r.debito.toFixed(2)}` : '—'}</td>
+                              <td className="py-1 px-2 text-right font-mono text-xs">{r.credito > 0 ? `$${r.credito.toFixed(2)}` : '—'}</td>
+                              <td className="py-1 px-2 text-right font-mono text-xs">{r.saldo_deudor > 0 ? `$${r.saldo_deudor.toFixed(2)}` : '—'}</td>
+                              <td className="py-1 px-2 text-right font-mono text-xs">{r.saldo_acreedor > 0 ? `$${r.saldo_acreedor.toFixed(2)}` : '—'}</td>
+                            </tr>
+                          ))}
+                          <tr className="bg-gray-100 border-t-2 border-gray-400 font-bold">
+                            <td colSpan={2} className="py-2 px-2 text-right">TOTALES:</td>
+                            <td className="py-2 px-2 text-right font-mono">${balanceComp.totales.total_debito.toFixed(2)}</td>
+                            <td className="py-2 px-2 text-right font-mono">${balanceComp.totales.total_credito.toFixed(2)}</td>
+                            <td className="py-2 px-2 text-right font-mono">${balanceComp.totales.total_saldo_deudor.toFixed(2)}</td>
+                            <td className="py-2 px-2 text-right font-mono">${balanceComp.totales.total_saldo_acreedor.toFixed(2)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 

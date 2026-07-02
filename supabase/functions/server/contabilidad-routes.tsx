@@ -8,6 +8,7 @@ import {
   obtenerAsientos, guardarAsiento,
   obtenerPresupuesto, guardarPresupuesto,
 } from "./kv-helpers.tsx";
+import * as kv from "./kv_store.tsx";
 
 const getDB = () => createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -170,7 +171,7 @@ const PLAN_CONTABLE_ECUADOR = [
 
 // ─── Helper: calcular saldos desde asientos ──────────────────────────────────
 
-function calcularSaldosCuentas(cuentas: any[], asientos: any[], fechaInicio?: string, fechaFin?: string) {
+function calcularSaldosCuentas(cuentas: any[], asientos: any[], fechaInicio?: string, fechaFin?: string, centroCostoId?: string | null) {
   const saldos: Record<string, number> = {};
 
   const asientosFiltrados = asientos.filter((a: any) => {
@@ -182,6 +183,8 @@ function calcularSaldosCuentas(cuentas: any[], asientos: any[], fechaInicio?: st
 
   for (const asiento of asientosFiltrados) {
     for (const item of (asiento.items || [])) {
+      // Filtrar por centro de costo si se especifico
+      if (centroCostoId && item.centro_costo_id !== centroCostoId) continue;
       const cuentaId = item.cuenta_id;
       if (!saldos[cuentaId]) saldos[cuentaId] = 0;
       const cuenta = cuentas.find((c: any) => c.id === cuentaId);
@@ -291,6 +294,273 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
     } catch (e: any) {
       return c.json({ error: e.message }, 500);
     }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // CENTROS DE COSTO
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // Los centros de costo permiten dimensionar movimientos contables por
+  // sucursal, proyecto o área. Al crear un asiento manual o registrar una
+  // compra, se puede asignar cada línea a un centro. Los reportes
+  // (Estado de Resultados, Balance) pueden filtrarse por centro.
+  //
+  // Almacenados en kv_store bajo clave `empresa_<id>_centros_costo`.
+
+  const CENTROS_COSTO_KEY = (empresaId: string) => `empresa_${empresaId}_centros_costo`;
+
+  const obtenerCentrosCosto = async (empresaId: string): Promise<any[]> => {
+    try {
+      const centros = await kv.get(CENTROS_COSTO_KEY(empresaId));
+      return Array.isArray(centros) ? centros : [];
+    } catch { return []; }
+  };
+
+  const guardarCentrosCosto = async (empresaId: string, centros: any[]): Promise<void> => {
+    await kv.set(CENTROS_COSTO_KEY(empresaId), centros);
+  };
+
+  // GET /contabilidad/centros-costo
+  app.get("/server/contabilidad/centros-costo", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const centros = await obtenerCentrosCosto(auth.empresaId);
+      return c.json({ centros });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // POST /contabilidad/centros-costo — crear
+  app.post("/server/contabilidad/centros-costo", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const { codigo, nombre, descripcion, activo } = await c.req.json();
+      if (!nombre) return c.json({ error: 'Nombre requerido' }, 400);
+      const centros = await obtenerCentrosCosto(auth.empresaId);
+      const codigoFinal = codigo || `CC${String(centros.length + 1).padStart(3, '0')}`;
+      if (centros.some((cc: any) => cc.codigo === codigoFinal)) {
+        return c.json({ error: `Ya existe un centro con codigo ${codigoFinal}` }, 400);
+      }
+      const nuevo = {
+        id: crypto.randomUUID(),
+        codigo: codigoFinal,
+        nombre,
+        descripcion: descripcion || '',
+        activo: activo !== false,
+        created_at: new Date().toISOString(),
+      };
+      centros.push(nuevo);
+      await guardarCentrosCosto(auth.empresaId, centros);
+      return c.json({ centro: nuevo });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // PUT /contabilidad/centros-costo/:id — editar
+  app.put("/server/contabilidad/centros-costo/:id", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const id = c.req.param('id');
+      const body = await c.req.json();
+      const centros = await obtenerCentrosCosto(auth.empresaId);
+      const idx = centros.findIndex((cc: any) => cc.id === id);
+      if (idx < 0) return c.json({ error: 'Centro no encontrado' }, 404);
+      centros[idx] = { ...centros[idx], ...body, id: centros[idx].id, updated_at: new Date().toISOString() };
+      await guardarCentrosCosto(auth.empresaId, centros);
+      return c.json({ centro: centros[idx] });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // DELETE /contabilidad/centros-costo/:id
+  app.delete("/server/contabilidad/centros-costo/:id", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const id = c.req.param('id');
+      const centros = await obtenerCentrosCosto(auth.empresaId);
+      const filtrados = centros.filter((cc: any) => cc.id !== id);
+      if (filtrados.length === centros.length) {
+        return c.json({ error: 'Centro no encontrado' }, 404);
+      }
+      await guardarCentrosCosto(auth.empresaId, filtrados);
+      return c.json({ ok: true });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ASIENTO MANUAL (Contifico-style)
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // Body: {
+  //   fecha: 'YYYY-MM-DD',
+  //   glosa: string (requerido),
+  //   es_deducible: boolean (default true; false = gasto no deducible SRI),
+  //   items: [{ codigo_cuenta, debito, credito, centro_costo_id?, descripcion? }]
+  // }
+  //
+  // Valida partida doble antes de guardar.
+  app.post("/server/contabilidad/asiento-manual", authMiddleware, async (c: any) => {
+    const auth = c.get('auth'); const db = getDB();
+    try {
+      const { fecha, glosa, es_deducible, items } = await c.req.json();
+      if (!glosa) return c.json({ error: 'La glosa es obligatoria' }, 400);
+      if (!Array.isArray(items) || items.length < 2) {
+        return c.json({ error: 'Se requieren al menos 2 lineas' }, 400);
+      }
+
+      // Resolver cuenta_id por codigo
+      const cuentas = await obtenerCuentas(auth.empresaId);
+      const r2 = (n: number) => Math.round(Number(n || 0) * 100) / 100;
+      const centros = await obtenerCentrosCosto(auth.empresaId);
+      const itemsProcesados: any[] = [];
+      for (const it of items) {
+        const cuenta = cuentas.find((cc: any) => cc.codigo === it.codigo_cuenta);
+        if (!cuenta) return c.json({ error: `Cuenta no encontrada: ${it.codigo_cuenta}` }, 400);
+        const debito = r2(it.debito || 0);
+        const credito = r2(it.credito || 0);
+        if (debito < 0 || credito < 0) return c.json({ error: 'Valores no pueden ser negativos' }, 400);
+        if (debito === 0 && credito === 0) continue; // ignorar filas vacias
+        if (debito > 0 && credito > 0) {
+          return c.json({ error: `Fila ${it.codigo_cuenta}: no puede tener debito y credito a la vez` }, 400);
+        }
+        const centro = it.centro_costo_id ? centros.find((cc: any) => cc.id === it.centro_costo_id) : null;
+        itemsProcesados.push({
+          cuenta_id: cuenta.id,
+          cuenta_codigo: cuenta.codigo,
+          cuenta_nombre: cuenta.nombre,
+          debito, credito,
+          descripcion: it.descripcion || glosa,
+          centro_costo_id: it.centro_costo_id || null,
+          centro_costo_codigo: centro?.codigo || null,
+          centro_costo_nombre: centro?.nombre || null,
+        });
+      }
+
+      const totalDebito = r2(itemsProcesados.reduce((s, i) => s + i.debito, 0));
+      const totalCredito = r2(itemsProcesados.reduce((s, i) => s + i.credito, 0));
+      if (Math.abs(totalDebito - totalCredito) > 0.01) {
+        return c.json({
+          error: `Asiento desbalanceado: Debe $${totalDebito.toFixed(2)} vs Haber $${totalCredito.toFixed(2)}`,
+        }, 400);
+      }
+
+      // Verificar periodo abierto
+      const fechaAsiento = fecha || new Date().toISOString().split('T')[0];
+      const [anio, mes] = fechaAsiento.split('-').map(Number);
+      const { data: periodo } = await db.from('periodos_contables')
+        .select('estado').eq('empresa_id', auth.empresaId)
+        .eq('anio', anio).eq('mes', mes).maybeSingle();
+      if (periodo?.estado === 'cerrado') {
+        return c.json({ error: `Periodo ${mes}/${anio} esta cerrado — no se aceptan asientos` }, 409);
+      }
+
+      const year = new Date().getFullYear();
+      const { count: cnt } = await db.from('asientos_contables')
+        .select('*', { count: 'exact', head: true }).eq('empresa_id', auth.empresaId)
+        .like('numero', `ASI-${year}%`);
+      const numero = `ASI-${year}-${String((cnt || 0) + 1).padStart(4, '0')}`;
+
+      const asiento = await guardarAsiento(auth.empresaId, {
+        tipo: 'manual',
+        descripcion: glosa,
+        referencia: `MAN-${Date.now()}`,
+        fecha: fechaAsiento,
+        estado: 'activo',
+        numero,
+        origen_automatico: false,
+        items: itemsProcesados,
+        total_debito: totalDebito,
+        total_credito: totalCredito,
+        metadata: {
+          es_deducible: es_deducible !== false,
+          glosa,
+        },
+      });
+
+      return c.json({ ok: true, asiento });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // BALANCE DE COMPROBACION
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // Reporte contable estandar: lista todas las cuentas con sus totales de
+  // Debe y Haber (movimientos del periodo), y el saldo final.
+  // La suma total de Debe debe igualar la suma total de Haber (partida doble).
+  //
+  // Query params:
+  //   fecha_inicio, fecha_fin (opcionales)
+  //   centro_costo_id (opcional, filtra por centro)
+  //   incluir_ceros (default false)
+  app.get("/server/contabilidad/balance-comprobacion", authMiddleware, async (c: any) => {
+    const auth = c.get('auth');
+    try {
+      const q = c.req.query() as any;
+      const fi = q.fecha_inicio || null;
+      const ff = q.fecha_fin || null;
+      const centroFiltro = q.centro_costo_id || null;
+      const incluirCeros = q.incluir_ceros === 'true';
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+
+      const cuentas = await obtenerCuentas(auth.empresaId);
+      const asientos = await obtenerAsientos(auth.empresaId);
+
+      // Acumular DB/CR por cuenta con filtros de fecha y centro
+      const totales: Record<string, { debito: number; credito: number }> = {};
+      for (const a of asientos) {
+        if (a.estado === 'anulado') continue;
+        if (fi && a.fecha < fi) continue;
+        if (ff && a.fecha > ff) continue;
+        for (const it of (a.items || [])) {
+          if (centroFiltro && it.centro_costo_id !== centroFiltro) continue;
+          if (!it.cuenta_id) continue;
+          if (!totales[it.cuenta_id]) totales[it.cuenta_id] = { debito: 0, credito: 0 };
+          totales[it.cuenta_id].debito  += Number(it.debito  || 0);
+          totales[it.cuenta_id].credito += Number(it.credito || 0);
+        }
+      }
+
+      const filas = cuentas
+        .filter((ct: any) => !ct.es_grupo)
+        .map((ct: any) => {
+          const tot = totales[ct.id] || { debito: 0, credito: 0 };
+          const debito = r2(tot.debito);
+          const credito = r2(tot.credito);
+          // Saldo segun naturaleza
+          const saldoRaw = ct.naturaleza === 'deudora' ? debito - credito : credito - debito;
+          const saldo = r2(saldoRaw);
+          return {
+            cuenta_id: ct.id,
+            codigo: ct.codigo,
+            nombre: ct.nombre,
+            tipo: ct.tipo,
+            naturaleza: ct.naturaleza,
+            debito, credito,
+            saldo,
+            // Para reporte tradicional, saldo se muestra en columna deudora o acreedora
+            saldo_deudor:   saldo >= 0 && ct.naturaleza === 'deudora'   ? saldo : (saldo < 0 && ct.naturaleza === 'acreedora' ? -saldo : 0),
+            saldo_acreedor: saldo >= 0 && ct.naturaleza === 'acreedora' ? saldo : (saldo < 0 && ct.naturaleza === 'deudora'   ? -saldo : 0),
+          };
+        })
+        .filter((r: any) => incluirCeros || r.debito !== 0 || r.credito !== 0);
+
+      const totalDebito   = r2(filas.reduce((s: number, r: any) => s + r.debito, 0));
+      const totalCredito  = r2(filas.reduce((s: number, r: any) => s + r.credito, 0));
+      const totalSaldoDeudor   = r2(filas.reduce((s: number, r: any) => s + r.saldo_deudor, 0));
+      const totalSaldoAcreedor = r2(filas.reduce((s: number, r: any) => s + r.saldo_acreedor, 0));
+
+      return c.json({
+        periodo: { fi, ff },
+        centro_costo_id: centroFiltro,
+        cuentas: filas.sort((a: any, b: any) => a.codigo.localeCompare(b.codigo)),
+        totales: {
+          total_debito:  totalDebito,
+          total_credito: totalCredito,
+          total_saldo_deudor:   totalSaldoDeudor,
+          total_saldo_acreedor: totalSaldoAcreedor,
+          balanceado_movimientos: Math.abs(totalDebito - totalCredito) <= 0.01,
+          balanceado_saldos:      Math.abs(totalSaldoDeudor - totalSaldoAcreedor) <= 0.01,
+        },
+      });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
   });
 
   app.post("/server/contabilidad/cuentas", authMiddleware, async (c: any) => {
@@ -628,10 +898,10 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
   app.get("/server/contabilidad/reportes/balance", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
-      const { fecha_hasta } = c.req.query() as any;
+      const { fecha_hasta, centro_costo_id } = c.req.query() as any;
       const cuentas = await obtenerCuentas(auth.empresaId);
       const asientos = await obtenerAsientos(auth.empresaId);
-      const saldos = calcularSaldosCuentas(cuentas, asientos, undefined, fecha_hasta);
+      const saldos = calcularSaldosCuentas(cuentas, asientos, undefined, fecha_hasta, centro_costo_id || null);
 
       const cuentasConSaldo = cuentas.map((ct: any) => ({
         ...ct,
@@ -658,10 +928,10 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
   app.get("/server/contabilidad/reportes/resultados", authMiddleware, async (c: any) => {
     const auth = c.get('auth');
     try {
-      const { fecha_inicio, fecha_fin } = c.req.query() as any;
+      const { fecha_inicio, fecha_fin, centro_costo_id } = c.req.query() as any;
       const cuentas = await obtenerCuentas(auth.empresaId);
       const asientos = await obtenerAsientos(auth.empresaId);
-      const saldos = calcularSaldosCuentas(cuentas, asientos, fecha_inicio, fecha_fin);
+      const saldos = calcularSaldosCuentas(cuentas, asientos, fecha_inicio, fecha_fin, centro_costo_id || null);
 
       const totalIngreso = cuentas.filter((ct: any) => ct.tipo === 'ingreso' && !ct.es_grupo)
         .reduce((s: number, ct: any) => s + (saldos[ct.id] || 0), 0);
