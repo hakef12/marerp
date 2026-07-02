@@ -496,14 +496,15 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
       if (!ref) return c.json({ error: 'Parametro ref requerido' }, 400);
 
       // Busqueda 1: por referencia exacta (patron principal — id del documento origen)
-      let query = db.from('asientos_contables')
+      // Nota: NO filtramos por tipo aqui porque el asiento puede haber sido
+      // guardado con distintas variantes ('venta', 'venta_pos', 'venta_credito', etc.)
+      // El parametro 'tipo' se usa solo como hint para el frontend, no para filtrar.
+      const { data: dataRef, error } = await db.from('asientos_contables')
         .select('*')
         .eq('empresa_id', auth.empresaId)
         .eq('referencia', ref)
         .neq('estado', 'anulado')
         .order('created_at', { ascending: false });
-      if (tipo) query = query.eq('tipo', tipo);
-      const { data: dataRef, error } = await query;
       if (error) throw error;
       let asientos = dataRef || [];
 
