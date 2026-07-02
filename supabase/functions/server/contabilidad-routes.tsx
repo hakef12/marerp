@@ -479,6 +479,69 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
   });
 
   // ══════════════════════════════════════════════════════════════════════
+  // ASIENTO POR REFERENCIA (para trazabilidad estilo Contifico)
+  // ══════════════════════════════════════════════════════════════════════
+  //
+  // Devuelve el asiento contable generado por una transaccion de negocio
+  // (venta POS, compra, nomina, pago proveedor, etc.). Se busca en dos formas:
+  //   1) Por `referencia` exacta (id del documento origen)
+  //   2) Por metadata.origen_id si esta guardado ahi
+  //
+  // Query: ?ref=<id> (obligatorio) &tipo=<opcional para filtrar por tipo>
+  app.get("/server/contabilidad/asiento-por-referencia", authMiddleware, async (c: any) => {
+    const auth = c.get('auth'); const db = getDB();
+    try {
+      const ref = c.req.query('ref') as string;
+      const tipo = c.req.query('tipo') as string;
+      if (!ref) return c.json({ error: 'Parametro ref requerido' }, 400);
+
+      // Busqueda directa: referencia = ref (asientos automaticos guardan
+      // referencia = id de la transaccion origen)
+      let query = db.from('asientos_contables')
+        .select('*')
+        .eq('empresa_id', auth.empresaId)
+        .eq('referencia', ref)
+        .neq('estado', 'anulado')
+        .order('created_at', { ascending: false });
+
+      if (tipo) query = query.eq('tipo', tipo);
+
+      const { data: asientos, error } = await query;
+      if (error) throw error;
+
+      if (!asientos || asientos.length === 0) {
+        return c.json({ asiento: null, mensaje: 'No se encontro asiento para esta referencia' }, 404);
+      }
+
+      // Enriquecer items con nombres de cuenta (por si la vista no los tiene)
+      const cuentas = await obtenerCuentas(auth.empresaId);
+      const enriquecerItems = (items: any[]) => (items || []).map((it: any) => {
+        const cta = cuentas.find((c: any) => c.id === it.cuenta_id || c.codigo === it.cuenta_codigo);
+        return {
+          ...it,
+          cuenta_codigo: it.cuenta_codigo || cta?.codigo,
+          cuenta_nombre: it.cuenta_nombre || cta?.nombre,
+        };
+      });
+
+      const asiento = asientos[0];
+      return c.json({
+        asiento: {
+          ...asiento,
+          items: enriquecerItems(asiento.items || []),
+        },
+        // Si hay mas de un asiento con esa referencia (ej. venta + anulacion),
+        // devolver todos para que el frontend muestre historial.
+        historial: asientos.length > 1 ? asientos.map((a: any) => ({
+          id: a.id, numero: a.numero, fecha: a.fecha, tipo: a.tipo, descripcion: a.descripcion,
+          total_debito: a.total_debito, total_credito: a.total_credito,
+          items: enriquecerItems(a.items || []),
+        })) : null,
+      });
+    } catch (e: any) { return c.json({ error: e.message }, 500); }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
   // BALANCE DE COMPROBACION
   // ══════════════════════════════════════════════════════════════════════
   //

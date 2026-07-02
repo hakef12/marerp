@@ -42,6 +42,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { ExportButtons } from '../components/ExportButtons';
+import VerAsientoButton from '../components/VerAsientoButton';
 import { exportToPDF, exportToExcel } from '../utils/exportUtils';
 import { Pagination, PaginationContent, PaginationItem, PaginationPrevious, PaginationNext, PaginationLink } from '../components/ui/pagination';
 import { ProductoModal } from '../components/inventario/ProductoModal';
@@ -1803,6 +1804,13 @@ export default function Inventario() {
                                   className="text-blue-500 hover:text-blue-700" title="Emitir comprobante de retención">
                                   <FileCheck className="w-4 h-4" />
                                 </Button>
+                                {/* Ver asiento contable generado */}
+                                <VerAsientoButton
+                                  referencia={String(compra.id)}
+                                  tipo="compra_inventario"
+                                  label=""
+                                  size="xs"
+                                />
                               </div>
                             </TableCell>
                           </TableRow>
@@ -2171,7 +2179,17 @@ export default function Inventario() {
                                 </Button>
                               )
                             )}
-                            {item.estado === 'pagada' && <CheckCircle className="w-4 h-4 text-green-400 ml-auto" />}
+                            {item.estado === 'pagada' && (
+                              <div className="flex items-center gap-2 justify-end">
+                                <CheckCircle className="w-4 h-4 text-green-400" />
+                                <VerAsientoButton
+                                  referencia={String(item.id)}
+                                  tipo="pago_proveedor"
+                                  label="Asiento"
+                                  size="xs"
+                                />
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       );

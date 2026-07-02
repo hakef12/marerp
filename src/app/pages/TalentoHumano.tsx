@@ -14,6 +14,7 @@ import {
   Download, Printer
 } from 'lucide-react';
 import { toast } from 'sonner';
+import VerAsientoButton from '../components/VerAsientoButton';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { ExportButtons } from '../components/ExportButtons';
 import { exportToPDF, exportToExcel } from '../utils/exportUtils';
@@ -1371,8 +1372,16 @@ export default function TalentoHumano() {
                       </Button>
                       <Button onClick={generarAsientoNomina} size="sm" variant="outline"
                         className="border-purple-300 text-purple-600 hover:bg-purple-50">
-                        📒 Asiento
+                        📒 Generar Asiento
                       </Button>
+                      {nominaId && (
+                        <VerAsientoButton
+                          referencia={String(nominaId)}
+                          tipo="nomina"
+                          label="Ver asiento"
+                          size="sm"
+                        />
+                      )}
                     </>
                   )}
                   <Button onClick={exportarCSV} size="sm" variant="outline"

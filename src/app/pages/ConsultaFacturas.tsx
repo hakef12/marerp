@@ -13,6 +13,7 @@ import { Separator } from '../components/ui/separator';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { ExportButtons } from '../components/ExportButtons';
+import VerAsientoButton from '../components/VerAsientoButton';
 import { exportToPDF, exportToExcel } from '../utils/exportUtils';
 import { RIDE } from '../components/facturacion/RIDE';
 import { printHtml, cssTermico, esc } from '../utils/printThermal';
@@ -675,6 +676,13 @@ export default function ConsultaFacturas() {
                           >
                             <Mail className="w-4 h-4" />
                           </Button>
+                          <VerAsientoButton
+                            referencia={String((factura as any).id || factura.numero_factura)}
+                            tipo="venta_pos"
+                            label=""
+                            size="xs"
+                            className="!py-2 !px-2.5"
+                          />
                           {/* Nota de Crédito — solo para facturas autorizadas */}
                           {(factura.estado === 'AUTORIZADO' || (factura as any).estado_autorizacion === 'AUTORIZADO') && (
                             <Button
