@@ -2302,28 +2302,11 @@ export default function Contabilidad() {
 
       {/* ══════════════════════════════════════════════════════════════════
           TAB: UTILIDADES (Centros de Costo + Asiento Manual + Balance Comp.)
+          El selector interno se removio — la barra superior "Utilidades ▼"
+          ya permite saltar directo a cada sub-vista.
          ══════════════════════════════════════════════════════════════════ */}
       {tab === 'contador' && (
         <div className="space-y-4">
-          {/* Selector desplegable de utilidad */}
-          <Card className="bg-white border-[#F97316]/20">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3 flex-wrap">
-                <label className="text-sm font-medium text-gray-700 shrink-0">🛠️ Utilidad:</label>
-                <select value={subTabContador} onChange={e => setSubTabContador(e.target.value as any)}
-                  className="flex-1 min-w-[280px] max-w-md h-10 rounded-lg border-2 border-[#F97316]/30 bg-white text-gray-900 px-3 text-sm font-medium hover:border-[#F97316] focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/20 outline-none transition-all">
-                  <option value="asiento">📝 Registrar Asiento Manual</option>
-                  <option value="centros">🏢 Centros de Costo</option>
-                  <option value="comprobacion">📊 Balance de Comprobación</option>
-                </select>
-                <span className="text-xs text-gray-400">
-                  {subTabContador === 'asiento'      && 'Crear asientos manuales con partida doble'}
-                  {subTabContador === 'centros'      && 'Administrar sucursales/proyectos para dimensionar movimientos'}
-                  {subTabContador === 'comprobacion' && 'Verificar que Debe = Haber en el período'}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
 
           {/* ── Sub-tab: Registrar Asiento Manual ── */}
           {subTabContador === 'asiento' && (
