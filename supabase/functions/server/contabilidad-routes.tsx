@@ -548,6 +548,29 @@ export function setupContabilidadRoutes(app: any, authMiddleware: any) {
         asientos = dataItems || [];
       }
 
+      // Busqueda 5 (fallback fuzzy): si el request incluye monto+fecha,
+      // buscar asientos de venta con ese monto en esa fecha (+/- 1 dia).
+      // Esto cubre el caso donde la factura electronica no tiene link
+      // directo con la venta original.
+      const monto = parseFloat(c.req.query('monto') as string);
+      const fecha = c.req.query('fecha') as string;
+      if (asientos.length === 0 && !isNaN(monto) && monto > 0 && fecha) {
+        const fechaDate = new Date(fecha);
+        const fechaMin = new Date(fechaDate.getTime() - 24*60*60*1000).toISOString().split('T')[0];
+        const fechaMax = new Date(fechaDate.getTime() + 24*60*60*1000).toISOString().split('T')[0];
+        const { data: dataFuzzy } = await db.from('asientos_contables')
+          .select('*')
+          .eq('empresa_id', auth.empresaId)
+          .gte('total_debito', monto - 0.01)
+          .lte('total_debito', monto + 0.01)
+          .gte('fecha', fechaMin)
+          .lte('fecha', fechaMax)
+          .neq('estado', 'anulado')
+          .in('tipo', ['venta', 'venta_pos'])
+          .limit(5);
+        asientos = dataFuzzy || [];
+      }
+
       if (!asientos || asientos.length === 0) {
         return c.json({ asiento: null, mensaje: 'No se encontro asiento para esta referencia' }, 404);
       }

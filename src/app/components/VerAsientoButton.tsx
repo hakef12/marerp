@@ -18,9 +18,13 @@ interface Props {
   label?: string;
   size?: 'sm' | 'xs';
   className?: string;
+  /** Monto para busqueda fuzzy si la referencia no matchea */
+  monto?: number;
+  /** Fecha (YYYY-MM-DD) para busqueda fuzzy si la referencia no matchea */
+  fecha?: string;
 }
 
-export default function VerAsientoButton({ referencia, tipo, label = 'Ver asiento', size = 'sm', className = '' }: Props) {
+export default function VerAsientoButton({ referencia, tipo, label = 'Ver asiento', size = 'sm', className = '', monto, fecha }: Props) {
   const { token } = useAuth();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -33,14 +37,18 @@ export default function VerAsientoButton({ referencia, tipo, label = 'Ver asient
     if (asiento || loading) return;
     setLoading(true);
     setError(null);
+    console.log('[VerAsiento] Buscando asiento con referencia:', referencia, 'tipo:', tipo);
     try {
       const params = new URLSearchParams({ ref: referencia });
       if (tipo) params.set('tipo', tipo);
+      if (monto && monto > 0) params.set('monto', String(monto));
+      if (fecha) params.set('fecha', fecha);
       const res = await fetch(
         `https://${projectId}.supabase.co/functions/v1/server/contabilidad/asiento-por-referencia?${params}`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'X-User-Token': token || '' } }
       );
       const d = await res.json();
+      console.log('[VerAsiento] Respuesta:', res.status, d);
       if (res.ok) {
         setAsiento(d.asiento);
         setHistorial(d.historial);

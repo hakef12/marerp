@@ -680,7 +680,8 @@ export default function ConsultaFacturas() {
                             /* factura.venta_id === venta.numero_ticket, que es lo que aparece
                                en la descripcion del asiento POS ("Venta [numero_ticket]") */
                             referencia={String((factura as any).venta_id || factura.numero_factura || (factura as any).id)}
-                            tipo="venta_pos"
+                            monto={Number((factura as any).total || 0)}
+                            fecha={String((factura as any).fecha_emision || (factura as any).created_at || '').split('T')[0]}
                             label=""
                             size="xs"
                             className="!py-2 !px-2.5"
