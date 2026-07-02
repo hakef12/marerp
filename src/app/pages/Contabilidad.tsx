@@ -158,7 +158,7 @@ const TABS: { id: TabType; label: string; icon: any }[] = [
   { id: 'conciliacion', label: 'Conciliación Bancaria', icon: CheckCircle },
   { id: 'cierres',      label: 'Cierres de Período',   icon: AlertCircle },
   { id: 'cxc',          label: 'Cuentas x Cobrar',     icon: TrendingUp },
-  { id: 'contador',     label: '👨‍💼 Contador',           icon: Calculator },
+  { id: 'contador',     label: 'Utilidades',           icon: Calculator },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -2188,23 +2188,29 @@ export default function Contabilidad() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════
-          TAB: CONTADOR (Centros de Costo + Asiento Manual + Balance Comp.)
+          TAB: UTILIDADES (Centros de Costo + Asiento Manual + Balance Comp.)
          ══════════════════════════════════════════════════════════════════ */}
       {tab === 'contador' && (
         <div className="space-y-4">
-          {/* Sub-tabs */}
-          <div className="flex gap-2 border-b border-gray-200">
-            {[
-              { id: 'asiento',       label: '📝 Registrar Asiento' },
-              { id: 'centros',       label: '🏢 Centros de Costo' },
-              { id: 'comprobacion',  label: '📊 Balance de Comprobación' },
-            ].map((s: any) => (
-              <button key={s.id} onClick={() => setSubTabContador(s.id)}
-                className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  subTabContador === s.id ? 'border-[#F97316] text-[#F97316]' : 'border-transparent text-gray-500 hover:text-gray-900'
-                }`}>{s.label}</button>
-            ))}
-          </div>
+          {/* Selector desplegable de utilidad */}
+          <Card className="bg-white border-[#F97316]/20">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="text-sm font-medium text-gray-700 shrink-0">🛠️ Utilidad:</label>
+                <select value={subTabContador} onChange={e => setSubTabContador(e.target.value as any)}
+                  className="flex-1 min-w-[280px] max-w-md h-10 rounded-lg border-2 border-[#F97316]/30 bg-white text-gray-900 px-3 text-sm font-medium hover:border-[#F97316] focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/20 outline-none transition-all">
+                  <option value="asiento">📝 Registrar Asiento Manual</option>
+                  <option value="centros">🏢 Centros de Costo</option>
+                  <option value="comprobacion">📊 Balance de Comprobación</option>
+                </select>
+                <span className="text-xs text-gray-400">
+                  {subTabContador === 'asiento'      && 'Crear asientos manuales con partida doble'}
+                  {subTabContador === 'centros'      && 'Administrar sucursales/proyectos para dimensionar movimientos'}
+                  {subTabContador === 'comprobacion' && 'Verificar que Debe = Haber en el período'}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* ── Sub-tab: Registrar Asiento Manual ── */}
           {subTabContador === 'asiento' && (
